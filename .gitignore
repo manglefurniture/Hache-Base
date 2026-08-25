@@ -1,0 +1,38 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Local configuration
+config/*.local.php
+*.local.php
+
+# Backups and database dumps
+backups/
+*.sql.gz
+*.dump
+*.bak
+
+# Logs and runtime
+logs/
+*.log
+*.pid
+
+# Dependencies
+vendor/
+node_modules/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test/runtime artifacts
+coverage/
+tmp/
+.cache/
