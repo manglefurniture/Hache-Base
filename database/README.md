@@ -1,14 +1,22 @@
 # Database
 
-Base para patrones reutilizables de persistencia e integridad.
+Patrones reutilizables de persistencia, migraciones e integridad.
+
+## Contenido
+
+- `MIGRATIONS.md`: reglas y flujo de migraciones.
+- `migration-template.sql`: punto de partida para una migración nueva.
+- `migrations/`: migraciones propias de módulos Hache-Base, como auditoría.
+- `integrity/`: criterios para foreign keys, índices, constraints y triggers.
+- `modules/`: esquemas de referencia opcionales para nuevos negocios.
 
 ## Reglas
 
 - Migraciones pequeñas y cronológicas.
 - Evitar cambios manuales de esquema en producción.
-- Probar migraciones sobre una base de staging o clon antes de producción.
+- Probar migraciones sobre staging o un clon antes de producción.
 - Incluir validaciones posteriores cuando una migración afecte integridad.
-- Usar restricciones de base de datos como segunda línea de defensa, sin duplicar reglas de forma contradictoria con la aplicación.
-- Preparar rollback o estrategia de recuperación para cambios destructivos.
+- Usar la base como segunda línea de defensa sin duplicar reglas contradictorias.
+- Preparar backup/recuperación para cambios destructivos.
 
-Las migraciones concretas se incorporarán a medida que los módulos genéricos de Hache-Base sean definidos.
+Los archivos de `modules/` son plantillas: seleccionar y adaptar, no aplicar todos automáticamente.
