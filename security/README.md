@@ -12,16 +12,18 @@ Patrones de seguridad reutilizables de Hache-Base.
 - `rate-limit.php`: limitador simple basado en sesión para flujos web autenticados.
 - `headers.php`: cabeceras HTTP defensivas básicas.
 
+La trazabilidad de cambios vive separada en `src/audit/` y `docs/AUDITORIA.md`.
+
 ## Principios
 
 1. Denegar por defecto.
 2. Autorizar siempre en servidor.
 3. Un ID válido no implica acceso permitido.
-4. La sede/contexto autorizado debe provenir de la identidad autenticada.
-5. Los secretos se cargan desde variables de entorno y nunca se versionan.
-6. Las APIs internas deben usar autenticación explícita.
-7. Las respuestas de error públicas no deben exponer excepciones, SQL, rutas o secretos.
-8. Los controles de interfaz no sustituyen controles de backend.
+4. La sede/contexto autorizado proviene de la identidad autenticada.
+5. Los secretos se cargan desde el entorno y nunca se versionan.
+6. Las APIs internas usan autenticación explícita.
+7. Las respuestas públicas no exponen excepciones, SQL, rutas o secretos.
+8. La interfaz no sustituye controles de backend.
 
 ## Uso orientativo
 
@@ -46,14 +48,10 @@ Bearer::requireValid((string)getenv('INTERNAL_API_TOKEN'));
 ApiResponse::success(['status' => 'ok']);
 ```
 
-## Límites importantes
+## Límites
 
-Estos archivos son una base reutilizable, no una garantía automática de seguridad. Cada proyecto debe definir su matriz real de permisos, modelo de sesión y amenazas.
+Estos archivos son una base reutilizable, no una garantía automática. Cada proyecto define su matriz real de permisos y amenazas.
 
-El `rate-limit.php` incluido es deliberadamente simple y sirve para flujos de una sola instancia con sesión. Para APIs públicas, múltiples servidores o límites por IP/usuario a escala, debe sustituirse por almacenamiento compartido como Redis, base de datos o el mecanismo del proxy/API gateway.
+`rate-limit.php` es deliberadamente simple y basado en sesión. Para APIs públicas o múltiples instancias se sustituye por almacenamiento compartido (Redis/DB) o un proxy/API gateway.
 
-Las cabeceras deben adaptarse al proyecto. En particular, una Content-Security-Policy completa depende de los recursos reales utilizados por cada aplicación y no debe inventarse desde la plantilla.
-
-## Próxima capa
-
-La auditoría de mutaciones (`audit_events`) se implementará como módulo separado para conservar trazabilidad administrativa y financiera sin acoplarla a autenticación.
+Las cabeceras también se adaptan al proyecto. Una Content-Security-Policy completa depende de los recursos reales utilizados y no debe inventarse desde una plantilla.
