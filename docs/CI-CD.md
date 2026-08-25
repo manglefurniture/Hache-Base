@@ -6,6 +6,8 @@
 
 Cada proyecto debe añadir sus propias pruebas de negocio, roles, sedes y migraciones.
 
+Un CI verde confirma únicamente las comprobaciones automatizadas existentes. No sustituye una revisión de código ni invalida hallazgos posteriores de Codex u otra revisión automática/humana.
+
 ## CD
 
 `deploy-template.yml` es deliberadamente **gated**. No despliega mientras la variable de repositorio `ENABLE_PRODUCTION_DEPLOY` no sea `true` y el entorno `production` no tenga sus secretos/configuración.
@@ -22,6 +24,8 @@ No reutilizar una clave SSH personal. Usar una credencial de despliegue de alcan
 
 ## Flujo
 
-`PR -> CI -> merge -> staging -> aprobación -> workflow_dispatch(commit exacto) -> preflight -> backup -> deploy -> tests -> health -> DEPLOY_OK`
+`PR -> CI/Quality -> revisión -> corregir hallazgos válidos -> CI/Quality final -> merge -> staging -> aprobación -> workflow_dispatch(commit exacto) -> preflight -> backup -> deploy -> tests -> health/smoke -> DEPLOY_OK`
+
+Antes del merge, los hallazgos relevantes de revisión deben quedar clasificados como corregidos, ya resueltos, no aplicables o pendientes de una decisión humana explícita. Consultar `docs/REVIEW-Y-CIERRE-DE-PR.md`.
 
 El despliegue remoto recibe un commit exacto; no despliega simplemente "lo último" sin identificar qué versión se está instalando.
