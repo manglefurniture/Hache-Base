@@ -39,11 +39,18 @@ jobs:
 
       - name: Shell syntax
         run: |
-          find deployment integrations tests -type f -name '*.sh' -print0 \
+          find deployment integrations tests seo -type f -name '*.sh' -print0 \
             | xargs -0 -r -n1 bash -n
 
       - name: PHP and unit checks
         run: bash tests/run.sh
+
+      - name: SEO module regression fixture
+        env:
+          SEO_MODE: public
+          SEO_EXPECT_INDEXABLE: 1
+          SEO_REQUIRE_CANONICAL: 1
+        run: node seo/tests/seo-static.mjs seo/tests/fixtures/public-site
 
       - name: Validate reusable schemas on MariaDB
         env:
