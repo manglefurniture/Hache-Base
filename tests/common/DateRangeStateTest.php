@@ -16,6 +16,8 @@ assert(DateRangeState::classify('2026-08-01', '2026-08-24', new \DateTimeImmutab
 $utcInstant = new \DateTimeImmutable('2026-08-26 02:30:00+00:00');
 assert(DateRangeState::operationalToday($tz, $utcInstant)->format('Y-m-d') === '2026-08-25');
 assert(DateRangeState::classify('2026-08-25', '2026-08-25', $utcInstant, $tz) === DateRangeState::ACTIVE);
+assert(DateRangeState::operationalToday('UTC', $utcInstant)->format('Y-m-d') === '2026-08-26');
+assert(DateRangeState::operationalToday('Etc/UTC', $utcInstant)->format('Y-m-d') === '2026-08-26');
 
 putenv('APP_TIMEZONE=America/Cancun');
 assert(DateRangeState::operationalToday(null, $utcInstant)->format('Y-m-d') === '2026-08-25');
@@ -37,12 +39,24 @@ try {
 }
 assert($invalidDate === true);
 
-$invalidTimezone = false;
-try {
-    DateRangeState::operationalToday('Not/A_Timezone');
-} catch (\InvalidArgumentException) {
-    $invalidTimezone = true;
+foreach (['Not/A_Timezone', 'EST', 'CST', '+05:00', '-03:00'] as $invalidTimezoneName) {
+    $invalidTimezone = false;
+    try {
+        DateRangeState::operationalToday($invalidTimezoneName);
+    } catch (\InvalidArgumentException) {
+        $invalidTimezone = true;
+    }
+    assert($invalidTimezone === true);
 }
-assert($invalidTimezone === true);
+
+putenv('APP_TIMEZONE=EST');
+$invalidEnvironmentTimezone = false;
+try {
+    DateRangeState::operationalToday();
+} catch (\InvalidArgumentException) {
+    $invalidEnvironmentTimezone = true;
+}
+putenv('APP_TIMEZONE');
+assert($invalidEnvironmentTimezone === true);
 
 echo "DateRangeStateTest OK\n";
