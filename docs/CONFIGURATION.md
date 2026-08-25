@@ -31,6 +31,8 @@ APP_TIMEZONE=America/Cancun
 
 Hache-Base usa `UTC` como valor neutro en la plantilla; cada proyecto debe sustituirlo por la zona operativa correcta cuando corresponda. Si una aplicación opera en múltiples zonas, la zona debe formar parte del contexto de organización/sede/recurso en lugar de depender de un único valor global.
 
+La utilidad temporal de Hache-Base acepta `UTC` y zonas regionales IANA como `America/Cancun`, `Europe/Madrid` o `Asia/Tokyo`. Rechaza abreviaturas ambiguas como `EST`/`CST` y offsets fijos como `+05:00`, porque no expresan correctamente reglas regionales ni cambios históricos/estacionales.
+
 ## Secretos
 
 Nunca versionar:
