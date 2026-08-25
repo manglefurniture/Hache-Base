@@ -12,6 +12,8 @@ Hache-Base acepta componentes que sean reutilizables entre distintos tipos de ne
 - auditoría de mutaciones;
 - migraciones y controles de integridad;
 - utilidades genéricas;
+- estados temporales derivados y zona horaria operativa;
+- consistencia de reglas entre vistas, APIs y acciones;
 - pruebas y fixtures;
 - backup, despliegue, health checks y rollback;
 - patrones seguros de integración externa.
@@ -37,6 +39,14 @@ Un componente procedente de otro proyecto debe pasar por este proceso:
 4. Documentar dependencias y supuestos.
 5. Añadir una prueba o procedimiento de verificación cuando corresponda.
 6. Incorporarlo mediante un cambio pequeño y trazable.
+
+## Principios de integridad
+
+- Una regla de negocio debe tener una definición canónica aunque se muestre en varias pantallas.
+- Un estado que depende únicamente de fechas debe poder derivarse de sus datos fuente; si además se persiste, el valor guardado se considera una proyección sincronizable.
+- Toda lógica basada en `hoy` debe usar una zona horaria operativa explícita, no la zona implícita del servidor.
+- Una UI puede prevenir acciones inválidas, pero la validación definitiva permanece en servidor y, cuando corresponde, en una protección transaccional o de integridad.
+- Un rol de solo lectura no debe provocar escrituras ocultas como efecto secundario de consultar una pantalla.
 
 ## Filosofía
 
