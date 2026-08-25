@@ -63,11 +63,37 @@ final class DateRangeState
             $name = 'UTC';
         }
 
+        if (!self::isAllowedTimezone($name)) {
+            throw new InvalidArgumentException(
+                'Invalid application timezone. Use UTC or an IANA region identifier such as America/Cancun.'
+            );
+        }
+
         try {
             return new DateTimeZone($name);
         } catch (Throwable $e) {
             throw new InvalidArgumentException('Invalid application timezone: ' . $name, 0, $e);
         }
+    }
+
+    private static function isAllowedTimezone(string $name): bool
+    {
+        if ($name === 'UTC') {
+            return true;
+        }
+
+        // Reject ambiguous abbreviations (EST/CST) and fixed offsets (+05:00).
+        // Business timezones must be region-based IANA identifiers such as America/Cancun.
+        if (!str_contains($name, '/')) {
+            return false;
+        }
+
+        static $identifiers = null;
+        if ($identifiers === null) {
+            $identifiers = array_fill_keys(DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true);
+        }
+
+        return isset($identifiers[$name]);
     }
 
     private static function date(string $value, DateTimeZone $timezone): DateTimeImmutable
