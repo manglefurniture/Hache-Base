@@ -30,6 +30,15 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Definir política inicial de retención.
 - [ ] Si se persisten estados derivados del tiempo, documentar cómo se reconcilian y cuál es la fuente de verdad.
 - [ ] Para pagos/obligaciones, definir la identidad exacta del recurso que evita duplicados.
+- [ ] Identificar datos que puedan formar parte de cierres, facturas, cortes o snapshots y definir cómo se preservará su evidencia histórica después de invalidaciones/correcciones.
+
+## Privacidad
+
+- [ ] Si se recopilan datos personales, identificar al responsable legal del tratamiento.
+- [ ] Definir el domicilio o dato de identificación requerido por la política aplicable sin inventar información.
+- [ ] Definir un canal específico para solicitudes de acceso, rectificación, cancelación, oposición o eliminación cuando corresponda.
+- [ ] Enlazar el aviso de privacidad desde los puntos públicos donde se recopilan datos.
+- [ ] No incorporar datos personales reales del responsable en Hache-Base; mantenerlos en la configuración/documentación del proyecto destino.
 
 ## Seguridad
 
@@ -50,6 +59,7 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Probar fronteras temporales: antes de inicio, inicio, final y día posterior.
 - [ ] Probar que vistas distintas muestran el mismo estado para el mismo recurso.
 - [ ] Probar que la UI preventiva no sustituye el rechazo del servidor en acciones inválidas/duplicadas.
+- [ ] En acciones asíncronas sensibles, probar que una respuesta antigua no puede modificar una operación o modal posterior.
 
 ## Infraestructura
 
@@ -71,3 +81,11 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Existe procedimiento de rollback.
 - [ ] Pasan las pruebas críticas.
 - [ ] Pasa el health check.
+
+## Antes de mergear cambios relevantes
+
+- [ ] CI/Quality está verde.
+- [ ] Los hallazgos de revisión están clasificados como corregidos, ya resueltos, no aplicables o pendientes de decisión humana.
+- [ ] Las correcciones de review tienen regresiones proporcionales cuando aportan valor.
+- [ ] No se amplió innecesariamente el alcance con auditorías, refactors u optimizaciones no solicitadas.
+- [ ] Después del merge existe un plan explícito de deploy y smoke test cuando el proyecto tenga producción.

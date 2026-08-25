@@ -10,7 +10,8 @@
 | Reglas de negocio | Listo | Evita reglas dispersas o contradictorias | Sistemas con lógica operativa | `docs/REGLAS-DE-NEGOCIO.md` |
 | Estados temporales e integridad entre vistas | Listo | Deriva FUTURE/ACTIVE/ENDED por fechas, fija zona horaria operativa y evita estados contradictorios entre pantallas | Cursos, campañas, promociones, membresías, reservas, eventos y obligaciones temporales | `docs/ESTADOS-TEMPORALES-E-INTEGRIDAD.md` + `src/common/DateRangeState.php` |
 | Seguridad web/API | Listo | Sesión, autorización, CSRF, Bearer, rate limit, JSON y headers | Paneles, formularios y APIs | `security/README.md` |
-| Auditoría de mutaciones | Listo | Registra quién cambió qué, cuándo y en qué contexto | Pagos, inventario, citas, usuarios, configuración | `docs/AUDITORIA.md` |
+| Auditoría de mutaciones | Listo | Registra quién cambió qué, cuándo y en qué contexto; preserva evidencia de snapshots históricos | Pagos, inventario, citas, usuarios, configuración, cierres y conciliaciones | `docs/AUDITORIA.md` |
+| Review y cierre de PR | Listo como proceso | Separa CI de revisión, clasifica deuda de review y limita fixes al alcance acordado | Repositorios con PR, CI y revisión automática/humana | `docs/REVIEW-Y-CIERRE-DE-PR.md` |
 | Migraciones e integridad | Listo | Cambios de esquema pequeños, probables e idempotentes | Proyectos con MariaDB | `database/MIGRATIONS.md` |
 | Modelo de servicios | Plantilla lista | Organizaciones, sedes, usuarios, clientes, servicios, planes, horarios, pagos y sesiones | Academias, spas, gimnasios, clínicas y servicios recurrentes | `database/modules/README.md` |
 | Operaciones recurrentes | Plantilla opcional | Asistencia, ausencias y sesiones de reemplazo | Negocios que realmente manejen esas reglas | `database/modules/recurring-operations.sql` |
@@ -36,6 +37,7 @@ No hace falta mencionar archivos. Ejemplos:
 - "Aplica multisede, roles, seguridad, auditoría y SEO local de Hache-Base."
 - "Este proyecto no necesita multisede; usa seguridad, pagos, auditoría, SEO y despliegue."
 - "Usa estados temporales para promociones y membresías y configura la zona horaria del negocio."
+- "Aplica también el proceso de review y cierre de PR de Hache-Base."
 - "Es una app privada: usa Hache-Base con SEO_MODE=private-app."
 
 Al recibir una petición así, consultar este catálogo, revisar la documentación de los módulos elegidos y adaptar configuración/reglas al negocio.

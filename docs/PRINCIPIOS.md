@@ -47,6 +47,16 @@ Un componente procedente de otro proyecto debe pasar por este proceso:
 - Toda lógica basada en `hoy` debe usar una zona horaria operativa explícita, no la zona implícita del servidor.
 - Una UI puede prevenir acciones inválidas, pero la validación definitiva permanece en servidor y, cuando corresponde, en una protección transaccional o de integridad.
 - Un rol de solo lectura no debe provocar escrituras ocultas como efecto secundario de consultar una pantalla.
+- Si un dato participó en un cierre, factura, corte, conciliación o snapshot histórico, una operación posterior no debe destruir la evidencia necesaria para explicar ese resultado. Invalidar no equivale automáticamente a borrar.
+- Cuando dos eventos con precisión temporal insuficiente puedan haber ocurrido en distinto orden, una decisión que afecte trazabilidad histórica debe optar por la interpretación conservadora salvo que exista una fuente fiable de orden.
+- Una acción asíncrona sensible debe capturar la identidad completa de su objetivo antes del primer `await`, mantener una identidad o bloqueo de operación en vuelo y evitar que respuestas antiguas modifiquen una interfaz que ya representa otra operación.
+
+## Principios de cambio y revisión
+
+- CI verde y revisión de código son capas diferentes: ambas deben satisfacerse según el riesgo del proyecto.
+- Un hallazgo concreto debe producir una corrección concreta y proporcional; no convertir automáticamente un fix en auditoría o refactor general.
+- No marcar como resuelto un hallazgo solo por conveniencia administrativa: primero confirmar su resolución material en el código actual.
+- Una corrección que revele un nuevo caso límite genera un hallazgo nuevo; no queda cubierto por el cierre del hallazgo original.
 
 ## Filosofía
 

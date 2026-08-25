@@ -30,6 +30,18 @@ Nunca registrar contraseñas, hashes, tokens, cookies, secretos, claves API, CVV
 
 Guardar solo los campos necesarios. En muchos eventos basta con IDs, acción y metadatos mínimos.
 
+## Evidencia histórica e inmutabilidad lógica
+
+Un registro puede cambiar de estado sin dejar de ser evidencia histórica. Si una entidad participó en un cierre, factura, corte, conciliación, liquidación o snapshot congelado, una mutación posterior no debe destruir la información mínima necesaria para reconstruir o justificar aquel resultado.
+
+Ejemplos genéricos:
+
+- un pago invalidado después de un cierre puede seguir siendo evidencia de lo que estaba vigente cuando el cierre se generó;
+- una corrección posterior no debe borrar la relación que explica un total histórico congelado;
+- una eliminación definitiva debe comprobar referencias históricas antes de borrar registros de soporte.
+
+Cuando el orden de dos eventos no pueda determinarse por la precisión temporal disponible, preservar la trazabilidad es preferible a asumir que la evidencia puede eliminarse.
+
 ## Ejemplo
 
 ```php
