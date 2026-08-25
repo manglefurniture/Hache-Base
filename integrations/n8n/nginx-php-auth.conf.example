@@ -1,0 +1,5 @@
+# Merge into the project's PHP location after reviewing the real Nginx config.
+# This preserves the Authorization header for PHP-FPM endpoints that validate
+# Bearer tokens. Do not paste blindly if the project already defines it.
+
+fastcgi_param HTTP_AUTHORIZATION $http_authorization;
