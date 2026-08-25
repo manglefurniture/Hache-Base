@@ -1,0 +1,9 @@
+# Example only. Adapt deliberately per project/environment.
+User-agent: *
+Allow: /
+
+# Sitemap: https://www.example.com/sitemap.xml
+
+# AI/search bots must be decided deliberately per project.
+# Do not confuse search inclusion with model training controls.
+# Example placeholders only; verify current official bot names/policies before use.

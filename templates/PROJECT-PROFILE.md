@@ -43,6 +43,18 @@ Completar también `PERMISSION-MATRIX.md`.
 - mensajería:
 - APIs externas:
 
+## SEO / superficie pública
+
+- `SEO_MODE`: public / private-app / hybrid / none
+- Dominio/host canónico esperado:
+- Rutas públicas indexables:
+- Rutas privadas/no indexables:
+- ¿SEO local / ubicaciones reales?: sí / no
+- ¿Search Console/Bing Webmaster Tools?: sí / no / pendiente
+- ¿Schema previsto?:
+- ¿Política de bots de búsqueda/IA definida?: sí / no
+- Excepciones al Minimum SEO Baseline:
+
 ## Módulos Hache-Base seleccionados
 
 - [ ] Arquitectura base
@@ -54,6 +66,7 @@ Completar también `PERMISSION-MATRIX.md`.
 - [ ] Operaciones recurrentes (asistencia/ausencias/reemplazos)
 - [ ] Utilidades comunes
 - [ ] n8n
+- [ ] SEO técnico / Minimum SEO Baseline
 - [ ] Pruebas
 - [ ] Backup/rollback
 - [ ] Runner de despliegue
@@ -69,6 +82,7 @@ Completar también `PERMISSION-MATRIX.md`.
 ## Criterio de listo para producción
 
 - Pruebas críticas:
+- SEO Baseline (si `public`/`hybrid`):
 - Backup/restauración:
 - Health check:
 - Aprobación requerida:
