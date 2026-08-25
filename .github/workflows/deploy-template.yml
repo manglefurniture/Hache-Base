@@ -1,0 +1,53 @@
+name: Production Deploy Template
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_commit:
+        description: Exact commit SHA to deploy
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Validate required configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          test -n "$DEPLOY_PATH"
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Run deployment runner on VPS
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          TARGET_COMMIT: ${{ inputs.target_commit }}
+        run: |
+          port="${DEPLOY_PORT:-22}"
+          ssh -p "$port" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && TARGET_COMMIT='$TARGET_COMMIT' bash deployment/deploy.sh"
