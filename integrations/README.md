@@ -2,7 +2,11 @@
 
 Patrones para conectar servicios externos sin acoplarlos al núcleo de la aplicación.
 
-Cada integración deberá documentar:
+## n8n
+
+`n8n/` contiene el patrón reutilizable aplicación ↔ n8n, reenvío de Authorization para Nginx/PHP-FPM y una plantilla de backup consistente para Docker + SQLite.
+
+Cada integración debe documentar:
 
 - propósito;
 - dirección del flujo de datos;
@@ -10,7 +14,8 @@ Cada integración deberá documentar:
 - variables de entorno;
 - errores y reintentos;
 - privacidad;
-- backup o recuperación cuando aplique;
+- auditoría si modifica datos;
+- backup/recuperación cuando aplique;
 - procedimiento para desactivarla sin romper el producto principal.
 
-La integración con n8n se añadirá como módulo independiente.
+Las integraciones específicas de un negocio (por ejemplo, un asistente o workflow concreto) permanecen en ese proyecto y no entran automáticamente en Hache-Base.
