@@ -6,8 +6,8 @@ namespace HacheBase\Common;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use Exception;
 use InvalidArgumentException;
+use Throwable;
 
 final class DateRangeState
 {
@@ -65,7 +65,7 @@ final class DateRangeState
 
         try {
             return new DateTimeZone($name);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             throw new InvalidArgumentException('Invalid application timezone: ' . $name, 0, $e);
         }
     }
