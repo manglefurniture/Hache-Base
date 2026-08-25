@@ -20,7 +20,9 @@ final class PhoneNormalizer
             throw new InvalidArgumentException('Phone number is required.');
         }
 
+        $explicitInternational = str_starts_with($raw, '+') || str_starts_with($raw, '00');
         $digits = preg_replace('/\D+/', '', $raw) ?? '';
+
         if (str_starts_with($digits, '00')) {
             $digits = substr($digits, 2);
         }
@@ -33,11 +35,16 @@ final class PhoneNormalizer
         // Historical Mexican WhatsApp/mobile format: +521 + 10 digits.
         if (str_starts_with($digits, '521') && strlen($digits) === 13) {
             $digits = '52' . substr($digits, 3);
+            $explicitInternational = true;
         }
 
-        $explicitInternational = str_starts_with($raw, '+') || str_starts_with($raw, '00');
-        if (!$explicitInternational && !str_starts_with($digits, $country)) {
-            $digits = $country . $digits;
+        if (!$explicitInternational) {
+            // A local number is local even if its first digits happen to equal
+            // the country code. Longer values already prefixed with the chosen
+            // country code are accepted for compatibility with stored data.
+            if (!(strlen($digits) > 10 && str_starts_with($digits, $country))) {
+                $digits = $country . $digits;
+            }
         }
 
         if (strlen($digits) < 8 || strlen($digits) > 15) {
