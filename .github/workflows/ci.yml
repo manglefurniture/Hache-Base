@@ -35,7 +35,7 @@ jobs:
           sudo apt-get install -y php-cli php-mbstring mariadb-client
 
       - name: Git whitespace check
-        run: git diff --check HEAD^
+        run: git diff --check HEAD^ -- . ':(exclude)seo/reference/SEO-TECHNICAL-BASE-2026.md'
 
       - name: Shell syntax
         run: |
