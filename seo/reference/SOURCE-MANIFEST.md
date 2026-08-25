@@ -8,6 +8,8 @@
 - Vigencia objetivo: SEO 2026
 - Revisión recomendada por la propia fuente: trimestral y después de cambios relevantes en Search Central, Search Console, Bing Webmaster Tools, Schema.org, Core Web Vitals o políticas de spam.
 - SHA-256 del archivo recibido para esta integración: `41d01679a86a914de60b5a67b524a72dafaed13ff6354839f194f9231877e89c`
+- Git blob SHA del archivo original y de la copia versionada: `2e1658faaaabb4c6576724d9a50f823308175e10`
+- Verificación: `EXACT_COPY_CONFIRMED`
 
 ## Política
 
