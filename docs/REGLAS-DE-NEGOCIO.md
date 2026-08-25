@@ -18,7 +18,7 @@ Cada regla relevante debe registrar:
 - **Defensa adicional:** constraint, trigger u otra protección si existe.
 - **Pruebas:** casos que demuestran la regla.
 
-## Ejemplo genérico
+## Ejemplos genéricos
 
 ### PAY-001 — Evitar cobro activo duplicado
 
@@ -30,6 +30,38 @@ Cada regla relevante debe registrar:
 - Defensa adicional: restricción de integridad si el modelo lo permite.
 - Pruebas: primer pago permitido; duplicado rechazado; comportamiento tras invalidación comprobado.
 
+La identidad de la obligación debe usar el recurso exacto. No es suficiente comprobar que el actor tiene algún pago del mismo tipo si el pago pertenece a otro curso, reserva, factura, cita, periodo o recurso.
+
+### TMP-001 — Derivar estados temporales desde fechas
+
+- Motivo: impedir que un estado quede congelado por falta de una actualización manual.
+- Alcance: entidades cuyo estado depende del paso del tiempo.
+- Condición: existen fecha de inicio y fecha de fin.
+- Resultado esperado: antes del inicio = futuro; dentro del rango inclusivo = activo; después del fin = terminado.
+- Fuente de verdad: fechas + zona horaria operativa.
+- Defensa adicional: reconciliación idempotente del estado persistido si el proyecto necesita almacenarlo.
+- Pruebas: día anterior; día inicial; día final; día posterior; zona horaria correcta.
+
+### VIEW-001 — Mantener consistencia entre vistas
+
+- Motivo: evitar que dos pantallas representen de forma contradictoria el mismo estado de negocio.
+- Alcance: listados, fichas, detalles, formularios y reportes que comparten una obligación/regla.
+- Condición: dos o más superficies muestran o actúan sobre el mismo recurso.
+- Resultado esperado: todas consumen la misma definición canónica.
+- Fuente de verdad: servicio/consulta canónica de dominio.
+- Defensa adicional: pruebas de regresión que cubran las superficies críticas.
+- Pruebas: el mismo fixture produce el mismo estado en todas las vistas relevantes.
+
+### AUTH-RO-001 — Consultas read-only sin escrituras ocultas
+
+- Motivo: conservar la semántica y seguridad de los roles de consulta.
+- Alcance: usuarios o procesos sin permiso de mutación.
+- Condición: una acción está autorizada únicamente como lectura.
+- Resultado esperado: la consulta no ejecuta reconciliaciones persistentes, housekeeping ni escrituras automáticas.
+- Fuente de verdad: autorización del servidor.
+- Defensa adicional: separar estado derivado de reconciliación persistida.
+- Pruebas: lectura permitida sin mutaciones; escritura equivalente rechazada.
+
 ## Reglas de diseño
 
 - No duplicar una misma regla con implementaciones contradictorias.
@@ -37,7 +69,12 @@ Cada regla relevante debe registrar:
 - Los cambios de reglas financieras requieren pruebas de regresión.
 - Las reglas de aislamiento y permisos requieren casos negativos.
 - Las excepciones deben ser explícitas y justificadas.
+- Los estados temporales deben usar una zona horaria operativa explícita.
+- Ocultar/deshabilitar una acción en UI mejora la UX, pero no sustituye la validación de servidor.
+- Si un estado persistido puede quedar obsoleto por el paso del tiempo, las lecturas críticas deben poder derivarlo desde sus datos fuente.
 
 ## Catálogo por proyecto
 
 Cada proyecto que use Hache-Base debe mantener su catálogo específico fuera del núcleo genérico. Hache-Base conserva el formato y los patrones; el negocio conserva sus decisiones.
+
+Ver también `docs/ESTADOS-TEMPORALES-E-INTEGRIDAD.md`.
