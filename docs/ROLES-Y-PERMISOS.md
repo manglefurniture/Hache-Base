@@ -47,6 +47,8 @@ La tabla es un punto de partida, no autorización ejecutable.
 5. Denegar por defecto cuando no exista una regla explícita.
 6. Auditar cambios administrativos y financieros relevantes.
 7. Probar intentos permitidos y prohibidos.
+8. Una consulta autorizada como read-only no debe ejecutar escrituras ocultas, reconciliaciones persistentes ni housekeeping con mutación.
+9. Si una pantalla read-only necesita mostrar un estado calculado, derivarlo en memoria; cualquier sincronización persistida debe ser una operación separada con permiso explícito de escritura.
 
 ## Checklist por endpoint
 
@@ -56,4 +58,5 @@ La tabla es un punto de partida, no autorización ejecutable.
 - ¿El recurso solicitado pertenece a ese contexto?
 - ¿El usuario puede actuar sobre sí mismo, terceros o ambos?
 - ¿La acción debe auditarse?
+- ¿Una lectura provoca alguna escritura indirecta? Si sí, ¿está autorizada explícitamente?
 - ¿Qué respuesta recibe un acceso denegado sin filtrar información?
