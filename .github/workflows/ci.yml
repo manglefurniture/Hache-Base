@@ -1,0 +1,60 @@
+name: Hache-Base CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: hache_base_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli php-mbstring mariadb-client
+
+      - name: Git whitespace check
+        run: git diff --check HEAD^
+
+      - name: Shell syntax
+        run: |
+          find deployment integrations tests -type f -name '*.sh' -print0 \
+            | xargs -0 -r -n1 bash -n
+
+      - name: PHP and unit checks
+        run: bash tests/run.sh
+
+      - name: Validate reusable schemas on MariaDB
+        env:
+          MYSQL_PWD: root
+        run: |
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/core.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
+
+      - name: Schema idempotence check
+        env:
+          MYSQL_PWD: root
+        run: |
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/core.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
