@@ -6,7 +6,6 @@ require_once __DIR__ . '/../../src/common/DateRangeState.php';
 
 use DateTimeImmutable;
 use HacheBase\Common\DateRangeState;
-use InvalidArgumentException;
 
 $tz = 'America/Cancun';
 
@@ -26,7 +25,7 @@ putenv('APP_TIMEZONE');
 $invalidRange = false;
 try {
     DateRangeState::classify('2026-08-26', '2026-08-25', null, $tz);
-} catch (InvalidArgumentException) {
+} catch (\InvalidArgumentException) {
     $invalidRange = true;
 }
 assert($invalidRange === true);
@@ -34,7 +33,7 @@ assert($invalidRange === true);
 $invalidDate = false;
 try {
     DateRangeState::classify('2026-02-30', '2026-03-01', null, $tz);
-} catch (InvalidArgumentException) {
+} catch (\InvalidArgumentException) {
     $invalidDate = true;
 }
 assert($invalidDate === true);
@@ -42,7 +41,7 @@ assert($invalidDate === true);
 $invalidTimezone = false;
 try {
     DateRangeState::operationalToday('Not/A_Timezone');
-} catch (InvalidArgumentException) {
+} catch (\InvalidArgumentException) {
     $invalidTimezone = true;
 }
 assert($invalidTimezone === true);
