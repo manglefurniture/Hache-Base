@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -32,21 +32,22 @@ Nace de las lecciones de la auditoría integral de Hache Natación, pero **no es
 3. Multisede solo cuando el negocio lo requiera, con aislamiento real.
 4. Migraciones pequeñas, cronológicas y comprobables.
 5. Pruebas desde los primeros flujos funcionales.
-6. Configuración y secretos separados del código.
-7. Backups y rollback antes de producción.
-8. Integraciones externas desacopladas del núcleo.
-9. Cambios pequeños y trazables.
-10. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
+6. Configuración, secretos y zona horaria operativa separados de supuestos del servidor.
+7. Estados temporales derivados desde datos fuente y consistentes entre vistas.
+8. Backups y rollback antes de producción.
+9. Integraciones externas desacopladas del núcleo.
+10. Cambios pequeños y trazables.
+11. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
 
 ## Estructura
 
-- `docs/` — arquitectura, reglas, configuración, entornos y bootstrap.
+- `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal y bootstrap.
 - `templates/` — perfiles y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales.
 - `security/` — patrones reutilizables de seguridad.
 - `src/` — módulos PHP genéricos, como auditoría y utilidades.
 - `integrations/` — integraciones desacopladas, como n8n.
-- `tests/` — sintaxis, pruebas básicas, smoke e integración.
+- `tests/` — sintaxis, pruebas básicas, fronteras temporales, smoke e integración.
 - `deployment/` — preflight, backup, despliegue, health y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
