@@ -1,0 +1,25 @@
+-- Hache-Base: generic mutation audit trail
+CREATE TABLE IF NOT EXISTS audit_events (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    actor_type VARCHAR(32) NOT NULL DEFAULT 'user',
+    actor_id VARCHAR(128) NULL,
+    actor_role VARCHAR(64) NULL,
+    organization_id VARCHAR(128) NULL,
+    site_id VARCHAR(128) NULL,
+    action VARCHAR(100) NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id VARCHAR(128) NULL,
+    source VARCHAR(100) NULL,
+    request_id VARCHAR(128) NULL,
+    ip_address VARCHAR(45) NULL,
+    before_data JSON NULL,
+    after_data JSON NULL,
+    metadata JSON NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    INDEX idx_audit_created_at (created_at),
+    INDEX idx_audit_actor (actor_type, actor_id),
+    INDEX idx_audit_entity (entity_type, entity_id),
+    INDEX idx_audit_site (site_id),
+    INDEX idx_audit_action (action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
