@@ -42,6 +42,25 @@ La identidad de la obligación debe usar el recurso exacto. No es suficiente com
 - Defensa adicional: reconciliación idempotente del estado persistido si el proyecto necesita almacenarlo.
 - Pruebas: día anterior; día inicial; día final; día posterior; zona horaria correcta.
 
+### TMP-002 — Aplicar cambios solo desde su fecha efectiva
+
+- Motivo: evitar que un plan, membresía, tarifa, permiso o servicio futuro altere prematuramente el estado vigente o produzca deuda ficticia.
+- Alcance: entidades con cambios programados por periodo o fecha efectiva.
+- Condición: se registra un cambio cuyo inicio es posterior a la fecha operativa actual.
+- Resultado esperado: conservar el valor vigente, guardar el valor futuro como programado y promoverlo únicamente al alcanzar `vigente_desde`.
+- Fuente de verdad: valor actual + valor programado + fecha efectiva + periodo exacto de las obligaciones asociadas.
+- Defensa adicional: promoción idempotente; validación transaccional; bloqueo de reescritura cuando una obligación ya tiene historial financiero.
+- Pruebas: antes de la fecha efectiva; día de activación; pago anticipado del periodo futuro; cambio de periodo/ciclo; obligación sin historial reconciliable; obligación con historial protegida.
+
+Reglas asociadas:
+
+- `PROGRAMADO` o `FUTURE` no significa `PENDIENTE DE PAGO` ni `MOROSO`.
+- Un pago anticipado no debe activar el servicio antes de su fecha efectiva.
+- Una obligación futura pagada debe seguir identificada con su periodo futuro.
+- Una obligación del periodo actual no debe inventarse si el servicio todavía no está vigente.
+- Al mover una obligación entre periodos o ciclos, solo pueden reconciliarse automáticamente registros pendientes sin cobro ni pagos asociados.
+- Si existe historial financiero, preservar la evidencia y exigir un flujo explícito de corrección/reversión en vez de sobrescribirla.
+
 ### VIEW-001 — Mantener consistencia entre vistas
 
 - Motivo: evitar que dos pantallas representen de forma contradictoria el mismo estado de negocio.
@@ -70,6 +89,9 @@ La identidad de la obligación debe usar el recurso exacto. No es suficiente com
 - Las reglas de aislamiento y permisos requieren casos negativos.
 - Las excepciones deben ser explícitas y justificadas.
 - Los estados temporales deben usar una zona horaria operativa explícita.
+- Los cambios futuros deben representarse como programados hasta su fecha efectiva; no deben sobrescribir prematuramente el estado actual.
+- "Todavía no vigente" y "pendiente de pago" son estados distintos y deben representarse de forma distinta.
+- El historial financiero existente debe considerarse evidencia protegida frente a reconciliaciones automáticas.
 - Ocultar/deshabilitar una acción en UI mejora la UX, pero no sustituye la validación de servidor.
 - Si un estado persistido puede quedar obsoleto por el paso del tiempo, las lecturas críticas deben poder derivarlo desde sus datos fuente.
 

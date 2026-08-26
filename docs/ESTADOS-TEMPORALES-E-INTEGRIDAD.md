@@ -66,7 +66,57 @@ La misma definición canónica debe alimentar:
 - formularios de acción;
 - reportes relevantes.
 
-## 5. Defensa por capas
+## 5. Cambios con vigencia futura
+
+Cuando una relación, plan, membresía, tarifa, permiso o servicio empieza en una fecha futura, no debe sustituir prematuramente el estado vigente.
+
+Patrón recomendado:
+
+```text
+valor_actual
+valor_programado
+vigente_desde
+```
+
+Antes de `vigente_desde`, el sistema debe conservar el valor actual y representar el cambio como futuro. Al alcanzar la fecha efectiva, la promoción del valor programado debe ser idempotente y respetar el contexto autorizado.
+
+Reglas:
+
+- `FUTURE` o `PROGRAMADO` no equivale a `PENDIENTE`, `MOROSO` ni `SIN DERECHO`;
+- una obligación futura pagada por adelantado sigue perteneciendo a su periodo futuro y no debe activar artificialmente el periodo actual;
+- la interfaz debe distinguir entre "todavía no inicia" y "debe una obligación vigente";
+- un cambio de fecha, ciclo o periodo puede reconciliar registros sin historial, pero no debe reescribir evidencia financiera existente;
+- si existe historial incompatible con el cambio solicitado, la operación debe bloquearse o requerir un flujo explícito de reversión/corrección.
+
+Ejemplo genérico:
+
+```text
+hoy: 25/08
+servicio actual: ninguno
+servicio programado: Plan A desde 01/09
+obligación de septiembre: PAGADA
+
+resultado correcto hoy:
+- estado del servicio: INICIA 01/09
+- obligación futura: SEPTIEMBRE PAGADA
+- no crear deuda de agosto
+- no activar Plan A antes del 01/09
+```
+
+## 6. Inmutabilidad del historial financiero
+
+Una obligación con pagos, cobros, folios, conciliaciones o cualquier otro historial financiero ya no debe tratarse como una fila técnica libremente reconciliable.
+
+Antes de mover, sustituir, eliminar o recalcular una obligación por cambios de periodo/ciclo/fecha efectiva, comprobar al menos:
+
+1. que permanece pendiente;
+2. que no tiene importe cobrado;
+3. que no existen pagos asociados;
+4. que no existe otro historial financiero que deba conservarse.
+
+Las obligaciones técnicas todavía vacías pueden reconciliarse de forma controlada. Si existe evidencia financiera, preservar el registro y usar un flujo explícito de corrección, cancelación o reversión según el dominio.
+
+## 7. Defensa por capas
 
 La interfaz debe evitar ofrecer una acción que el sistema ya sabe que es inválida, pero la UI nunca sustituye la validación del servidor.
 
@@ -82,7 +132,7 @@ Ejemplos:
 - aun si una petición se fuerza manualmente, el servicio rechaza el duplicado;
 - una acción sobre un recurso vencido se bloquea en servidor aunque la pantalla esté desactualizada.
 
-## 6. Roles de solo lectura
+## 8. Roles de solo lectura
 
 Una operación de consulta realizada por un rol read-only debe permanecer read-only también en sus efectos secundarios.
 
@@ -90,7 +140,7 @@ Un rol de consulta puede recibir un estado derivado correctamente sin ejecutar r
 
 Si una reconciliación debe escribirse, debe ejecutarla un actor o proceso con permiso explícito de mutación.
 
-## 7. Pruebas mínimas obligatorias
+## 9. Pruebas mínimas obligatorias
 
 Toda regla temporal debe comprobar como mínimo:
 
@@ -100,6 +150,15 @@ Toda regla temporal debe comprobar como mínimo:
 4. día posterior al final;
 5. comportamiento en la zona horaria operativa.
 
+Todo cambio con vigencia futura debe comprobar además:
+
+1. el valor programado no sustituye al actual antes de tiempo;
+2. el día efectivo se promueve correctamente;
+3. un pago anticipado pertenece al periodo futuro correcto;
+4. "no iniciado" no se representa como deuda vigente;
+5. cambiar periodo/ciclo reconcilia únicamente obligaciones sin historial;
+6. una obligación con historial financiero bloquea la reescritura destructiva.
+
 Toda obligación que bloquee duplicados debe comprobar:
 
 1. primera operación válida;
@@ -108,7 +167,7 @@ Toda obligación que bloquee duplicados debe comprobar:
 4. comportamiento tras invalidación/cancelación si el dominio lo permite;
 5. consistencia entre las vistas que representan ese estado.
 
-## 8. Qué debe adaptarse en cada proyecto
+## 10. Qué debe adaptarse en cada proyecto
 
 Hache-Base aporta el patrón y la utilidad temporal. Cada proyecto define:
 
@@ -116,8 +175,10 @@ Hache-Base aporta el patrón y la utilidad temporal. Cada proyecto define:
 - entidad/rango de fechas;
 - zona horaria;
 - criterio exacto de obligación o recurso;
-- mecanismo de reconciliación persistida si realmente lo necesita;
+- campos o estructura usados para programar vigencia futura;
+- mecanismo de promoción/reconciliación persistida si realmente lo necesita;
 - permisos para ejecutar esa reconciliación;
+- criterios que convierten una obligación en historial financiero protegido;
 - pruebas específicas del negocio.
 
 No existe una migración universal asociada a este patrón.
