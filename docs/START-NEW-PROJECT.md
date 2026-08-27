@@ -27,7 +27,8 @@ Ejemplos:
 
 - cadena de restaurantes: arquitectura + multisede + roles + seguridad + auditoría + SEO técnico/local + despliegue; el dominio de órdenes/mesas/inventario se construye aparte;
 - SPA híbrido: clientes + servicios + horarios/citas + pagos + seguridad + auditoría + estados temporales si existen promociones/membresías + SEO para la superficie pública;
-- academia: núcleo recurrente + estados temporales para cursos/periodos + asistencia/ausencias/reposiciones cuando las reglas reales lo requieran + SEO si tiene web pública.
+- academia: núcleo recurrente + estados temporales para cursos/periodos + asistencia/ausencias/reposiciones cuando las reglas reales lo requieran + SEO si tiene web pública;
+- tienda: seguridad + pagos/webhooks + reservas/idempotencia + correo transaccional + auditoría + despliegue + SEO para la superficie pública.
 
 ## 4. Extrae, no clones a ciegas
 
@@ -38,6 +39,10 @@ Copia/adapta solo los módulos seleccionados. Sustituye nombres, roles, reglas, 
 Usa `database/modules/` como referencia, convierte la selección real en migraciones pequeñas del proyecto y prueba en staging/clon.
 
 Si decides persistir un estado que puede derivarse del tiempo, documenta cuál es la fuente de verdad y cómo se reconciliará sin depender de actualizaciones manuales.
+
+Si existen pagos externos, definir desde el esquema una referencia local única, el identificador único del proveedor, estados permitidos, evidencia de incidencias y la identidad exacta del recurso que el pago satisface.
+
+Si existen inventario/cupos reservables, definir el TTL, expiración y operación idempotente de liberación antes de construir checkout.
 
 ## 6. Configura seguridad
 
@@ -55,7 +60,21 @@ Las consultas read-only deben permanecer libres de escrituras colaterales. Una r
 
 Consultar `docs/ESTADOS-TEMPORALES-E-INTEGRIDAD.md`.
 
-## 8. Configura SEO si aplica
+## 8. Configura integraciones externas
+
+Antes de conectar un proveedor:
+
+- definir el adaptador y las variables de entorno;
+- verificar conectividad/egress desde el entorno real;
+- establecer timeouts, logs privados y política de reintentos;
+- mantener secretos fuera del repositorio;
+- definir cómo se desactiva la integración sin romper el núcleo.
+
+Para correo transaccional, consultar `integrations/email/README.md`; verificar el dominio remitente y realizar al menos una entrega real desde staging/producción.
+
+Para pagos, consultar `integrations/payments/README.md`; autenticar webhooks, consultar el recurso autoritativo al proveedor, validar importe/moneda y probar repetición/idempotencia.
+
+## 9. Configura SEO si aplica
 
 Para `public` o `hybrid`:
 
@@ -65,13 +84,15 @@ Para `public` o `hybrid`:
 - usar `seo/tests/seo-smoke.sh` contra staging/producción;
 - dejar para revisión humana intención, contenido, canonicals/redirects ambiguos, SEO local, reputación y decisiones YMYL.
 
-## 9. Activa pruebas
+## 10. Activa pruebas
 
 Conserva `tests/run.sh` como base y añade casos del nuevo negocio: positivos, negativos, roles, sedes y mutaciones críticas. Si existe superficie pública, añade las comprobaciones SEO aplicables.
 
 Para reglas por fecha, probar obligatoriamente antes de inicio, día de inicio, día final, día posterior y zona horaria. Para obligaciones, probar el recurso exacto y el rechazo de duplicados en servidor.
 
-## 10. Prepara operación
+Para callbacks/webhooks, probar eventos repetidos y fuera de orden. Para reservas, probar concurrencia por la última unidad/cupo y liberación por expiración.
+
+## 11. Prepara operación
 
 Antes de producción deben existir:
 
@@ -82,6 +103,7 @@ Antes de producción deben existir:
 - health check;
 - CI;
 - despliegue identificado por commit;
+- conectividad de integraciones críticas verificada desde el host real;
 - para `public`/`hybrid`, `MUST` SEO aplicables en PASS o excepción formal.
 
 ## Forma corta de pedirlo
