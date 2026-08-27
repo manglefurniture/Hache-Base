@@ -22,7 +22,6 @@ final class WebhookHmac
 
     public static function verifySha256(string $secret, string $manifest, string $providedHex): bool
     {
-        $secret = trim($secret);
         $providedHex = strtolower(trim($providedHex));
 
         if ($secret === '' || !preg_match('/^[a-f0-9]{64}$/', $providedHex)) {
