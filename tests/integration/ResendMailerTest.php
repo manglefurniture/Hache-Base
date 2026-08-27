@@ -23,6 +23,22 @@ try {
 }
 assert($thrown === true);
 
+$thrown = false;
+try {
+    new ResendMailer('test-key', 'sender@example.com', '', 'http://api.resend.com/emails');
+} catch (InvalidArgumentException) {
+    $thrown = true;
+}
+assert($thrown === true);
+
+$thrown = false;
+try {
+    new ResendMailer('test-key', 'sender@example.com', '', 'not-a-url');
+} catch (InvalidArgumentException) {
+    $thrown = true;
+}
+assert($thrown === true);
+
 $mailer = new ResendMailer('test-key', 'sender@example.com', 'Example App');
 $thrown = false;
 try {
