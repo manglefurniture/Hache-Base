@@ -30,6 +30,8 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Definir política inicial de retención.
 - [ ] Si se persisten estados derivados del tiempo, documentar cómo se reconcilian y cuál es la fuente de verdad.
 - [ ] Para pagos/obligaciones, definir la identidad exacta del recurso que evita duplicados.
+- [ ] Para pagos externos, definir referencia local, ID único del proveedor, importe/moneda esperados y estados finales.
+- [ ] Si existe inventario/cupo reservable, definir TTL y liberación idempotente antes de checkout.
 - [ ] Identificar datos que puedan formar parte de cierres, facturas, cortes o snapshots y definir cómo se preservará su evidencia histórica después de invalidaciones/correcciones.
 
 ## Privacidad
@@ -48,6 +50,17 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Definir protección y autenticación de APIs.
 - [ ] Separar secretos del código mediante variables de entorno.
 - [ ] Definir rate limiting para rutas expuestas cuando corresponda.
+- [ ] Para webhooks, definir mecanismo de firma/autenticación y secreto independiente.
+
+## Integraciones externas
+
+- [ ] Identificar proveedor, dirección del flujo de datos y datos compartidos.
+- [ ] Verificar puertos/protocolo de salida desde staging/producción; no asumir SMTP u otro egress.
+- [ ] Definir timeouts, reintentos y comportamiento degradado.
+- [ ] Definir rotación y alcance mínimo de API keys/tokens.
+- [ ] Si hay correo transaccional, verificar el dominio/subdominio remitente y autenticación DNS requerida.
+- [ ] Si hay pagos, definir consulta autoritativa al proveedor después del webhook.
+- [ ] Documentar cómo desactivar la integración sin romper el producto principal.
 
 ## Calidad
 
@@ -60,6 +73,9 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Probar que vistas distintas muestran el mismo estado para el mismo recurso.
 - [ ] Probar que la UI preventiva no sustituye el rechazo del servidor en acciones inválidas/duplicadas.
 - [ ] En acciones asíncronas sensibles, probar que una respuesta antigua no puede modificar una operación o modal posterior.
+- [ ] Para webhooks/jobs repetibles, probar idempotencia y eventos fuera de orden.
+- [ ] Para pagos, probar mismatch de importe/moneda y que un fallo de notificación no revierta el estado financiero.
+- [ ] Para reservas, probar expiración y carrera concurrente por la última unidad/cupo.
 
 ## Infraestructura
 
@@ -69,6 +85,7 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Documentar rollback.
 - [ ] Definir monitoreo mínimo.
 - [ ] Identificar integraciones externas y mantenerlas desacopladas.
+- [ ] Documentar dónde se cargan secretos en producción (`.env`, PHP-FPM/systemd o gestor equivalente).
 
 ## Antes del primer despliegue
 
@@ -81,6 +98,9 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Existe procedimiento de rollback.
 - [ ] Pasan las pruebas críticas.
 - [ ] Pasa el health check.
+- [ ] Las integraciones críticas tienen conectividad confirmada desde el host real.
+- [ ] Si hay correo, existe una prueba real de aceptación/entrega con el dominio remitente configurado.
+- [ ] Si hay pagos, la firma del webhook y la idempotencia fueron comprobadas fuera de producción.
 
 ## Antes de mergear cambios relevantes
 

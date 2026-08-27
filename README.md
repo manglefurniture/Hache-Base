@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, correo transaccional HTTPS, patrones de pagos/webhooks, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -14,7 +14,7 @@ El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto
 
 Hache-Base reúne patrones, documentación, plantillas y componentes genéricos para iniciar sistemas con una arquitectura más segura, comprobable y mantenible.
 
-Nace de las lecciones de la auditoría integral de Hache Natación, pero **no es una copia de Hache Natación**. Todo componente debe ser independiente del negocio y configurable.
+Nace de las lecciones de la auditoría integral de Hache Natación y de soluciones reutilizables validadas en proyectos posteriores, pero **no es una copia de ningún proyecto**. Todo componente debe ser independiente del negocio y configurable.
 
 ## Empezar
 
@@ -32,10 +32,10 @@ Nace de las lecciones de la auditoría integral de Hache Natación, pero **no es
 3. Multisede solo cuando el negocio lo requiera, con aislamiento real.
 4. Migraciones pequeñas, cronológicas y comprobables.
 5. Pruebas desde los primeros flujos funcionales.
-6. Configuración, secretos y zona horaria operativa separados de supuestos del servidor.
+6. Configuración, secretos, egress y zona horaria operativa separados de supuestos del servidor.
 7. Estados temporales derivados desde datos fuente y consistentes entre vistas.
 8. Backups y rollback antes de producción.
-9. Integraciones externas desacopladas del núcleo.
+9. Integraciones externas desacopladas del núcleo, autenticadas e idempotentes cuando puedan repetirse.
 10. Cambios pequeños y trazables.
 11. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
 
@@ -46,8 +46,8 @@ Nace de las lecciones de la auditoría integral de Hache Natación, pero **no es
 - `database/` — migraciones, integridad y modelos opcionales.
 - `security/` — patrones reutilizables de seguridad.
 - `src/` — módulos PHP genéricos, como auditoría y utilidades.
-- `integrations/` — integraciones desacopladas, como n8n.
-- `tests/` — sintaxis, pruebas básicas, fronteras temporales, smoke e integración.
+- `integrations/` — correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
+- `tests/` — sintaxis, pruebas básicas, fronteras temporales, integración y smoke.
 - `deployment/` — preflight, backup, despliegue, health y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
