@@ -20,4 +20,9 @@ assert(WebhookHmac::verifySha256($secret, $manifest . 'tampered', $signature) ==
 assert(WebhookHmac::verifySha256('', $manifest, $signature) === false);
 assert(WebhookHmac::verifySha256($secret, $manifest, 'not-a-signature') === false);
 
+$secretWithWhitespace = " test-secret\t";
+$whitespaceSignature = hash_hmac('sha256', $manifest, $secretWithWhitespace);
+assert(WebhookHmac::verifySha256($secretWithWhitespace, $manifest, $whitespaceSignature) === true);
+assert(WebhookHmac::verifySha256(trim($secretWithWhitespace), $manifest, $whitespaceSignature) === false);
+
 echo "WebhookHmacTest OK\n";
