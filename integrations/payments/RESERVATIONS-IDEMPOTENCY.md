@@ -38,9 +38,19 @@ WHERE id = :id
   AND notification_claimed_at IS NULL;
 ```
 
-Solo quien obtiene una fila afectada ejecuta el efecto. Si el efecto falla, el proyecto puede liberar el claim o persistir `failed_at`/contador para reintentar con una política explícita.
+Solo quien obtiene una fila afectada ejecuta el efecto. El claim evita que dos workers disparen el mismo efecto al mismo tiempo, pero **no basta por sí solo para garantizar idempotencia frente a fallos ambiguos de red**.
 
-En flujos críticos o de alto volumen, preferir una tabla outbox con clave única por `(event_type, aggregate_id)` y un worker independiente.
+Antes de llamar a un proveedor externo, el proyecto debe generar y persistir una clave de idempotencia estable para ese efecto, por ejemplo a partir de `(event_type, aggregate_id)` o del identificador único de una fila outbox. Si el proveedor soporta idempotency keys, la misma clave debe reutilizarse en todos los reintentos de la misma operación lógica.
+
+Si una llamada externa termina con timeout, desconexión o respuesta indeterminada, no se debe liberar el claim y repetir con una operación nueva de forma ciega: el proveedor pudo haber aceptado el correo, factura o aviso antes de perderse la respuesta. En ese caso se debe:
+
+1. conservar el mismo identificador/idempotency key;
+2. consultar o reconciliar el estado con el proveedor cuando exista una API para ello;
+3. reintentar únicamente con la misma clave idempotente, o marcar el efecto para revisión si el proveedor no ofrece una forma segura de determinar el resultado.
+
+El claim puede liberarse sin riesgo cuando el fallo ocurrió de forma inequívoca **antes** de intentar el efecto externo, o cuando el proveedor confirma que la operación no fue aceptada. No se recomienda liberar el claim automáticamente después de un fallo ambiguo.
+
+Para flujos críticos o de alto volumen, preferir una tabla outbox con clave única por `(event_type, aggregate_id)`, identificador estable del efecto, estado de entrega y un worker independiente. La outbox debe conservar el mismo identificador lógico durante todos los reintentos.
 
 ## Idempotencia del pago
 
@@ -52,6 +62,7 @@ La tabla de pagos debe imponer unicidad sobre el identificador del proveedor. Un
 - una reserva activa se consume o se libera, no ambas dos veces;
 - un pago externo único corresponde a un único recurso local;
 - estados finales no retroceden por eventos tardíos sin una transición explícita;
+- un efecto externo conserva la misma clave idempotente durante todos sus reintentos;
 - notificaciones repetidas no alteran el estado financiero central.
 
 ## Concurrencia

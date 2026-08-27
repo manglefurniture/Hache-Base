@@ -32,6 +32,12 @@ final class ResendMailer implements TransactionalMailer
         if ($this->endpoint === '') {
             throw new InvalidArgumentException('El endpoint de correo no puede estar vacío.');
         }
+
+        $scheme = strtolower((string) parse_url($this->endpoint, PHP_URL_SCHEME));
+        $host = (string) parse_url($this->endpoint, PHP_URL_HOST);
+        if (filter_var($this->endpoint, FILTER_VALIDATE_URL) === false || $scheme !== 'https' || $host === '') {
+            throw new InvalidArgumentException('El endpoint de correo debe ser una URL HTTPS válida.');
+        }
     }
 
     public function sendText(string $to, string $subject, string $text): string
@@ -64,6 +70,8 @@ final class ResendMailer implements TransactionalMailer
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_HTTPHEADER => [
                 'Authorization: Bearer ' . $this->apiKey,
                 'Content-Type: application/json',
