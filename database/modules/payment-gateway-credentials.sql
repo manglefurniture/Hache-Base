@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS payment_gateway_credentials (
     UNIQUE KEY uq_payment_gateway_credentials_provider_ref (provider, credential_ref)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Cada fila representa una versión histórica inmutable. provider y credential_ref forman
+-- parte del AAD, y cualquier otro cambio de secretos/metadatos también debe crear una
+-- versión nueva en vez de mutar una existente. Este guard protege versiones actuales
+-- y antiguas, aunque ya no estén apuntadas por payment_gateway_config.
+CREATE TRIGGER IF NOT EXISTS trg_payment_gateway_credentials_immutable
+BEFORE UPDATE ON payment_gateway_credentials
+FOR EACH ROW
+SIGNAL SQLSTATE '45000'
+    SET MESSAGE_TEXT = 'Las versiones históricas de credenciales de pago son inmutables';
+
 CREATE TABLE IF NOT EXISTS payment_gateway_config (
     provider VARCHAR(40) NOT NULL,
     configured TINYINT(1) NOT NULL DEFAULT 0,
