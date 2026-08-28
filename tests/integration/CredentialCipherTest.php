@@ -25,7 +25,22 @@ assert($wrongKeyRejected === true);
 
 $envelope = json_decode((string) base64_decode($encrypted, true), true, 512, JSON_THROW_ON_ERROR);
 assert(is_array($envelope));
-assert(isset($envelope['data']));
+assert(isset($envelope['data'], $envelope['tag']));
+
+$tag = base64_decode((string) $envelope['tag'], true);
+assert(is_string($tag) && strlen($tag) === 16);
+$truncatedEnvelope = $envelope;
+$truncatedEnvelope['tag'] = base64_encode(substr($tag, 0, 1));
+$truncatedTagPayload = base64_encode(json_encode($truncatedEnvelope, JSON_THROW_ON_ERROR));
+
+$truncatedTagRejected = false;
+try {
+    $cipher->decrypt($truncatedTagPayload);
+} catch (RuntimeException) {
+    $truncatedTagRejected = true;
+}
+assert($truncatedTagRejected === true);
+
 $data = base64_decode((string) $envelope['data'], true);
 assert(is_string($data) && $data !== '');
 $data[0] = chr(ord($data[0]) ^ 1);
