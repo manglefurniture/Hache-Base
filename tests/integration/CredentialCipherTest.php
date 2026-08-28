@@ -120,14 +120,12 @@ assert(str_contains($sql, 'webhook_secret_enc TEXT NULL'));
 assert(str_contains($sql, 'current_credential_id BIGINT UNSIGNED NULL'));
 assert(str_contains($sql, 'UNIQUE KEY uq_payment_gateway_credentials_provider_id (provider, id)'));
 assert(str_contains($sql, 'UNIQUE KEY uq_payment_gateway_credentials_provider_ref (provider, credential_ref)'));
+assert(str_contains($sql, 'CREATE TRIGGER IF NOT EXISTS trg_payment_gateway_credentials_immutable'));
+assert(str_contains($sql, 'BEFORE UPDATE ON payment_gateway_credentials'));
+assert(str_contains($sql, "SIGNAL SQLSTATE '45000'"));
 assert(str_contains($sql, 'FOREIGN KEY (provider, current_credential_id)'));
 assert(str_contains($sql, 'REFERENCES payment_gateway_credentials(provider, id)'));
-assert(str_contains(
-    $sql,
-    "REFERENCES payment_gateway_credentials(provider, id)\n      -- provider forma parte del AAD"
-));
 assert(str_contains($sql, 'ON UPDATE RESTRICT ON DELETE RESTRICT'));
-assert(str_contains($sql, 'crear y recifrar una versión nueva'));
 assert(str_contains($sql, 'payment_credential_id'));
 
 $doc = file_get_contents(__DIR__ . '/../../integrations/payments/CREDENTIAL-VERSIONING.md');
@@ -138,5 +136,6 @@ assert(str_contains($doc, 'Retorno por versión'));
 assert(str_contains($doc, 'Webhook histórico'));
 assert(str_contains($doc, 'AAD contextual obligatorio'));
 assert(str_contains($doc, 'credential_ref'));
+assert(str_contains($doc, 'guard de base de datos'));
 
 echo "CredentialCipherTest OK\n";
