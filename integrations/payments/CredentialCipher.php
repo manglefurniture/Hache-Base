@@ -17,6 +17,7 @@ use Throwable;
 final class CredentialCipher
 {
     private const CIPHER = 'aes-256-gcm';
+    private const GCM_TAG_LENGTH = 16;
 
     public function __construct(private readonly string $masterSecret)
     {
@@ -43,11 +44,13 @@ final class CredentialCipher
             $this->key(),
             OPENSSL_RAW_DATA,
             $iv,
-            $tag
+            $tag,
+            '',
+            self::GCM_TAG_LENGTH
         );
 
-        if ($cipherText === false) {
-            throw new RuntimeException('No se pudo cifrar la credencial.');
+        if ($cipherText === false || strlen($tag) !== self::GCM_TAG_LENGTH) {
+            throw new RuntimeException('No se pudo cifrar la credencial con un tag GCM completo.');
         }
 
         return base64_encode(json_encode([
@@ -80,6 +83,9 @@ final class CredentialCipher
             $data = base64_decode((string) ($decoded['data'] ?? ''), true);
             if ($iv === false || $tag === false || $data === false) {
                 throw new RuntimeException('Credencial cifrada dañada.');
+            }
+            if (strlen($tag) !== self::GCM_TAG_LENGTH) {
+                throw new RuntimeException('El tag de autenticación GCM debe tener exactamente 16 bytes.');
             }
 
             $plainText = openssl_decrypt(
