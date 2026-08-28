@@ -13,11 +13,15 @@ use Throwable;
  *
  * La clave maestra debe vivir fuera de la base de datos y permanecer estable
  * durante toda la vida de las versiones cifradas.
+ *
+ * Cada sobre queda autenticado también contra su contexto inmutable:
+ * proveedor + referencia de versión + propósito del campo.
  */
 final class CredentialCipher
 {
     private const CIPHER = 'aes-256-gcm';
     private const GCM_TAG_LENGTH = 16;
+    private const ENVELOPE_VERSION = 2;
 
     public function __construct(private readonly string $masterSecret)
     {
@@ -29,8 +33,13 @@ final class CredentialCipher
         }
     }
 
-    public function encrypt(string $plainText): string
-    {
+    public function encrypt(
+        string $plainText,
+        string $provider,
+        string $credentialRef,
+        string $purpose
+    ): string {
+        $aad = $this->aad($provider, $credentialRef, $purpose);
         $ivLength = openssl_cipher_iv_length(self::CIPHER);
         if (!is_int($ivLength) || $ivLength <= 0) {
             throw new RuntimeException('No se pudo inicializar AES-256-GCM.');
@@ -45,7 +54,7 @@ final class CredentialCipher
             OPENSSL_RAW_DATA,
             $iv,
             $tag,
-            '',
+            $aad,
             self::GCM_TAG_LENGTH
         );
 
@@ -54,15 +63,21 @@ final class CredentialCipher
         }
 
         return base64_encode(json_encode([
-            'v' => 1,
+            'v' => self::ENVELOPE_VERSION,
             'iv' => base64_encode($iv),
             'tag' => base64_encode($tag),
             'data' => base64_encode($cipherText),
         ], JSON_THROW_ON_ERROR));
     }
 
-    public function decrypt(string $payload): string
-    {
+    public function decrypt(
+        string $payload,
+        string $provider,
+        string $credentialRef,
+        string $purpose
+    ): string {
+        $aad = $this->aad($provider, $credentialRef, $purpose);
+
         try {
             if (trim($payload) === '') {
                 throw new RuntimeException('Sobre cifrado vacío.');
@@ -74,7 +89,7 @@ final class CredentialCipher
             }
 
             $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-            if (!is_array($decoded) || (int) ($decoded['v'] ?? 0) !== 1) {
+            if (!is_array($decoded) || (int) ($decoded['v'] ?? 0) !== self::ENVELOPE_VERSION) {
                 throw new RuntimeException('Versión de sobre cifrado no soportada.');
             }
 
@@ -94,7 +109,8 @@ final class CredentialCipher
                 $this->key(),
                 OPENSSL_RAW_DATA,
                 $iv,
-                $tag
+                $tag,
+                $aad
             );
 
             if ($plainText === false) {
@@ -105,6 +121,26 @@ final class CredentialCipher
         } catch (Throwable $e) {
             throw new RuntimeException('No se pudo leer la credencial cifrada.', 0, $e);
         }
+    }
+
+    private function aad(string $provider, string $credentialRef, string $purpose): string
+    {
+        $provider = trim($provider);
+        $credentialRef = trim($credentialRef);
+        $purpose = trim($purpose);
+
+        if ($provider === '' || $credentialRef === '' || $purpose === '') {
+            throw new InvalidArgumentException(
+                'Proveedor, referencia inmutable y propósito son obligatorios para autenticar la credencial.'
+            );
+        }
+
+        return json_encode([
+            'schema' => 'hache-payment-credential-aad-v1',
+            'provider' => $provider,
+            'credential_ref' => $credentialRef,
+            'purpose' => $purpose,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 
     private function key(): string
