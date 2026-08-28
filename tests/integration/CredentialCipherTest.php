@@ -122,7 +122,12 @@ assert(str_contains($sql, 'UNIQUE KEY uq_payment_gateway_credentials_provider_id
 assert(str_contains($sql, 'UNIQUE KEY uq_payment_gateway_credentials_provider_ref (provider, credential_ref)'));
 assert(str_contains($sql, 'FOREIGN KEY (provider, current_credential_id)'));
 assert(str_contains($sql, 'REFERENCES payment_gateway_credentials(provider, id)'));
-assert(str_contains($sql, 'ON UPDATE CASCADE ON DELETE RESTRICT'));
+assert(str_contains(
+    $sql,
+    "REFERENCES payment_gateway_credentials(provider, id)\n      -- provider forma parte del AAD"
+));
+assert(str_contains($sql, 'ON UPDATE RESTRICT ON DELETE RESTRICT'));
+assert(str_contains($sql, 'crear y recifrar una versión nueva'));
 assert(str_contains($sql, 'payment_credential_id'));
 
 $doc = file_get_contents(__DIR__ . '/../../integrations/payments/CREDENTIAL-VERSIONING.md');
