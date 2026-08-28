@@ -21,9 +21,11 @@ La configuración actual solo apunta a una versión. Cada operación local conse
 7. **Versiones token-only solo para legado.** Si una instalación antigua tenía Access Token pero no Webhook Secret, preservar el token como versión histórica para retorno/consulta. Esa versión se excluye de candidatos de webhook y nunca puede quedar activa para nuevos checkouts.
 8. **Activación estricta.** Una versión activa para nuevos pagos debe tener al menos el conjunto de secretos exigido por el proveedor; para un proveedor con webhook firmado: Access Token + Webhook Secret.
 9. **Clave maestra fuera de BD.** Los secretos se cifran en reposo con una clave estable del servidor (`PAYMENT_GATEWAY_CONFIG_KEY` o equivalente). La clave no se guarda junto al ciphertext.
-10. **No rotar la clave maestra sin plan.** Cambiarla sin recifrar todas las versiones hace ilegibles las credenciales históricas.
-11. **Historial retenido.** Una versión referenciada por operaciones no se borra. Usar FK con `ON DELETE RESTRICT` o una protección equivalente.
-12. **Deshabilitar no borra historia.** Apagar la pasarela bloquea nuevos checkouts, pero no impide procesar webhooks, retornos, refunds o chargebacks de operaciones antiguas.
+10. **AAD contextual obligatorio.** Cada ciphertext se autentica con `provider + credential_ref + propósito del campo`. Un token cifrado para una versión o columna no debe poder copiarse a otra y seguir autenticando.
+11. **Referencia de versión inmutable.** `credential_ref` se genera antes de cifrar, se almacena junto a la versión y nunca se modifica. Debe ser única por proveedor.
+12. **No rotar la clave maestra sin plan.** Cambiarla sin recifrar todas las versiones hace ilegibles las credenciales históricas.
+13. **Historial retenido.** Una versión referenciada por operaciones no se borra. Usar FK con `ON DELETE RESTRICT` o una protección equivalente.
+14. **Deshabilitar no borra historia.** Apagar la pasarela bloquea nuevos checkouts, pero no impide procesar webhooks, retornos, refunds o chargebacks de operaciones antiguas.
 
 ## Modelo mínimo
 
@@ -31,7 +33,7 @@ Usar la plantilla `database/modules/payment-gateway-credentials.sql` como refere
 
 La estructura conceptual es:
 
-- `payment_gateway_credentials`: versiones inmutables cifradas;
+- `payment_gateway_credentials`: versiones inmutables cifradas, con `credential_ref` opaca e inmutable;
 - `payment_gateway_config`: estado actual y puntero a la versión vigente;
 - tabla de dominio (`orders`, `bookings`, `subscriptions`, etc.): FK `payment_credential_id` a la versión utilizada.
 
@@ -62,12 +64,16 @@ BEGIN
 
   si es la primera toma de control desde .env:
     si existe Access Token legacy:
+      generar credential_ref inmutable
+      cifrar el token legacy usando AAD de esa referencia y propósito
       crear versión histórica, incluso si no existe Webhook Secret
       ligar operaciones antiguas aún sin versión a esa credencial legacy
 
   calcular credenciales efectivas
   validar nueva cuenta/token contra el proveedor cuando exista endpoint de identidad
   exigir secretos necesarios si quedará activa
+  generar credential_ref inmutable para la nueva versión
+  cifrar cada secreto con AAD específico de su propósito
   insertar NUEVA versión
   actualizar puntero current_credential_id
 COMMIT
@@ -85,6 +91,7 @@ Reglas:
 - en la primera transición, preservar cualquier Access Token que haya podido crear recursos externos;
 - si también existe Webhook Secret, esa versión puede participar en resolución histórica de webhooks;
 - si no existe Webhook Secret, conservarla para consultas por retorno y excluirla de firma de webhook;
+- cada versión legacy preservada recibe su propia `credential_ref` antes de cifrarse;
 - después del takeover, la base de datos es autoritativa para la configuración de la pasarela;
 - retirar variables legacy solo después de verificar que ninguna ruta depende directamente de ellas.
 
@@ -95,30 +102,49 @@ Proceso recomendado:
 1. parsear firma y manifest exactamente como exige el proveedor;
 2. obtener las versiones históricas retenidas;
 3. omitir versiones sin Webhook Secret o sin token de consulta;
-4. calcular HMAC/firma con cada secreto;
-5. cuando una firma coincide, consultar el pago con el token de **esa misma versión**;
-6. si varias versiones comparten secreto y el primer token no puede leer el pago, continuar con las demás versiones que compartan firma válida;
-7. aplicar el pago local de forma idempotente y transaccional.
+4. descifrar cada campo con el AAD de su `provider`, `credential_ref` y propósito exacto;
+5. calcular HMAC/firma con cada secreto;
+6. cuando una firma coincide, consultar el pago con el token de **esa misma versión**;
+7. si varias versiones comparten secreto y el primer token no puede leer el pago, continuar con las demás versiones que compartan firma válida;
+8. aplicar el pago local de forma idempotente y transaccional.
 
 No limitar el webhook a la credencial actualmente activa.
 
 ## Retorno del comprador
 
-Si la operación tiene `payment_credential_id`, resolver esa versión exacta. Solo operaciones realmente legacy y aún no migradas pueden usar un fallback temporal.
+Si la operación tiene `payment_credential_id`, resolver esa versión exacta y descifrar su token con el AAD de esa misma versión. Solo operaciones realmente legacy y aún no migradas pueden usar un fallback temporal.
 
 Esto permite reconciliar un pago antiguo aunque la cuenta activa haya cambiado.
 
 ## Cifrado
 
-`CredentialCipher.php` ofrece el sobre reutilizable AES-256-GCM. El proyecto debe inyectarle una clave estable del entorno.
+`CredentialCipher.php` ofrece el sobre reutilizable AES-256-GCM. El proyecto debe inyectarle una clave estable del entorno y pasar contexto autenticado en cada operación.
+
+`credential_ref` debe generarse **antes** de cifrar (UUID, ULID u otro identificador opaco estable) y almacenarse sin cambios en la fila de la versión. El propósito debe ser el nombre semántico estable del secreto, por ejemplo `access_token` o `webhook_secret`.
 
 Ejemplo conceptual:
 
 ```php
 $cipher = new CredentialCipher((string) env('PAYMENT_GATEWAY_CONFIG_KEY'));
-$encryptedToken = $cipher->encrypt($accessToken);
-$accessToken = $cipher->decrypt($encryptedToken);
+$provider = 'PROVIDER_NAME';
+$credentialRef = $generatedImmutableRef;
+
+$encryptedToken = $cipher->encrypt(
+    $accessToken,
+    $provider,
+    $credentialRef,
+    'access_token'
+);
+
+$accessToken = $cipher->decrypt(
+    $encryptedToken,
+    $provider,
+    $credentialRef,
+    'access_token'
+);
 ```
+
+El AAD no se toma del propio ciphertext: se reconstruye desde metadatos inmutables de la versión. Si cambia proveedor, referencia o propósito, la autenticación GCM debe fallar.
 
 Nunca renderizar de vuelta Access Tokens ni Webhook Secrets en inputs del panel. Un campo vacío al editar debe significar “conservar el secreto actual”, no “mostrarlo para editar”.
 
@@ -127,7 +153,12 @@ Nunca renderizar de vuelta Access Tokens ni Webhook Secrets en inputs del panel.
 Además de las pruebas generales de pagos:
 
 - cifrado round-trip y rechazo de ciphertext alterado;
+- rechazo de tag GCM truncado;
+- rechazo de payload cifrado vacío;
 - cambio de clave debe impedir descifrado;
+- copiar un ciphertext a otra `credential_ref` debe fallar;
+- copiar un ciphertext a otro propósito (`access_token` → `webhook_secret`) debe fallar;
+- usar otro proveedor con el mismo ciphertext debe fallar;
 - rotación crea una versión nueva sin alterar la anterior;
 - checkout queda vinculado a la versión leída bajo lock;
 - cambio concurrente de configuración no deja una operación sin versión;
@@ -141,16 +172,17 @@ Además de las pruebas generales de pagos:
 
 ## Checklist de despliegue
 
-1. Añadir la tabla de versiones y el puntero de configuración.
+1. Añadir la tabla de versiones, `credential_ref` y el puntero de configuración.
 2. Añadir FK de versión a la tabla de dominio.
 3. Definir una `PAYMENT_GATEWAY_CONFIG_KEY` aleatoria y estable en el servidor.
-4. Verificar el checkout legacy antes del primer takeover.
-5. Ejecutar la primera transición preservando credenciales legacy.
-6. Configurar credenciales nuevas desde el mecanismo administrativo.
-7. Probar checkout en sandbox/test.
-8. Probar webhook firmado real o sandbox.
-9. Probar retorno con una operación ligada a una versión histórica.
-10. No eliminar credenciales antiguas mientras existan operaciones que puedan generar eventos financieros posteriores.
+4. Implementar generación inmutable de `credential_ref` antes del cifrado.
+5. Verificar el checkout legacy antes del primer takeover.
+6. Ejecutar la primera transición preservando credenciales legacy.
+7. Configurar credenciales nuevas desde el mecanismo administrativo.
+8. Probar checkout en sandbox/test.
+9. Probar webhook firmado real o sandbox.
+10. Probar retorno con una operación ligada a una versión histórica.
+11. No eliminar credenciales antiguas mientras existan operaciones que puedan generar eventos financieros posteriores.
 
 ## Qué NO generalizar
 
