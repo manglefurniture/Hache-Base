@@ -1,5 +1,12 @@
 <?php
+
 declare(strict_types=1);
+
+namespace HacheBase\Integrations\Payments;
+
+use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
 
 /**
  * Cifrado reutilizable para secretos de pasarelas de pago.
