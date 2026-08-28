@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS payment_gateway_credentials (
     created_by VARCHAR(120) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    KEY idx_payment_gateway_credentials_provider (provider, id)
+    UNIQUE KEY uq_payment_gateway_credentials_provider_id (provider, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS payment_gateway_config (
@@ -27,8 +27,10 @@ CREATE TABLE IF NOT EXISTS payment_gateway_config (
     updated_by VARCHAR(120) NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (provider),
+    KEY idx_payment_gateway_config_current (provider, current_credential_id),
     CONSTRAINT fk_payment_gateway_config_credential
-      FOREIGN KEY (current_credential_id) REFERENCES payment_gateway_credentials(id)
+      FOREIGN KEY (provider, current_credential_id)
+      REFERENCES payment_gateway_credentials(provider, id)
       ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
