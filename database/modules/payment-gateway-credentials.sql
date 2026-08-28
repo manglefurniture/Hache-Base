@@ -5,6 +5,9 @@
 CREATE TABLE IF NOT EXISTS payment_gateway_credentials (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     provider VARCHAR(40) NOT NULL,
+    -- Identidad opaca e inmutable generada por la aplicación ANTES de cifrar.
+    -- Se usa como parte del AAD para que un ciphertext no pueda moverse entre versiones.
+    credential_ref VARCHAR(64) NOT NULL,
     environment VARCHAR(30) NOT NULL DEFAULT 'PRODUCTION',
     public_key VARCHAR(255) NULL,
     access_token_enc TEXT NOT NULL,
@@ -16,7 +19,8 @@ CREATE TABLE IF NOT EXISTS payment_gateway_credentials (
     created_by VARCHAR(120) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_payment_gateway_credentials_provider_id (provider, id)
+    UNIQUE KEY uq_payment_gateway_credentials_provider_id (provider, id),
+    UNIQUE KEY uq_payment_gateway_credentials_provider_ref (provider, credential_ref)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS payment_gateway_config (
@@ -46,3 +50,6 @@ CREATE TABLE IF NOT EXISTS payment_gateway_config (
 --
 -- La aplicación debe ligar la operación local a payment_credential_id antes de crear
 -- el recurso externo y debe serializar checkout/rotación mediante locks de configuración.
+--
+-- Al cifrar/descifrar cada secreto, construir AAD con los valores inmutables:
+-- provider + credential_ref + propósito del campo (p. ej. access_token o webhook_secret).
