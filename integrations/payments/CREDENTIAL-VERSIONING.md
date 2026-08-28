@@ -12,7 +12,7 @@ La configuración actual solo apunta a una versión. Cada operación local conse
 
 ## Invariantes obligatorias
 
-1. **Versiones inmutables.** Cambiar token, secreto, ambiente, public key o cuenta crea una fila nueva. No actualizar secretos históricos en sitio.
+1. **Versiones inmutables.** Cambiar token, secreto, ambiente, public key, cuenta, proveedor o referencia crea una fila nueva. No actualizar versiones históricas en sitio. La plantilla incluye un guard de base de datos que rechaza cualquier `UPDATE` sobre una versión de credenciales, incluso cuando ya no sea la versión actual.
 2. **Vínculo operación → credencial.** El pedido, obligación o recurso local guarda `payment_credential_id` antes de crear el recurso externo.
 3. **Rotación serializada.** Checkout toma lock compartido sobre la configuración mientras liga la operación a una versión; el cambio administrativo toma lock exclusivo (`FOR UPDATE` o equivalente).
 4. **Retorno por versión.** La ruta de retorno/refresh consulta al proveedor con la credencial vinculada a esa operación, no con la credencial actual.
@@ -144,7 +144,7 @@ $accessToken = $cipher->decrypt(
 );
 ```
 
-El AAD no se toma del propio ciphertext: se reconstruye desde metadatos inmutables de la versión. Si cambia proveedor, referencia o propósito, la autenticación GCM debe fallar.
+El AAD no se toma del propio ciphertext: se reconstruye desde metadatos inmutables de la versión. Si cambia proveedor, referencia o propósito, la autenticación GCM debe fallar. Por eso una versión persistida no se edita: cualquier cambio se modela creando otra versión y recifrando con su nuevo contexto.
 
 Nunca renderizar de vuelta Access Tokens ni Webhook Secrets en inputs del panel. Un campo vacío al editar debe significar “conservar el secreto actual”, no “mostrarlo para editar”.
 
@@ -159,6 +159,7 @@ Además de las pruebas generales de pagos:
 - copiar un ciphertext a otra `credential_ref` debe fallar;
 - copiar un ciphertext a otro propósito (`access_token` → `webhook_secret`) debe fallar;
 - usar otro proveedor con el mismo ciphertext debe fallar;
+- MariaDB debe rechazar un `UPDATE` sobre cualquier versión histórica, aunque no sea la vigente;
 - rotación crea una versión nueva sin alterar la anterior;
 - checkout queda vinculado a la versión leída bajo lock;
 - cambio concurrente de configuración no deja una operación sin versión;
@@ -173,16 +174,17 @@ Además de las pruebas generales de pagos:
 ## Checklist de despliegue
 
 1. Añadir la tabla de versiones, `credential_ref` y el puntero de configuración.
-2. Añadir FK de versión a la tabla de dominio.
-3. Definir una `PAYMENT_GATEWAY_CONFIG_KEY` aleatoria y estable en el servidor.
-4. Implementar generación inmutable de `credential_ref` antes del cifrado.
-5. Verificar el checkout legacy antes del primer takeover.
-6. Ejecutar la primera transición preservando credenciales legacy.
-7. Configurar credenciales nuevas desde el mecanismo administrativo.
-8. Probar checkout en sandbox/test.
-9. Probar webhook firmado real o sandbox.
-10. Probar retorno con una operación ligada a una versión histórica.
-11. No eliminar credenciales antiguas mientras existan operaciones que puedan generar eventos financieros posteriores.
+2. Añadir el guard de base de datos que impide editar versiones históricas.
+3. Añadir FK de versión a la tabla de dominio.
+4. Definir una `PAYMENT_GATEWAY_CONFIG_KEY` aleatoria y estable en el servidor.
+5. Implementar generación inmutable de `credential_ref` antes del cifrado.
+6. Verificar el checkout legacy antes del primer takeover.
+7. Ejecutar la primera transición preservando credenciales legacy.
+8. Configurar credenciales nuevas desde el mecanismo administrativo.
+9. Probar checkout en sandbox/test.
+10. Probar webhook firmado real o sandbox.
+11. Probar retorno con una operación ligada a una versión histórica.
+12. No eliminar credenciales antiguas mientras existan operaciones que puedan generar eventos financieros posteriores.
 
 ## Qué NO generalizar
 
