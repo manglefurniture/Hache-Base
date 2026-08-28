@@ -18,7 +18,7 @@
 | Teléfonos E.164 | Listo | Normalización internacional y compatibilidad mexicana histórica +521 | CRM, WhatsApp, clientes internacionales | `src/common/PhoneNormalizer.php` |
 | Utilidades comunes | Listo | IDs, email, texto, dinero en centavos y estados temporales | Formularios y lógica común | `src/common/` |
 | Correo transaccional HTTPS | Listo como patrón | Desacopla notificaciones de SMTP/proveedor, documenta autenticación de dominio, secretos, errores e idempotencia | Alertas operativas, confirmaciones y sistemas desplegados en cloud/VPS | `integrations/email/README.md` |
-| Pagos externos y webhooks | Listo como patrón | Firma de webhooks, verificación autoritativa, monto/moneda, estados, reservas e idempotencia | E-commerce, cobros en línea, boletos, cupos o reservas pagadas | `integrations/payments/README.md` |
+| Pagos externos, webhooks y credenciales versionadas | Listo como patrón + plantilla | Firma de webhooks, verificación autoritativa, monto/moneda, reservas, idempotencia, cifrado y rotación de credenciales sin romper pagos históricos | E-commerce, cobros en línea, boletos, cupos, reservas pagadas o cualquier integración con credenciales rotables | `integrations/payments/README.md` + `integrations/payments/CREDENTIAL-VERSIONING.md` |
 | n8n | Listo como patrón | API privada, Bearer, Nginx/PHP-FPM y backup Docker/SQLite | Automatizaciones desacopladas | `integrations/n8n/README.md` |
 | SEO técnico 2026 | Listo como módulo | Baseline de producción, reglas CI, robots/sitemap/schema, smoke tests y guardrails humanos | Sitios públicos o híbridos con objetivo de rastreo/indexación | `seo/README.md` |
 | SEO local | Incluido en módulo SEO | Reglas para ubicaciones reales, NAP, GBP, LocalBusiness y páginas locales | Restaurantes, spas, clínicas, escuelas y otros negocios físicos | `seo/checklists/SEO-AUDIT-CHECKLIST.md` |
@@ -40,6 +40,7 @@ No hace falta mencionar archivos. Ejemplos:
 - "Este proyecto no necesita multisede; usa seguridad, pagos, auditoría, SEO y despliegue."
 - "Usa estados temporales para promociones y membresías y configura la zona horaria del negocio."
 - "Necesito correo transaccional por HTTPS y pagos con webhooks idempotentes."
+- "Necesito una pasarela donde podamos cambiar credenciales sin romper pagos, devoluciones o webhooks antiguos."
 - "Aplica también el proceso de review y cierre de PR de Hache-Base."
 - "Es una app privada: usa Hache-Base con SEO_MODE=private-app."
 
