@@ -8,7 +8,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `audit/`: pruebas del módulo de auditoría.
 - `common/`: utilidades reutilizables, incluyendo estados temporales y zona horaria.
 - `smoke/http-smoke.sh`: health/smoke HTTP configurable.
-- `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS y HMAC de webhooks.
+- `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS, HMAC de webhooks y cifrado/versionado de credenciales de pago.
 - `run.sh`: punto de entrada común.
 
 ## Ejecución
@@ -44,3 +44,5 @@ Cuando varias superficies muestran el mismo estado de negocio, incluir una regre
 Para obligaciones financieras o equivalentes, probar el recurso exacto: una operación válida sobre otro recurso no debe satisfacer ni bloquear accidentalmente la obligación actual.
 
 Para webhooks y jobs repetibles, probar la misma entrada más de una vez y eventos fuera de orden. Para efectos secundarios, demostrar que una notificación repetida no duplica ni revierte la mutación central.
+
+Cuando las credenciales de pago sean rotables, añadir regresiones de versión histórica: checkout ligado a una versión, retorno con esa versión, webhook posterior a una rotación y transición legacy con token aunque no exista secreto de webhook.

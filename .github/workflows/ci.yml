@@ -58,7 +58,25 @@ jobs:
         run: |
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/core.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/payment-gateway-credentials.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
+
+      - name: Historical credential immutability regression
+        env:
+          MYSQL_PWD: root
+        run: |
+          mariadb -h 127.0.0.1 -uroot hache_base_test -e \
+            "INSERT INTO payment_gateway_credentials (provider, credential_ref, access_token_enc) VALUES ('CI_PROVIDER', 'ci-historical-immutable', 'ciphertext-fixture');"
+
+          if mariadb -h 127.0.0.1 -uroot hache_base_test -e \
+            "UPDATE payment_gateway_credentials SET provider = 'CI_PROVIDER_RENAMED' WHERE credential_ref = 'ci-historical-immutable';"; then
+            echo 'ERROR: una versión histórica permitió cambiar provider'
+            exit 1
+          fi
+
+          provider="$(mariadb -N -B -h 127.0.0.1 -uroot hache_base_test -e \
+            "SELECT provider FROM payment_gateway_credentials WHERE credential_ref = 'ci-historical-immutable';")"
+          test "$provider" = 'CI_PROVIDER'
 
       - name: Schema idempotence check
         env:
@@ -66,4 +84,5 @@ jobs:
         run: |
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/core.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/payment-gateway-credentials.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql

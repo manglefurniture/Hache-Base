@@ -11,6 +11,14 @@ Cada proyecto debe añadir casos concretos para sus flujos críticos. La base ex
 - endpoints internos con y sin Bearer token;
 - integraciones externas sin mezclar secretos con fixtures.
 
+## Cobertura base de integraciones
+
+- `ResendMailerTest.php`: contrato offline del transporte HTTPS.
+- `WebhookHmacTest.php`: parsing y verificación HMAC-SHA256.
+- `CredentialCipherTest.php`: AES-256-GCM, manipulación/wrong-key y invariantes mínimas de la plantilla de credenciales versionadas.
+
+Estas pruebas no sustituyen las pruebas sandbox/staging específicas de cada proveedor.
+
 ## Regla de datos
 
 Las pruebas con escritura no deben ejecutarse sobre datos históricos reales. Usar una base de staging, clon o fixtures desechables y verificar recuentos/estado antes y después cuando el flujo pueda afectar información existente.

@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, correo transaccional HTTPS, patrones de pagos/webhooks, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -36,8 +36,9 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 7. Estados temporales derivados desde datos fuente y consistentes entre vistas.
 8. Backups y rollback antes de producción.
 9. Integraciones externas desacopladas del núcleo, autenticadas e idempotentes cuando puedan repetirse.
-10. Cambios pequeños y trazables.
-11. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
+10. Credenciales externas rotables mediante versiones inmutables cuando existan operaciones históricas que deban seguir conciliándose.
+11. Cambios pequeños y trazables.
+12. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
 
 ## Estructura
 
