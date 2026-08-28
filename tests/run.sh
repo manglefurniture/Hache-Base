@@ -10,6 +10,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/CommonTest.ph
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/DateRangeStateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/ResendMailerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/WebhookHmacTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/CredentialCipherTest.php"
 
 if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
   bash "$ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"
