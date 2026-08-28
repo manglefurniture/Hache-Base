@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS payment_gateway_config (
     CONSTRAINT fk_payment_gateway_config_credential
       FOREIGN KEY (provider, current_credential_id)
       REFERENCES payment_gateway_credentials(provider, id)
-      ON UPDATE CASCADE ON DELETE RESTRICT
+      -- provider forma parte del AAD y por tanto es inmutable para una versión existente.
+      -- Si debe cambiarse, crear y recifrar una versión nueva en lugar de renombrar en sitio.
+      ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Ejemplo conceptual para la tabla de dominio. NO ejecutar literalmente si el proyecto
