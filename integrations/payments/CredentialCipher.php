@@ -63,11 +63,11 @@ final class CredentialCipher
 
     public function decrypt(string $payload): string
     {
-        if (trim($payload) === '') {
-            return '';
-        }
-
         try {
+            if (trim($payload) === '') {
+                throw new RuntimeException('Sobre cifrado vacío.');
+            }
+
             $json = base64_decode($payload, true);
             if ($json === false) {
                 throw new RuntimeException('Sobre cifrado inválido.');
