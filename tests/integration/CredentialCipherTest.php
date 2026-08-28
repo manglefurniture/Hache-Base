@@ -15,6 +15,14 @@ assert($encrypted !== '');
 assert(!str_contains($encrypted, $plain));
 assert($cipher->decrypt($encrypted) === $plain);
 
+$emptyPayloadRejected = false;
+try {
+    $cipher->decrypt('   ');
+} catch (RuntimeException) {
+    $emptyPayloadRejected = true;
+}
+assert($emptyPayloadRejected === true);
+
 $wrongKeyRejected = false;
 try {
     (new CredentialCipher('another-master-key'))->decrypt($encrypted);
@@ -68,6 +76,9 @@ assert(is_string($sql));
 assert(str_contains($sql, 'CREATE TABLE IF NOT EXISTS payment_gateway_credentials'));
 assert(str_contains($sql, 'webhook_secret_enc TEXT NULL'));
 assert(str_contains($sql, 'current_credential_id BIGINT UNSIGNED NULL'));
+assert(str_contains($sql, 'UNIQUE KEY uq_payment_gateway_credentials_provider_id (provider, id)'));
+assert(str_contains($sql, 'FOREIGN KEY (provider, current_credential_id)'));
+assert(str_contains($sql, 'REFERENCES payment_gateway_credentials(provider, id)'));
 assert(str_contains($sql, 'ON UPDATE CASCADE ON DELETE RESTRICT'));
 assert(str_contains($sql, 'payment_credential_id'));
 
