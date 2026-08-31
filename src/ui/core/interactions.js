@@ -1,5 +1,20 @@
 const THEME_PREFERENCES = new Set(["light", "dark", "system"]);
 
+function resolveScopedId(scope, id) {
+  if (!id) return null;
+  if (typeof scope.getElementById === "function") return scope.getElementById(id);
+
+  const candidate = scope.ownerDocument?.getElementById?.(id) || null;
+  if (!candidate) return null;
+  if (typeof scope.contains === "function" && !scope.contains(candidate)) return null;
+  return candidate;
+}
+
+function restoreAttribute(element, name, previous) {
+  if (previous === null) element.removeAttribute(name);
+  else element.setAttribute(name, previous);
+}
+
 export function applyThemePreference(root, preference) {
   const next = THEME_PREFERENCES.has(preference) ? preference : "system";
   if (next === "system") root.removeAttribute("data-theme");
@@ -10,11 +25,16 @@ export function applyThemePreference(root, preference) {
 export function initThemePreference({
   root = document.documentElement,
   scope = document,
-  storage = globalThis.localStorage,
+  storage,
   storageKey = "hache-theme"
 } = {}) {
+  let resolvedStorage = storage;
+  if (resolvedStorage === undefined) {
+    try { resolvedStorage = globalThis.localStorage; } catch { resolvedStorage = null; }
+  }
+
   let stored = "system";
-  try { stored = storage?.getItem(storageKey) || "system"; } catch { /* storage may be unavailable */ }
+  try { stored = resolvedStorage?.getItem(storageKey) || "system"; } catch { /* storage may be unavailable */ }
   let current = applyThemePreference(root, stored);
 
   const updateControls = () => {
@@ -25,7 +45,7 @@ export function initThemePreference({
 
   const set = (value) => {
     current = applyThemePreference(root, value);
-    try { storage?.setItem(storageKey, current); } catch { /* preference remains valid for this page */ }
+    try { resolvedStorage?.setItem(storageKey, current); } catch { /* preference remains valid for this page */ }
     updateControls();
     root.dispatchEvent(new CustomEvent("hache:theme-change", { detail: { preference: current } }));
     return current;
@@ -38,11 +58,24 @@ export function initThemePreference({
   return { get: () => current, set };
 }
 
+export function initDisabledControls(scope = document) {
+  const blockDisabledActivation = (event) => {
+    const control = event.target?.closest?.("[aria-disabled='true']");
+    if (!control) return;
+    if (typeof scope.contains === "function" && !scope.contains(control)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  scope.addEventListener("click", blockDisabledActivation, true);
+  return { destroy: () => scope.removeEventListener("click", blockDisabledActivation, true) };
+}
+
 export function initDisclosures(scope = document) {
   const instances = [];
   scope.querySelectorAll("[data-hache-disclosure]").forEach((container) => {
     const trigger = container.querySelector("[aria-controls]");
-    const panel = trigger && scope.getElementById(trigger.getAttribute("aria-controls"));
+    const panel = trigger && resolveScopedId(scope, trigger.getAttribute("aria-controls"));
     if (!trigger || !panel) return;
 
     const setOpen = (open, returnFocus = false) => {
@@ -67,7 +100,7 @@ export function initDisclosures(scope = document) {
 export function initDialogs(scope = document) {
   const openers = new Map();
   scope.querySelectorAll("[data-hache-dialog-open]").forEach((trigger) => {
-    const dialog = scope.getElementById(trigger.dataset.hacheDialogOpen);
+    const dialog = resolveScopedId(scope, trigger.dataset.hacheDialogOpen);
     if (!(dialog instanceof HTMLDialogElement)) return;
     trigger.addEventListener("click", () => {
       openers.set(dialog, trigger);
@@ -86,15 +119,33 @@ export function initDialogs(scope = document) {
 export function initSubmissionGuards(scope = document) {
   scope.querySelectorAll("form[data-hache-prevent-double-submit]").forEach((form) => {
     const controls = () => [...form.querySelectorAll("button[type='submit'], input[type='submit']")];
+    const previousStates = new Map();
+
+    const markBusy = (control) => {
+      if (!previousStates.has(control)) {
+        previousStates.set(control, {
+          ariaBusy: control.getAttribute?.("aria-busy") ?? null,
+          ariaDisabled: control.getAttribute?.("aria-disabled") ?? null
+        });
+      }
+      control.setAttribute("aria-busy", "true");
+      control.setAttribute("aria-disabled", "true");
+    };
+
     const unlock = () => {
       form.removeAttribute("aria-busy");
-      controls().forEach((control) => { control.disabled = false; control.removeAttribute("aria-busy"); });
+      previousStates.forEach((previous, control) => {
+        restoreAttribute(control, "aria-busy", previous.ariaBusy);
+        restoreAttribute(control, "aria-disabled", previous.ariaDisabled);
+      });
+      previousStates.clear();
     };
+
     form.addEventListener("submit", (event) => {
       if (form.getAttribute("aria-busy") === "true") { event.preventDefault(); return; }
       if (!form.checkValidity()) return;
       form.setAttribute("aria-busy", "true");
-      controls().forEach((control) => { control.disabled = true; control.setAttribute("aria-busy", "true"); });
+      controls().forEach(markBusy);
     });
     form.addEventListener("hache:submit-complete", unlock);
   });
