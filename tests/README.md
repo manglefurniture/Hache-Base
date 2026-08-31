@@ -7,6 +7,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `static/php-syntax.sh`: sintaxis PHP.
 - `audit/`: pruebas del módulo de auditoría.
 - `common/`: utilidades reutilizables, incluyendo estados temporales y zona horaria.
+- `ui/`: regresiones de patrones visuales reutilizables; incluye el relieve de controles de backend.
 - `smoke/http-smoke.sh`: health/smoke HTTP configurable.
 - `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS, HMAC de webhooks y cifrado/versionado de credenciales de pago.
 - `run.sh`: punto de entrada común.
@@ -24,6 +25,8 @@ Si se define `SMOKE_BASE_URL`, el runner ejecuta también el smoke HTTP.
 Los flujos críticos deben tener comprobación automatizada antes de producción. Las pruebas con escritura no deben contaminar datos históricos reales. Cada proyecto añade casos específicos de permisos, sedes, pagos y reglas de negocio sobre fixtures/staging.
 
 Las pruebas base de integraciones no hacen llamadas reales a proveedores ni necesitan secretos. Cada proyecto debe añadir smoke/integration tests contra sandbox/staging cuando el proveedor lo permita y una prueba operativa controlada desde el host real antes de producción.
+
+Los patrones UI reutilizables deben probar sus tokens y estados críticos, pero cada proyecto derivado debe añadir regresiones para controles dinámicos, excepciones planas y clases locales que adopte.
 
 ## Reglas temporales
 
