@@ -81,13 +81,40 @@ assert.equal(controller.get(), "light");
 assert.equal(persisted, "light");
 assert.equal(controlAttributes.get("aria-pressed"), "true");
 
+const previousStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+try {
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, get() { throw new Error("SecurityError"); } });
+  assert.doesNotThrow(() => interactions.initThemePreference({ root: rootStub, scope: { querySelectorAll: () => [] } }));
+} finally {
+  if (previousStorageDescriptor) Object.defineProperty(globalThis, "localStorage", previousStorageDescriptor);
+  else delete globalThis.localStorage;
+}
+
+const disabledScopeListeners = {};
+let disabledCapture = false, disabledPrevented = false, disabledStopped = false;
+const disabledControl = { closest: () => disabledControl };
+const disabledScope = {
+  contains: (candidate) => candidate === disabledControl,
+  addEventListener: (type, callback, capture) => { disabledScopeListeners[type] = callback; disabledCapture = capture; },
+  removeEventListener: () => {}
+};
+interactions.initDisabledControls(disabledScope);
+disabledScopeListeners.click({ target: disabledControl, preventDefault: () => { disabledPrevented = true; }, stopPropagation: () => { disabledStopped = true; } });
+assert.equal(disabledCapture, true);
+assert.equal(disabledPrevented, true);
+assert.equal(disabledStopped, true);
+
 const triggerListeners = {}, containerListeners = {}, scopeListeners = {};
 let focusReturned = false;
 const triggerAttributes = new Map([["aria-controls", "menu"], ["aria-expanded", "false"]]);
 const trigger = { dataset: {}, getAttribute: (name) => triggerAttributes.get(name), setAttribute: (name, value) => triggerAttributes.set(name, value), addEventListener: (type, callback) => { triggerListeners[type] = callback; }, focus: () => { focusReturned = true; } };
 const panel = { hidden: false };
 const container = { dataset: { hacheDismiss: "outside" }, querySelector: () => trigger, addEventListener: (type, callback) => { containerListeners[type] = callback; }, contains: () => false };
-const scope = { querySelectorAll: (selector) => selector === "[data-hache-disclosure]" ? [container] : [], getElementById: () => panel, addEventListener: (type, callback) => { scopeListeners[type] = callback; }, removeEventListener: () => {} };
+const scope = {
+  querySelectorAll: (selector) => selector === "[data-hache-disclosure]" ? [container] : [],
+  ownerDocument: { getElementById: () => panel }, contains: (candidate) => candidate === panel,
+  addEventListener: (type, callback) => { scopeListeners[type] = callback; }, removeEventListener: () => {}
+};
 interactions.initDisclosures(scope);
 assert.equal(panel.hidden, true);
 triggerListeners.click(); assert.equal(panel.hidden, false);
@@ -107,14 +134,19 @@ const opener = { dataset: { hacheDialogOpen: "dialog" }, addEventListener: (type
 const closer = { closest: () => dialog, addEventListener: (type, callback) => { closerListeners[type] = callback; } };
 const dialogScope = {
   querySelectorAll(selector) { if (selector === "[data-hache-dialog-open]") return [opener]; if (selector === "[data-hache-dialog-close]") return [closer]; if (selector === "dialog") return [dialog]; return []; },
-  getElementById: () => dialog
+  ownerDocument: { getElementById: () => dialog }, contains: (candidate) => candidate === dialog
 };
 interactions.initDialogs(dialogScope);
 openerListeners.click(); assert.equal(dialogOpened, true);
 closerListeners.click(); assert.equal(openerFocused, true);
 
 const formListeners = {}, submitAttributes = new Map(), formAttributes = new Map();
-const submit = { disabled: false, setAttribute: (name, value) => submitAttributes.set(name, value), removeAttribute: (name) => submitAttributes.delete(name) };
+const submit = {
+  disabled: false, name: "intent", value: "save",
+  getAttribute: (name) => submitAttributes.get(name) ?? null,
+  setAttribute: (name, value) => submitAttributes.set(name, value),
+  removeAttribute: (name) => submitAttributes.delete(name)
+};
 const form = {
   querySelectorAll: () => [submit], checkValidity: () => true,
   getAttribute: (name) => formAttributes.get(name), setAttribute: (name, value) => formAttributes.set(name, value), removeAttribute: (name) => formAttributes.delete(name),
@@ -123,9 +155,16 @@ const form = {
 interactions.initSubmissionGuards({ querySelectorAll: () => [form] });
 let duplicatePrevented = false;
 formListeners.submit({ preventDefault: () => { duplicatePrevented = true; } });
-assert.equal(formAttributes.get("aria-busy"), "true"); assert.equal(submit.disabled, true);
+assert.equal(formAttributes.get("aria-busy"), "true");
+assert.equal(submit.disabled, false, "el guard no debe deshabilitar successful controls antes de construir el payload");
+assert.equal(submitAttributes.get("aria-disabled"), "true");
+assert.deepEqual(submit.disabled ? [] : [[submit.name, submit.value]], [["intent", "save"]], "el submitter conserva name/value");
 formListeners.submit({ preventDefault: () => { duplicatePrevented = true; } }); assert.equal(duplicatePrevented, true);
-formListeners["hache:submit-complete"](); assert.equal(formAttributes.has("aria-busy"), false); assert.equal(submit.disabled, false);
+formListeners["hache:submit-complete"]();
+assert.equal(formAttributes.has("aria-busy"), false);
+assert.equal(submit.disabled, false);
+assert.equal(submitAttributes.has("aria-disabled"), false);
+assert.equal(submitAttributes.has("aria-busy"), false);
 
 const cssBytes = (await Promise.all(["foundation", "semantic", "base", "components", "dimensional", "clean", "immersive"].map((name) => stat(path.join(root, files[name]))))).reduce((sum, item) => sum + item.size, 0);
 const jsBytes = (await stat(path.join(root, files.interactions))).size;
