@@ -10,3 +10,12 @@
   --motion-slow: var(--hache-f-motion-slow);
   --visual-level: dimensional;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  :root[data-visual-level="dimensional"] {
+    --motion-fast: var(--hache-f-motion-instant);
+    --motion-normal: var(--hache-f-motion-instant);
+    --motion-slow: var(--hache-f-motion-instant);
+  }
+}
