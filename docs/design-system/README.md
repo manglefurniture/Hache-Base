@@ -53,21 +53,34 @@ No se añade un switch global. Si el producto lo necesita:
 </script>
 ```
 
-La preferencia persiste cuando `localStorage` está disponible y degrada sin error cuando no lo está.
+La preferencia persiste cuando `localStorage` está disponible y degrada sin error cuando no lo está, incluso si el navegador bloquea el acceso al storage.
 
 ## Contratos de componentes
 
 ### Botón
 
-Variantes: `.hache-button`, `--secondary`, `--ghost`, `--destructive`. Usar `disabled` para controles nativos, `aria-disabled="true"` para enlaces que deban permanecer enfocables y `aria-busy="true"` con texto que siga identificando la acción. No usar más de un CTA primario por sección salvo justificación de producto.
+Variantes: `.hache-button`, `--secondary`, `--ghost`, `--destructive`. Usar `disabled` para controles nativos. Para enlaces u otros controles no nativos que deban permanecer enfocables puede usarse `aria-disabled="true"`, pero su activación debe quedar realmente bloqueada; el helper `initDisabledControls()` aporta ese comportamiento por delegación y captura. `aria-busy="true"` debe conservar texto que siga identificando la acción. No usar más de un CTA primario por sección salvo justificación de producto.
+
+Ejemplo opcional:
+
+```html
+<script type="module">
+  import { initDisabledControls } from "/ui/core/interactions.js";
+  initDisabledControls();
+</script>
+```
 
 ### Formularios
 
-Los estilos no corrigen markup deficiente. Cada campo requiere `<label>` visible, tipo/inputmode adecuado, `autocomplete` cuando aplique, instrucciones y error próximos mediante `aria-describedby`; `aria-invalid="true"` activa borde doble/énfasis no dependiente solo del color. No validar agresivamente al escribir. `initSubmissionGuards()` es opcional para flujos asíncronos y se libera con `hache:submit-complete`.
+Los estilos no corrigen markup deficiente. Cada campo requiere `<label>` visible, tipo/inputmode adecuado, `autocomplete` cuando aplique, instrucciones y error próximos mediante `aria-describedby`; `aria-invalid="true"` activa borde doble/énfasis no dependiente solo del color. No validar agresivamente al escribir.
+
+`initSubmissionGuards()` es opcional para evitar dobles envíos. Marca formulario y submitters con estados ARIA sin aplicar `disabled`, de modo que no altera la semántica ni elimina el `name/value` del submitter del payload. Se libera con `hache:submit-complete` en flujos que permanecen en la misma página.
 
 ### Navegación y disclosures
 
 Usar enlaces reales y `aria-current="page"`. Los menús esenciales nunca dependen solo de hover. Para disclosure, el trigger necesita `aria-controls` y el panel un `id`; `initDisclosures()` sincroniza `aria-expanded`, permite Escape, devuelve foco y puede cerrar fuera con `data-hache-dismiss="outside"`.
+
+Los helpers que aceptan `scope` admiten tanto `Document` como un subtree `Element`; cuando se pasa un `Element`, los IDs controlados deben resolver dentro de ese subtree.
 
 ### Diálogos
 
