@@ -151,11 +151,13 @@ export function initSubmissionGuards(scope = document) {
         : [...form.querySelectorAll("button:not([type]), button[type='submit'], input[type='submit'], input[type='image']")];
 
       // HTMLFormElement.elements omite históricamente input[type=image].
-      // Reincorporamos todos los image submitters cuyo form owner sea este formulario,
-      // incluidos los asociados externamente mediante form="...".
-      const imageCandidates = form.ownerDocument?.querySelectorAll
-        ? [...form.ownerDocument.querySelectorAll("input[type='image']")]
-        : [...form.querySelectorAll("input[type='image']")];
+      // Buscar desde el root real del formulario preserva controles asociados dentro
+      // de Shadow DOM; en light DOM getRootNode() devuelve el Document.
+      const formRoot = form.getRootNode?.();
+      const imageRoot = formRoot?.querySelectorAll
+        ? formRoot
+        : (form.ownerDocument?.querySelectorAll ? form.ownerDocument : form);
+      const imageCandidates = [...imageRoot.querySelectorAll("input[type='image']")];
       imageCandidates
         .filter((control) => control.form === form)
         .forEach((control) => { if (!associated.includes(control)) associated.push(control); });
