@@ -7,9 +7,14 @@ DOC="$ROOT/docs/UI-BACKEND-RELIEF.md"
 
 [[ -f "$CSS" ]]
 [[ -f "$DOC" ]]
-grep -Fq -- '--hache-control-top-edge: var(--border-subtle);' "$CSS"
-grep -Fq -- '--hache-control-focus: var(--color-focus);' "$CSS"
-grep -Fq -- '--hache-control-duration: var(--motion-fast);' "$CSS"
+grep -Fq -- '--hache-control-border: var(--border-subtle, rgb(' "$CSS"
+grep -Fq -- '--hache-control-top-edge: var(--border-subtle, rgb(' "$CSS"
+grep -Fq -- '--hache-control-focus: var(--color-focus, rgb(' "$CSS"
+grep -Fq -- '--hache-control-shadow: var(--elevation-1,' "$CSS"
+grep -Fq -- '--hache-control-duration: var(--motion-fast, 160ms);' "$CSS"
+grep -Fq -- '--hache-control-easing: var(--motion-ease, ease);' "$CSS"
+grep -Fq -- 'var(--button-primary-bg, var(--color-primary, rgb(' "$CSS"
+grep -Fq -- 'opacity: var(--opacity-disabled, .58);' "$CSS"
 grep -Fq -- 'border-block-start-color: var(--hache-control-top-edge) !important;' "$CSS"
 grep -Fq -- '.hache-control:not(.hache-control--flat)' "$CSS"
 grep -Fq -- '.hache-control.hache-control--primary:not(.hache-control--flat)' "$CSS"
