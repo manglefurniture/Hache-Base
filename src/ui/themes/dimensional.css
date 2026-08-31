@@ -1,6 +1,6 @@
 /* Preset recomendado y default. Solo asigna Theme; no añade componentes. */
 :root,
-:root[data-visual-level="dimensional"] {
+:root:where([data-visual-level="dimensional"]) {
   --radius-control: var(--hache-f-radius-2);
   --radius-surface: var(--hache-f-radius-3);
   --elevation-1: 0 .125rem .25rem rgb(15 23 42 / .08), 0 .5rem 1.25rem rgb(15 23 42 / .06);
@@ -13,7 +13,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   :root,
-  :root[data-visual-level="dimensional"] {
+  :root:where([data-visual-level="dimensional"]) {
     --motion-fast: var(--hache-f-motion-instant);
     --motion-normal: var(--hache-f-motion-instant);
     --motion-slow: var(--hache-f-motion-instant);
