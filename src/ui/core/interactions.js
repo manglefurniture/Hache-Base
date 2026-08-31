@@ -86,7 +86,9 @@ export function initDisclosures(scope = document) {
       if (returnFocus) trigger.focus();
     };
     setOpen(trigger.getAttribute("aria-expanded") === "true");
-    trigger.addEventListener("click", () => setOpen(trigger.getAttribute("aria-expanded") !== "true"));
+
+    const onTriggerClick = () => setOpen(trigger.getAttribute("aria-expanded") !== "true");
+    trigger.addEventListener("click", onTriggerClick);
 
     const onEscape = (event) => {
       if (event.key === "Escape" && trigger.getAttribute("aria-expanded") === "true") setOpen(false, true);
@@ -105,6 +107,7 @@ export function initDisclosures(scope = document) {
     instances.push({
       close: () => setOpen(false),
       destroy: () => {
+        trigger.removeEventListener?.("click", onTriggerClick);
         outsideTarget.removeEventListener("pointerdown", outside);
         container.removeEventListener?.("keydown", onEscape);
         if (panel !== container) panel.removeEventListener?.("keydown", onEscape);
