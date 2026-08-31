@@ -149,6 +149,17 @@ export function initSubmissionGuards(scope = document) {
       const associated = form.elements
         ? [...form.elements].filter(isSubmitControl)
         : [...form.querySelectorAll("button:not([type]), button[type='submit'], input[type='submit'], input[type='image']")];
+
+      // HTMLFormElement.elements omite históricamente input[type=image].
+      // Reincorporamos todos los image submitters cuyo form owner sea este formulario,
+      // incluidos los asociados externamente mediante form="...".
+      const imageCandidates = form.ownerDocument?.querySelectorAll
+        ? [...form.ownerDocument.querySelectorAll("input[type='image']")]
+        : [...form.querySelectorAll("input[type='image']")];
+      imageCandidates
+        .filter((control) => control.form === form)
+        .forEach((control) => { if (!associated.includes(control)) associated.push(control); });
+
       if (submitter && !associated.includes(submitter)) associated.push(submitter);
       return associated;
     };
