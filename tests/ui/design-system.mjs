@@ -30,8 +30,8 @@ assert.match(content.semantic, /--color-primary: var\(--hache-f-color-blue-700\)
 assert.match(content.components, /--button-primary-bg: var\(--color-primary\)/);
 assert.doesNotMatch(content.components, /#[0-9a-f]{3,8}|rgba?\(/i);
 assert.match(content.semantic, /prefers-color-scheme: dark/);
-assert.match(content.semantic, /:root\[data-theme="dark"\]/);
-assert.match(content.semantic, /:root\[data-theme="light"\] \{ color-scheme: light; \}/);
+assert.match(content.semantic, /:root:where\(\[data-theme="dark"\]\)/);
+assert.match(content.semantic, /:root:where\(\[data-theme="light"\]\) \{ color-scheme: light; \}/);
 assert.match(content.base, /prefers-reduced-motion: reduce/);
 assert.match(content.base, /forced-colors: active/);
 assert.match(content.base, /@container \(max-width: 30rem\)/);
