@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 bash "$ROOT/tests/static/php-syntax.sh" "$ROOT"
+bash "$ROOT/tests/ui/backend-relief.sh"
 
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/audit/AuditSanitizerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/CommonTest.php"
