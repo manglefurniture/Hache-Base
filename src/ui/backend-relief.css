@@ -2,6 +2,7 @@
   --hache-control-border:rgba(148,163,184,.44);
   --hache-control-top-edge:rgba(148,163,184,.34);
   --hache-control-border-bottom:rgba(71,85,105,.46);
+  --hache-control-focus:#2563eb;
   --hache-control-shadow:inset 0 1px 0 rgba(255,255,255,.78),inset 0 -2px 0 rgba(15,23,42,.10),0 2px 4px rgba(15,23,42,.055),0 7px 16px rgba(15,23,42,.07);
   --hache-control-shadow-hover:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -2px 0 rgba(15,23,42,.13),0 3px 6px rgba(15,23,42,.07),0 10px 22px rgba(15,23,42,.09);
   --hache-control-shadow-active:inset 0 2px 4px rgba(15,23,42,.15),inset 0 -1px 0 rgba(255,255,255,.28),0 1px 2px rgba(15,23,42,.06);
@@ -12,8 +13,9 @@
 /*
  * Relieve de backend reutilizable.
  * Aplicar .hache-control solo a controles que visualmente deben comportarse como botón.
+ * .hache-control--flat excluye el control sin sobrescribir su geometría local.
  */
-.hache-control{
+.hache-control:not(.hache-control--flat){
   border-style:solid!important;
   border-width:1px!important;
   border-color:var(--hache-control-border)!important;
@@ -25,7 +27,7 @@
 }
 
 /* Primarios/oscuros: el borde superior vuelve a ser luminoso para contrastar con la cara oscura. */
-.hache-control--primary{
+.hache-control.hache-control--primary:not(.hache-control--flat){
   border-top-color:rgba(255,255,255,.34)!important;
   border-right-color:rgba(15,23,42,.36)!important;
   border-bottom-color:rgba(3,12,21,.62)!important;
@@ -33,19 +35,19 @@
   box-shadow:var(--hache-primary-shadow)!important;
 }
 
-.hache-control:focus-visible{
-  outline:3px solid rgba(18,59,93,.17)!important;
+.hache-control:not(.hache-control--flat):focus-visible{
+  outline:3px solid var(--hache-control-focus)!important;
   outline-offset:2px!important;
 }
 
 @media(hover:hover){
-  .hache-control:not(:disabled):hover{
+  .hache-control:not(.hache-control--flat):not(:disabled):hover{
     transform:translateY(-1px);
     box-shadow:var(--hache-control-shadow-hover)!important;
     filter:brightness(1.015);
   }
 
-  .hache-control--primary:not(:disabled):hover{
+  .hache-control.hache-control--primary:not(.hache-control--flat):not(:disabled):hover{
     border-top-color:rgba(255,255,255,.38)!important;
     border-right-color:rgba(15,23,42,.38)!important;
     border-bottom-color:rgba(3,12,21,.68)!important;
@@ -53,13 +55,13 @@
     box-shadow:var(--hache-primary-shadow-hover)!important;
   }
 
-  .hache-control:disabled:hover{
+  .hache-control:not(.hache-control--flat):disabled:hover{
     transform:none!important;
     filter:none!important;
     box-shadow:var(--hache-control-shadow)!important;
   }
 
-  .hache-control--primary:disabled:hover{
+  .hache-control.hache-control--primary:not(.hache-control--flat):disabled:hover{
     border-top-color:rgba(255,255,255,.34)!important;
     border-right-color:rgba(15,23,42,.36)!important;
     border-bottom-color:rgba(3,12,21,.62)!important;
@@ -68,7 +70,7 @@
   }
 }
 
-.hache-control:active{
+.hache-control:not(.hache-control--flat):active{
   transform:translateY(1px)!important;
   border-top-color:rgba(71,85,105,.32)!important;
   border-bottom-color:rgba(255,255,255,.54)!important;
@@ -76,22 +78,12 @@
   filter:none!important;
 }
 
-.hache-control--primary:active{
+.hache-control.hache-control--primary:not(.hache-control--flat):active{
   border-top-color:rgba(3,12,21,.48)!important;
   border-right-color:rgba(15,23,42,.42)!important;
   border-bottom-color:rgba(255,255,255,.18)!important;
   border-left-color:rgba(15,23,42,.42)!important;
   box-shadow:inset 0 2px 5px rgba(3,12,21,.34),0 1px 2px rgba(15,23,42,.08)!important;
-}
-
-/* Para cierres, iconos, autocompletados o encabezados que deben seguir deliberadamente planos. */
-.hache-control--flat,
-.hache-control--flat:hover,
-.hache-control--flat:active{
-  border:0!important;
-  box-shadow:none!important;
-  transform:none!important;
-  filter:none!important;
 }
 
 @media(max-width:750px){
@@ -104,12 +96,12 @@
 }
 
 @media(hover:none){
-  .hache-control:hover{
+  .hache-control:not(.hache-control--flat):hover{
     transform:none;
     filter:none;
   }
 }
 
 @media(prefers-reduced-motion:reduce){
-  .hache-control{transition:none!important}
+  .hache-control:not(.hache-control--flat){transition:none!important}
 }
