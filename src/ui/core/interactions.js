@@ -73,7 +73,7 @@ export function initDisabledControls(scope = document) {
 
 export function initDisclosures(scope = document) {
   const instances = [];
-  const outsideTarget = scope.ownerDocument || scope;
+  const outsideTarget = scope.ownerDocument?.addEventListener ? scope.ownerDocument : scope;
 
   scope.querySelectorAll("[data-hache-disclosure]").forEach((container) => {
     const trigger = container.querySelector("[aria-controls]");
