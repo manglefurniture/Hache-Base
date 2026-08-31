@@ -1,4 +1,4 @@
-:root[data-visual-level="clean"] {
+:root:where([data-visual-level="clean"]) {
   --radius-control: var(--hache-f-radius-1);
   --radius-surface: var(--hache-f-radius-2);
   --elevation-1: 0 1px 2px rgb(15 23 42 / .06);
@@ -10,7 +10,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-visual-level="clean"] {
+  :root:where([data-visual-level="clean"]) {
     --motion-fast: var(--hache-f-motion-instant);
     --motion-normal: var(--hache-f-motion-instant);
     --motion-slow: var(--hache-f-motion-instant);
