@@ -15,6 +15,13 @@ function restoreAttribute(element, name, previous) {
   else element.setAttribute(name, previous);
 }
 
+function isSubmitControl(control) {
+  const tagName = control?.tagName?.toLowerCase?.() || "";
+  const type = String(control?.type || "").toLowerCase();
+  return (tagName === "button" && type === "submit") ||
+    (tagName === "input" && (type === "submit" || type === "image"));
+}
+
 export function applyThemePreference(root, preference) {
   const next = THEME_PREFERENCES.has(preference) ? preference : "system";
   if (next === "system") root.removeAttribute("data-theme");
@@ -138,7 +145,13 @@ export function initDialogs(scope = document) {
 
 export function initSubmissionGuards(scope = document) {
   scope.querySelectorAll("form[data-hache-prevent-double-submit]").forEach((form) => {
-    const controls = () => [...form.querySelectorAll("button:not([type]), button[type='submit'], input[type='submit']")];
+    const controls = (submitter) => {
+      const associated = form.elements
+        ? [...form.elements].filter(isSubmitControl)
+        : [...form.querySelectorAll("button:not([type]), button[type='submit'], input[type='submit'], input[type='image']")];
+      if (submitter && !associated.includes(submitter)) associated.push(submitter);
+      return associated;
+    };
     const previousStates = new Map();
 
     const markBusy = (control) => {
@@ -166,7 +179,7 @@ export function initSubmissionGuards(scope = document) {
       /* Si se emitió submit, el navegador ya resolvió validación o una omisión válida
          mediante novalidate/formnovalidate. El guard no debe revalidar. */
       form.setAttribute("aria-busy", "true");
-      controls().forEach(markBusy);
+      controls(event.submitter).forEach(markBusy);
     });
     form.addEventListener("hache:submit-complete", unlock);
   });
