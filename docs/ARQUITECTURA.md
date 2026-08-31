@@ -12,6 +12,8 @@ Definir una arquitectura inicial para aplicaciones de servicios sin imponer regl
 - Panel administrativo.
 - Portal de usuario/cliente cuando corresponda.
 
+La arquitectura visual de la interfaz sigue `Core → Theme → Extensions`. Core aporta estructura, accesibilidad, responsive, estados y tokens; Theme define identidad; Extensions resuelve necesidades específicas sin entrar al bundle base. Consultar `docs/design-system/ARCHITECTURE.md`.
+
 La interfaz no debe decidir permisos por sí sola. Ocultar un botón no sustituye la autorización del servidor.
 
 Cuando una acción ya es inválida según el estado canónico del dominio, la UI debe evitar ofrecerla para mejorar la experiencia, pero el servidor conserva la validación definitiva.

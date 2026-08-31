@@ -64,6 +64,30 @@ Completar antes de desarrollar los flujos principales.
 
 ## Calidad
 
+### Diseño, UX y accesibilidad
+
+- [ ] Definir personalidad, atributos a evitar y recurso visual propio.
+- [ ] Declarar nivel Clean/Dimensional/Immersive; justificar Immersive.
+- [ ] Mantener Core, Theme y Extensions separados.
+- [ ] Usar Foundation → Semantic → Component sin hardcodes repetidos en Core.
+- [ ] Verificar light, dark y `prefers-color-scheme`; probar persistencia si existe selector.
+- [ ] Diseñar mobile-first y probar móvil pequeño, móvil grande, tablet, laptop y desktop amplio.
+- [ ] Verificar que no existe scroll horizontal accidental y que zoom/reflow funcionan.
+- [ ] Usar Container Queries cuando el componente dependa de su espacio interno.
+- [ ] Probar teclado, foco visible/no oculto, landmarks, labels, orden DOM y contraste WCAG 2.2 AA.
+- [ ] Verificar target táctil; objetivo Hache 44×44 CSS px cuando sea viable.
+- [ ] Asegurar que estados y errores no dependan únicamente del color.
+- [ ] Probar default, hover, focus-visible, active, disabled, loading, success, warning y error cuando apliquen.
+- [ ] Verificar labels visibles, autocomplete/input type, errores próximos, conservación de datos y prevención de doble envío.
+- [ ] Probar menús, disclosures y overlays con teclado, Escape, cierre, aislamiento y retorno de foco.
+- [ ] Respetar `prefers-reduced-motion`; no usar scroll hijacking ni retrasar contenido esencial.
+- [ ] Declarar dimensiones/srcset/sizes/alt y política lazy/LCP para imágenes reales.
+- [ ] Mantener contenido principal en HTML, headings/enlaces reales y baseline SEO intacto.
+- [ ] Completar `templates/PERFORMANCE-BUDGET.md` y evaluar LCP, INP, CLS, JS, CSS, imágenes y fuentes.
+- [ ] Registrar cualquier excepción a un MUST con causa, mitigación y fecha de revisión.
+
+## Calidad técnica y funcional
+
 - [ ] Definir lint y validaciones estáticas.
 - [ ] Crear pruebas de los flujos críticos.
 - [ ] Crear pruebas por rol y sede cuando aplique.

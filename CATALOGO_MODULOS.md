@@ -12,6 +12,7 @@
 | Seguridad web/API | Listo | Sesión, autorización, CSRF, Bearer, rate limit, JSON y headers | Paneles, formularios y APIs | `security/README.md` |
 | Auditoría de mutaciones | Listo | Registra quién cambió qué, cuándo y en qué contexto; preserva evidencia de snapshots históricos | Pagos, inventario, citas, usuarios, configuración, cierres y conciliaciones | `docs/AUDITORIA.md` |
 | Review y cierre de PR | Listo como proceso | Separa CI de revisión, clasifica deuda de review y limita fixes al alcance acordado | Repositorios con PR, CI y revisión automática/humana | `docs/REVIEW-Y-CIERRE-DE-PR.md` |
+| Design System 2026 | Listo como infraestructura configurable | Core → Theme → Extensions; tokens Foundation → Semantic → Component; presets, temas, responsive, estados, accesibilidad y guardrails | Toda interfaz pública o administrativa | `DESIGN-SYSTEM-2026-FINAL.md` + `docs/design-system/README.md` + `src/ui/` |
 | UI de backend con relieve | Listo como patrón opt-in | Unifica bordes, sombras y estados de controles claros/oscuros con borde superior visible, foco accesible y comportamiento móvil | Paneles administrativos que necesiten una jerarquía visual ligera sin alterar lógica ni layout | `docs/UI-BACKEND-RELIEF.md` + `src/ui/backend-relief.css` |
 | Migraciones e integridad | Listo | Cambios de esquema pequeños, probables e idempotentes | Proyectos con MariaDB | `database/MIGRATIONS.md` |
 | Modelo de servicios | Plantilla lista | Organizaciones, sedes, usuarios, clientes, servicios, planes, horarios, pagos y sesiones | Academias, spas, gimnasios, clínicas y servicios recurrentes | `database/modules/README.md` |
@@ -44,6 +45,7 @@ No hace falta mencionar archivos. Ejemplos:
 - "Necesito una pasarela donde podamos cambiar credenciales sin romper pagos, devoluciones o webhooks antiguos."
 - "Aplica también el proceso de review y cierre de PR de Hache-Base."
 - "Usa el patrón de relieve del backend para botones claros, primarios oscuros y controles planos."
+- "Aplica el Design System 2026 con Theme propio, nivel Dimensional y soporte light/dark."
 - "Es una app privada: usa Hache-Base con SEO_MODE=private-app."
 
 Al recibir una petición así, consultar este catálogo, revisar la documentación de los módulos elegidos y adaptar configuración/reglas al negocio.

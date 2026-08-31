@@ -1,6 +1,6 @@
 # UI de backend — relieve reutilizable
 
-Patrón visual reutilizable para controles de panel administrativo derivados de Hache-Base.
+Patrón visual reutilizable y compatible para controles de panel administrativo derivados de Hache-Base. Consume los tokens Foundation → Semantic → Component del Design System 2026.
 
 ## Objetivo
 
@@ -24,10 +24,10 @@ Clases principales:
 
 El borde superior **no debe ser blanco puro**. En superficies claras se pierde visualmente y parece que el botón no tiene línea arriba.
 
-Hache-Base usa:
+El alias compatible es:
 
 ```css
---hache-control-top-edge: rgba(148,163,184,.34);
+--hache-control-top-edge: var(--border-subtle);
 ```
 
 El brillo blanco permanece **dentro** de la sombra (`inset 0 1px ...`), de modo que la lectura final sea:
@@ -48,10 +48,11 @@ El patrón incluye:
 
 - `:hover` solo cuando el dispositivo realmente soporta hover;
 - `:active` con desplazamiento de 1 px para sensación de pulsado;
-- `:focus-visible` con indicador azul sólido (`#2563eb`), diseñado para mantener un contraste mínimo de 3:1 frente a superficies claras habituales del backend;
+- `:focus-visible` mediante `--color-focus`, que cada Theme debe validar con contraste mínimo 3:1;
 - neutralización del hover en controles deshabilitados;
+- estados `aria-busy` y `data-state="success|warning|error"` con señal adicional al color;
 - `prefers-reduced-motion`;
-- sombras de menor profundidad en pantallas de hasta 750 px.
+- base mobile-first y profundidad ampliada solo cuando existe espacio suficiente.
 
 No sustituir el indicador de foco por un borde translúcido de bajo contraste. Si un proyecto cambia el color mediante `--hache-control-focus`, debe volver a validar contraste contra sus fondos reales.
 
@@ -79,8 +80,8 @@ No aplicar `.hache-control` indiscriminadamente a todo `<button>` del proyecto. 
 
 ## Integración en proyectos derivados
 
-1. Copiar o adaptar `src/ui/backend-relief.css` al bundle de estilos del backend.
-2. Cargarlo después de los estilos base del panel para que los tokens tengan precedencia predecible.
+1. Cargar Core, el Theme elegido y después `src/ui/backend-relief.css`.
+2. Mantener los overrides de proyecto después del Theme y validar ambos modos de color.
 3. Marcar explícitamente controles de acción con `.hache-control`.
 4. Añadir `.hache-control--primary` solo a controles realmente oscuros/primarios.
 5. Usar `.hache-control--flat` cuando el componente deba conservar sus estilos propios sin recibir borde, sombra ni desplazamiento del módulo.

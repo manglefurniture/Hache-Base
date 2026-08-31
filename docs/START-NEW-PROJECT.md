@@ -19,6 +19,10 @@ Selecciona uno en el perfil:
 
 Para `public` y `hybrid`, el `Minimum SEO Baseline` forma parte del criterio de producción. Para `private-app`, aplicar solo controles relevantes y asegurar que lo privado no se exponga por error.
 
+## 2.1 Define el perfil visual
+
+Completa personalidad, atributos a evitar, nivel visual, movimiento, densidad, temas, fotografía, iconografía y recurso propio en `templates/PROJECT-PROFILE.md`. Usa Core sin modificarlo, crea un Theme del proyecto y añade Extensions únicamente con necesidad y fallback demostrados. Dimensional es el preset recomendado; Immersive requiere justificación.
+
 ## 3. Selecciona módulos
 
 Consulta `CATALOGO_MODULOS.md` y marca únicamente lo que aplica.

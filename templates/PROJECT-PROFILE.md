@@ -8,6 +8,22 @@
 - Usuarios esperados:
 - Zona horaria operativa (`APP_TIMEZONE`):
 
+## Perfil visual
+
+- Personalidad (3–5 atributos):
+- Evitar (3–5 atributos):
+- Nivel visual base: Clean / Dimensional / Immersive
+- Justificación si es Immersive:
+- Movimiento: mínimo / medio / alto
+- Densidad: comfortable / compact / mixta
+- Temas: light / dark / system / selector
+- Tipografía de marca/interfaz:
+- Fotografía (lenguaje, proporción, recorte y tratamiento):
+- Iconografía:
+- Recurso reconocible propio:
+- Extensions previstas y fallback:
+- Excepciones a MUST del Design System:
+
 ## Organización
 
 - ¿Multiempresa?: sí / no
@@ -75,6 +91,7 @@ Completar también `PERMISSION-MATRIX.md`.
 ## Módulos Hache-Base seleccionados
 
 - [ ] Arquitectura base
+- [ ] Design System 2026 (Core + Theme; Extensions solo si aplican)
 - [ ] Multisede/multiempresa
 - [ ] Roles/permisos
 - [ ] Estados temporales e integridad entre vistas
@@ -90,6 +107,16 @@ Completar también `PERMISSION-MATRIX.md`.
 - [ ] Runner de despliegue
 - [ ] Staging
 - [ ] CI/CD
+
+## Presupuesto visual y de performance
+
+- Presupuesto completado en `PERFORMANCE-BUDGET.md`: sí / no
+- LCP objetivo/resultados:
+- INP objetivo/resultados:
+- CLS objetivo/resultados:
+- Categorías de viewport verificadas:
+- Light/dark verificados:
+- WCAG 2.2 AA verificado por:
 
 ## Entornos
 

@@ -7,7 +7,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `static/php-syntax.sh`: sintaxis PHP.
 - `audit/`: pruebas del módulo de auditoría.
 - `common/`: utilidades reutilizables, incluyendo estados temporales y zona horaria.
-- `ui/`: regresiones de patrones visuales reutilizables; incluye el relieve de controles de backend.
+- `ui/`: regresiones de tokens, temas, contraste de fallbacks, presets, estados, responsive/container queries, reduced motion, peso y comportamiento JS; incluye compatibilidad del relieve de backend.
 - `smoke/http-smoke.sh`: health/smoke HTTP configurable.
 - `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS, HMAC de webhooks y cifrado/versionado de credenciales de pago.
 - `run.sh`: punto de entrada común.
