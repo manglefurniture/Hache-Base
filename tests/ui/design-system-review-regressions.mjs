@@ -112,12 +112,14 @@ assert.equal(panel.hidden, false, "un solo click tras destroy + reinit debe alte
 secondDisclosureInstances[0].destroy();
 
 // Si submit fue emitido, el guard no debe revalidar: novalidate/formnovalidate son válidos.
-// Debe incluir botones con submit implícito y submitters externos asociados mediante form="...".
+// Debe incluir botones con submit implícito, submitters externos asociados mediante form="..."
+// y todos los input[type=image] asociados aunque HTMLFormElement.elements los omita.
 const formListeners = {};
 const formAttributes = new Map();
 const submitAttributes = new Map();
 const implicitSubmitAttributes = new Map();
 const externalSubmitAttributes = new Map();
+const imageSubmitAttributes = new Map();
 const submit = {
   tagName: "BUTTON",
   type: "submit",
@@ -140,16 +142,32 @@ const externalSubmit = {
   setAttribute: (name, value) => externalSubmitAttributes.set(name, value),
   removeAttribute: (name) => externalSubmitAttributes.delete(name)
 };
+const imageSubmit = {
+  tagName: "INPUT",
+  type: "image",
+  form: null,
+  getAttribute: (name) => imageSubmitAttributes.get(name) ?? null,
+  setAttribute: (name, value) => imageSubmitAttributes.set(name, value),
+  removeAttribute: (name) => imageSubmitAttributes.delete(name)
+};
+const formDocument = {
+  querySelectorAll: (selector) => {
+    assert.equal(selector, "input[type='image']", "el guard debe enumerar image submitters fuera de form.elements");
+    return [imageSubmit];
+  }
+};
 const form = {
   noValidate: true,
+  ownerDocument: formDocument,
   elements: [submit, implicitSubmit, externalSubmit],
-  querySelectorAll: () => { throw new Error("con form.elements disponible no debe limitarse a descendientes del formulario"); },
+  querySelectorAll: () => { throw new Error("con form.elements y ownerDocument disponibles no debe limitarse a descendientes del formulario"); },
   checkValidity: () => { throw new Error("initSubmissionGuards no debe revalidar un submit ya emitido"); },
   getAttribute: (name) => formAttributes.get(name),
   setAttribute: (name, value) => formAttributes.set(name, value),
   removeAttribute: (name) => formAttributes.delete(name),
   addEventListener: (type, callback) => { formListeners[type] = callback; }
 };
+imageSubmit.form = form;
 interactions.initSubmissionGuards({ querySelectorAll: () => [form] });
 assert.doesNotThrow(() => formListeners.submit({ submitter: externalSubmit, preventDefault: () => {} }));
 assert.equal(formAttributes.get("aria-busy"), "true");
@@ -158,6 +176,8 @@ assert.equal(implicitSubmitAttributes.get("aria-busy"), "true", "button sin type
 assert.equal(implicitSubmitAttributes.get("aria-disabled"), "true", "button sin type debe anunciar estado disabled");
 assert.equal(externalSubmitAttributes.get("aria-busy"), "true", "submitter externo asociado por form debe recibir estado busy");
 assert.equal(externalSubmitAttributes.get("aria-disabled"), "true", "submitter externo asociado por form debe anunciar estado disabled");
+assert.equal(imageSubmitAttributes.get("aria-busy"), "true", "input image asociado debe recibir estado busy aunque form.elements lo omita");
+assert.equal(imageSubmitAttributes.get("aria-disabled"), "true", "input image asociado debe anunciar estado disabled aunque otro botón envíe el form");
 let duplicatePrevented = false;
 formListeners.submit({ submitter: externalSubmit, preventDefault: () => { duplicatePrevented = true; } });
 assert.equal(duplicatePrevented, true, "el segundo submit debe bloquearse también con novalidate/formnovalidate");
