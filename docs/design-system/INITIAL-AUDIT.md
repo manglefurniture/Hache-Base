@@ -1,9 +1,9 @@
 # Auditoría inicial — Design System 2026
 
-**Fecha:** 2026-08-31  
-**Autoridad:** `DESIGN-SYSTEM-2026-FINAL.md`, norma aprobada v1.0.  
-**Base auditada:** `main` en `780a2f75b6fc81138b3b7ffa8d0c895db3cb5c4c`.  
-**Alcance:** exclusivamente `manglefurniture/Hache-Base`.  
+**Fecha:** 2026-08-31
+**Autoridad:** `DESIGN-SYSTEM-2026-FINAL.md`, norma aprobada v1.0.
+**Base auditada:** `main` en `780a2f75b6fc81138b3b7ffa8d0c895db3cb5c4c`.
+**Alcance:** exclusivamente `manglefurniture/Hache-Base`.
 
 ## Método y límites
 

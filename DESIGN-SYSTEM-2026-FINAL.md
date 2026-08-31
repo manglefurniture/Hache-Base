@@ -1,7 +1,7 @@
 # HACHE BASE — DESIGN SYSTEM 2026
 
-**Estado:** Norma cerrada y aprobada v1.0  
-**Ámbito:** Sitios públicos, landing pages, tiendas, portales, sistemas administrativos y futuros productos construidos sobre Hache Base.  
+**Estado:** Norma cerrada y aprobada v1.0
+**Ámbito:** Sitios públicos, landing pages, tiendas, portales, sistemas administrativos y futuros productos construidos sobre Hache Base.
 **Objetivo:** Establecer una base visual y de experiencia moderna, reutilizable, accesible, rápida y configurable, sin convertir Hache Base en una plantilla visual repetitiva.
 **Cierre de norma:** 30 de agosto de 2026.
 
