@@ -138,7 +138,7 @@ export function initDialogs(scope = document) {
 
 export function initSubmissionGuards(scope = document) {
   scope.querySelectorAll("form[data-hache-prevent-double-submit]").forEach((form) => {
-    const controls = () => [...form.querySelectorAll("button[type='submit'], input[type='submit']")];
+    const controls = () => [...form.querySelectorAll("button:not([type]), button[type='submit'], input[type='submit']")];
     const previousStates = new Map();
 
     const markBusy = (control) => {
