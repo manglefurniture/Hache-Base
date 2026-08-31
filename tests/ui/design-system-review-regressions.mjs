@@ -27,11 +27,15 @@ globalThis.CustomEvent = class CustomEvent {
 };
 const interactions = await import(pathToFileURL(path.join(root, "src/ui/core/interactions.js")));
 
-// Un scope Element debe escuchar pointerdown exterior en ownerDocument.
+// Un scope Element debe escuchar pointerdown exterior en ownerDocument sin tratar el panel controlado como exterior.
 const documentListeners = {};
 const triggerListeners = {};
 const triggerAttributes = new Map([["aria-controls", "menu"], ["aria-expanded", "false"]]);
-const panel = { hidden: false };
+const panelControl = {};
+const panel = {
+  hidden: false,
+  contains: (target) => target === panelControl
+};
 const trigger = {
   getAttribute: (name) => triggerAttributes.get(name),
   setAttribute: (name, value) => triggerAttributes.set(name, value),
@@ -42,7 +46,7 @@ const container = {
   dataset: { hacheDismiss: "outside" },
   querySelector: () => trigger,
   addEventListener: () => {},
-  contains: (target) => target === trigger || target === panel
+  contains: (target) => target === trigger
 };
 const ownerDocument = {
   getElementById: (id) => id === "menu" ? panel : null,
@@ -58,8 +62,10 @@ interactions.initDisclosures(elementScope);
 assert.equal(typeof documentListeners.pointerdown, "function", "outside dismiss debe escucharse en ownerDocument para scopes Element");
 triggerListeners.click();
 assert.equal(panel.hidden, false);
+documentListeners.pointerdown({ target: panelControl });
+assert.equal(panel.hidden, false, "interactuar con un panel hermano controlado no debe cerrar el disclosure");
 documentListeners.pointerdown({ target: {} });
-assert.equal(panel.hidden, true, "un pointerdown fuera del subtree debe cerrar el disclosure");
+assert.equal(panel.hidden, true, "un pointerdown realmente exterior debe cerrar el disclosure");
 
 // Si submit fue emitido, el guard no debe revalidar: novalidate/formnovalidate son válidos.
 const formListeners = {};
