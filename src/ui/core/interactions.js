@@ -91,7 +91,11 @@ export function initDisclosures(scope = document) {
       if (event.key === "Escape" && trigger.getAttribute("aria-expanded") === "true") setOpen(false, true);
     });
     const outside = (event) => {
-      if (container.dataset.hacheDismiss === "outside" && !container.contains(event.target)) setOpen(false);
+      if (
+        container.dataset.hacheDismiss === "outside" &&
+        !container.contains(event.target) &&
+        !panel.contains?.(event.target)
+      ) setOpen(false);
     };
     outsideTarget.addEventListener("pointerdown", outside);
     instances.push({ close: () => setOpen(false), destroy: () => outsideTarget.removeEventListener("pointerdown", outside) });
