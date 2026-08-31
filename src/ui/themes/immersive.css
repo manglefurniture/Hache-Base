@@ -12,5 +12,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-visual-level="immersive"] { --advanced-effects-enabled: 0; }
+  :root[data-visual-level="immersive"] {
+    --motion-fast: var(--hache-f-motion-instant);
+    --motion-normal: var(--hache-f-motion-instant);
+    --motion-slow: var(--hache-f-motion-instant);
+    --advanced-effects-enabled: 0;
+  }
 }
