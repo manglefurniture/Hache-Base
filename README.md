@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, patrones UI de backend, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -37,18 +37,19 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 8. Backups y rollback antes de producción.
 9. Integraciones externas desacopladas del núcleo, autenticadas e idempotentes cuando puedan repetirse.
 10. Credenciales externas rotables mediante versiones inmutables cuando existan operaciones históricas que deban seguir conciliándose.
-11. Cambios pequeños y trazables.
-12. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
+11. Patrones UI reutilizables deben ser opt-in, accesibles y no depender de nombres ni reglas de un negocio concreto.
+12. Cambios pequeños y trazables.
+13. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
 
 ## Estructura
 
-- `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal y bootstrap.
+- `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI y bootstrap.
 - `templates/` — perfiles y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales.
 - `security/` — patrones reutilizables de seguridad.
-- `src/` — módulos PHP genéricos, como auditoría y utilidades.
+- `src/` — módulos genéricos y componentes reutilizables, incluyendo utilidades PHP y patrones UI.
 - `integrations/` — correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
-- `tests/` — sintaxis, pruebas básicas, fronteras temporales, integración y smoke.
+- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, integración y smoke.
 - `deployment/` — preflight, backup, despliegue, health y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
