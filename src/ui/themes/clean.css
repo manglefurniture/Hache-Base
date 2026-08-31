@@ -8,3 +8,11 @@
   --motion-slow: var(--hache-f-motion-normal);
   --visual-level: clean;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-visual-level="clean"] {
+    --motion-fast: var(--hache-f-motion-instant);
+    --motion-normal: var(--hache-f-motion-instant);
+    --motion-slow: var(--hache-f-motion-instant);
+  }
+}
