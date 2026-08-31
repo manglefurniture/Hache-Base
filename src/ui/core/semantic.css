@@ -1,0 +1,112 @@
+/* Foundation → Semantic. Los proyectos sobrescriben estos contratos en su Theme. */
+:root {
+  color-scheme: light dark;
+  --color-primary: var(--hache-f-color-blue-700);
+  --color-primary-hover: var(--hache-f-color-blue-800);
+  --color-on-primary: var(--hache-f-color-white);
+  --color-destructive: var(--hache-f-color-red-700);
+  --color-destructive-hover: var(--hache-f-color-red-800);
+  --color-on-destructive: var(--hache-f-color-white);
+  --color-success: var(--hache-f-color-green-700);
+  --color-warning: var(--hache-f-color-amber-700);
+  --color-error: var(--hache-f-color-red-700);
+  --color-info: var(--hache-f-color-blue-700);
+  --color-focus: var(--hache-f-color-blue-700);
+  --surface-0: var(--hache-f-color-slate-50);
+  --surface-1: var(--hache-f-color-white);
+  --surface-2: var(--hache-f-color-white);
+  --text-primary: var(--hache-f-color-slate-900);
+  --text-muted: var(--hache-f-color-slate-600);
+  --border-subtle: var(--hache-f-color-slate-300);
+  --border-strong: var(--hache-f-color-slate-600);
+  --color-overlay: var(--hache-f-color-overlay);
+  --opacity-disabled: var(--hache-f-opacity-disabled);
+
+  --font-brand: var(--hache-f-font-sans);
+  --font-interface: var(--hache-f-font-sans);
+  --font-body: var(--hache-f-font-sans);
+  --font-display-size: clamp(2.5rem, 7vw, 7rem);
+  --font-h1-size: clamp(2rem, 5vw, 4.5rem);
+  --font-h2-size: clamp(1.625rem, 3.5vw, 3rem);
+  --font-h3-size: clamp(1.25rem, 2.5vw, 2rem);
+  --font-body-size: clamp(1rem, .97rem + .15vw, 1.125rem);
+  --font-small-size: .875rem;
+  --font-ui-size: .9375rem;
+
+  --space-inline: var(--hache-f-space-4);
+  --space-section: clamp(var(--hache-f-space-12), 8vw, var(--hache-f-space-24));
+  --space-component: var(--hache-f-space-4);
+  --content-reading-width: var(--hache-f-size-reading);
+  --content-max-width: var(--hache-f-size-container);
+  --content-wide-max-width: var(--hache-f-size-container-wide);
+  --target-size: var(--hache-f-size-touch);
+
+  --radius-control: var(--hache-f-radius-2);
+  --radius-surface: var(--hache-f-radius-3);
+  --elevation-0: none;
+  --elevation-1: 0 .125rem .25rem rgb(15 23 42 / .08), 0 .5rem 1.25rem rgb(15 23 42 / .06);
+  --elevation-2: 0 .75rem 2.5rem rgb(15 23 42 / .18);
+  --blur-surface: 0;
+  --motion-fast: var(--hache-f-motion-fast);
+  --motion-normal: var(--hache-f-motion-normal);
+  --motion-slow: var(--hache-f-motion-slow);
+  --motion-ease: var(--hache-f-ease-standard);
+  --density-block: var(--hache-f-space-3);
+  --density-inline: var(--hache-f-space-4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-primary: #93b4ff;
+    --color-primary-hover: #b9ccff;
+    --color-on-primary: var(--hache-f-color-slate-900);
+    --color-destructive: #ffb4ab;
+    --color-destructive-hover: #ffd0ca;
+    --color-on-destructive: var(--hache-f-color-slate-900);
+    --color-success: #75dc92;
+    --color-warning: #f8cc6b;
+    --color-error: #ffb4ab;
+    --color-info: #93b4ff;
+    --color-focus: #b9ccff;
+    --surface-0: #0b1220;
+    --surface-1: var(--hache-f-color-slate-900);
+    --surface-2: var(--hache-f-color-slate-800);
+    --text-primary: var(--hache-f-color-slate-50);
+    --text-muted: var(--hache-f-color-slate-300);
+    --border-subtle: var(--hache-f-color-slate-700);
+    --border-strong: var(--hache-f-color-slate-300);
+    --elevation-1: 0 .25rem 1rem rgb(0 0 0 / .28);
+    --elevation-2: 0 1rem 3rem rgb(0 0 0 / .42);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-primary: #93b4ff;
+  --color-primary-hover: #b9ccff;
+  --color-on-primary: var(--hache-f-color-slate-900);
+  --color-destructive: #ffb4ab;
+  --color-destructive-hover: #ffd0ca;
+  --color-on-destructive: var(--hache-f-color-slate-900);
+  --color-success: #75dc92;
+  --color-warning: #f8cc6b;
+  --color-error: #ffb4ab;
+  --color-info: #93b4ff;
+  --color-focus: #b9ccff;
+  --surface-0: #0b1220;
+  --surface-1: var(--hache-f-color-slate-900);
+  --surface-2: var(--hache-f-color-slate-800);
+  --text-primary: var(--hache-f-color-slate-50);
+  --text-muted: var(--hache-f-color-slate-300);
+  --border-subtle: var(--hache-f-color-slate-700);
+  --border-strong: var(--hache-f-color-slate-300);
+  --elevation-1: 0 .25rem 1rem rgb(0 0 0 / .28);
+  --elevation-2: 0 1rem 3rem rgb(0 0 0 / .42);
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+
+:root[data-density="compact"] {
+  --density-block: var(--hache-f-space-2);
+  --density-inline: var(--hache-f-space-3);
+}

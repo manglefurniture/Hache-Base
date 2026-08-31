@@ -1,0 +1,83 @@
+/* Baseline opt-in: mobile-first, baja especificidad y sin ocultar desbordes. */
+:where(html) {
+  font-family: var(--font-body);
+  line-height: var(--hache-f-leading-body);
+  scroll-padding-block-start: var(--hache-sticky-offset, var(--hache-f-space-16));
+  text-size-adjust: 100%;
+}
+
+:where(body) {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-size: var(--font-body-size);
+}
+
+:where(*, *::before, *::after) { box-sizing: border-box; }
+:where(img, picture, video, canvas, svg) { display: block; max-inline-size: 100%; }
+:where(img, video) { block-size: auto; }
+:where(input, button, textarea, select) { font: inherit; }
+:where([hidden]) { display: none !important; }
+:where([id]) { scroll-margin-block-start: var(--hache-sticky-offset, var(--hache-f-space-16)); }
+
+:where(h1, h2, h3) {
+  font-family: var(--font-brand);
+  line-height: var(--hache-f-leading-tight);
+  letter-spacing: var(--hache-f-tracking-tight);
+  text-wrap: balance;
+}
+:where(h1) { font-size: var(--font-h1-size); }
+:where(h2) { font-size: var(--font-h2-size); }
+:where(h3) { font-size: var(--font-h3-size); }
+:where(p, li) { max-inline-size: var(--content-reading-width); }
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: max(2px, .15em) solid var(--color-focus);
+  outline-offset: .2em;
+}
+
+.hache-container {
+  inline-size: min(100% - (2 * var(--space-inline)), var(--content-max-width));
+  margin-inline: auto;
+}
+
+.hache-component {
+  container-type: inline-size;
+  min-inline-size: 0;
+}
+
+.hache-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-component);
+  align-items: center;
+}
+
+@container (max-width: 30rem) {
+  .hache-component > .hache-cluster { align-items: stretch; flex-direction: column; }
+}
+
+@media (min-width: 48rem) {
+  :root { --space-inline: var(--hache-f-space-6); }
+}
+
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: var(--hache-f-motion-instant);
+    --motion-normal: var(--hache-f-motion-instant);
+    --motion-slow: var(--hache-f-motion-instant);
+  }
+  :where(html) { scroll-behavior: auto !important; }
+  :where(*, *::before, *::after) {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}

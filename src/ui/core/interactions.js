@@ -1,0 +1,101 @@
+const THEME_PREFERENCES = new Set(["light", "dark", "system"]);
+
+export function applyThemePreference(root, preference) {
+  const next = THEME_PREFERENCES.has(preference) ? preference : "system";
+  if (next === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", next);
+  return next;
+}
+
+export function initThemePreference({
+  root = document.documentElement,
+  scope = document,
+  storage = globalThis.localStorage,
+  storageKey = "hache-theme"
+} = {}) {
+  let stored = "system";
+  try { stored = storage?.getItem(storageKey) || "system"; } catch { /* storage may be unavailable */ }
+  let current = applyThemePreference(root, stored);
+
+  const updateControls = () => {
+    scope.querySelectorAll("[data-hache-theme-value]").forEach((control) => {
+      control.setAttribute("aria-pressed", String(control.dataset.hacheThemeValue === current));
+    });
+  };
+
+  const set = (value) => {
+    current = applyThemePreference(root, value);
+    try { storage?.setItem(storageKey, current); } catch { /* preference remains valid for this page */ }
+    updateControls();
+    root.dispatchEvent(new CustomEvent("hache:theme-change", { detail: { preference: current } }));
+    return current;
+  };
+
+  scope.querySelectorAll("[data-hache-theme-value]").forEach((control) => {
+    control.addEventListener("click", () => set(control.dataset.hacheThemeValue));
+  });
+  updateControls();
+  return { get: () => current, set };
+}
+
+export function initDisclosures(scope = document) {
+  const instances = [];
+  scope.querySelectorAll("[data-hache-disclosure]").forEach((container) => {
+    const trigger = container.querySelector("[aria-controls]");
+    const panel = trigger && scope.getElementById(trigger.getAttribute("aria-controls"));
+    if (!trigger || !panel) return;
+
+    const setOpen = (open, returnFocus = false) => {
+      trigger.setAttribute("aria-expanded", String(open));
+      panel.hidden = !open;
+      if (returnFocus) trigger.focus();
+    };
+    setOpen(trigger.getAttribute("aria-expanded") === "true");
+    trigger.addEventListener("click", () => setOpen(trigger.getAttribute("aria-expanded") !== "true"));
+    container.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && trigger.getAttribute("aria-expanded") === "true") setOpen(false, true);
+    });
+    const outside = (event) => {
+      if (container.dataset.hacheDismiss === "outside" && !container.contains(event.target)) setOpen(false);
+    };
+    scope.addEventListener("pointerdown", outside);
+    instances.push({ close: () => setOpen(false), destroy: () => scope.removeEventListener("pointerdown", outside) });
+  });
+  return instances;
+}
+
+export function initDialogs(scope = document) {
+  const openers = new Map();
+  scope.querySelectorAll("[data-hache-dialog-open]").forEach((trigger) => {
+    const dialog = scope.getElementById(trigger.dataset.hacheDialogOpen);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    trigger.addEventListener("click", () => {
+      openers.set(dialog, trigger);
+      if (!dialog.open) dialog.showModal();
+    });
+  });
+  scope.querySelectorAll("[data-hache-dialog-close]").forEach((trigger) => {
+    const dialog = trigger.closest("dialog");
+    if (dialog) trigger.addEventListener("click", () => dialog.close());
+  });
+  scope.querySelectorAll("dialog").forEach((dialog) => {
+    dialog.addEventListener("close", () => openers.get(dialog)?.focus());
+  });
+}
+
+export function initSubmissionGuards(scope = document) {
+  scope.querySelectorAll("form[data-hache-prevent-double-submit]").forEach((form) => {
+    const controls = () => [...form.querySelectorAll("button[type='submit'], input[type='submit']")];
+    const unlock = () => {
+      form.removeAttribute("aria-busy");
+      controls().forEach((control) => { control.disabled = false; control.removeAttribute("aria-busy"); });
+    };
+    form.addEventListener("submit", (event) => {
+      if (form.getAttribute("aria-busy") === "true") { event.preventDefault(); return; }
+      if (!form.checkValidity()) return;
+      form.setAttribute("aria-busy", "true");
+      controls().forEach((control) => { control.disabled = true; control.setAttribute("aria-busy", "true"); });
+    });
+    form.addEventListener("hache:submit-complete", unlock);
+  });
+}

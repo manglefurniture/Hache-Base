@@ -1,0 +1,121 @@
+/* Semantic → Component. Primitives opt-in; no selector global convierte bloques en cards. */
+:root {
+  --button-primary-bg: var(--color-primary);
+  --button-primary-text: var(--color-on-primary);
+  --button-primary-hover-bg: var(--color-primary-hover);
+  --button-secondary-bg: var(--surface-1);
+  --button-secondary-text: var(--text-primary);
+  --button-secondary-border: var(--border-strong);
+  --button-destructive-bg: var(--color-destructive);
+  --button-destructive-text: var(--color-on-destructive);
+  --button-destructive-hover-bg: var(--color-destructive-hover);
+  --button-radius: var(--radius-control);
+  --button-shadow: var(--elevation-1);
+  --button-duration: var(--motion-fast);
+  --field-bg: var(--surface-1);
+  --field-text: var(--text-primary);
+  --field-border: var(--border-subtle);
+  --field-error: var(--color-error);
+  --card-bg: var(--surface-1);
+  --card-border: var(--border-subtle);
+  --card-radius: var(--radius-surface);
+  --card-shadow: var(--elevation-1);
+  --overlay-bg: var(--color-overlay);
+}
+
+.hache-button {
+  align-items: center;
+  background: var(--button-primary-bg);
+  border: 1px solid transparent;
+  border-radius: var(--button-radius);
+  color: var(--button-primary-text);
+  cursor: pointer;
+  display: inline-flex;
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-size);
+  font-weight: var(--hache-f-font-semibold);
+  gap: var(--hache-f-space-2);
+  justify-content: center;
+  min-block-size: var(--target-size);
+  min-inline-size: var(--target-size);
+  padding: var(--density-block) var(--density-inline);
+  text-decoration: none;
+  transition: background-color var(--button-duration) var(--motion-ease), box-shadow var(--button-duration) var(--motion-ease), transform var(--button-duration) var(--motion-ease);
+}
+.hache-button:hover { background: var(--button-primary-hover-bg); }
+.hache-button:active { transform: translateY(1px); }
+.hache-button--secondary { background: var(--button-secondary-bg); border-color: var(--button-secondary-border); color: var(--button-secondary-text); }
+.hache-button--secondary:hover { background: var(--surface-0); }
+.hache-button--ghost { background: transparent; color: var(--color-primary); }
+.hache-button--ghost:hover { background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+.hache-button--destructive { background: var(--button-destructive-bg); color: var(--button-destructive-text); }
+.hache-button--destructive:hover { background: var(--button-destructive-hover-bg); }
+.hache-button:disabled,
+.hache-button[aria-disabled="true"] { cursor: not-allowed; opacity: var(--opacity-disabled); transform: none; }
+.hache-button[aria-busy="true"] { cursor: progress; }
+.hache-button[aria-busy="true"]::before {
+  animation: hache-spin var(--motion-slow) linear infinite;
+  border: .15em solid currentcolor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  content: "";
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+.hache-field-group { display: grid; gap: var(--hache-f-space-2); }
+.hache-label { color: var(--text-primary); font-family: var(--font-interface); font-size: var(--font-ui-size); font-weight: var(--hache-f-font-medium); }
+.hache-field {
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--radius-control);
+  color: var(--field-text);
+  min-block-size: var(--target-size);
+  padding: var(--density-block) var(--density-inline);
+}
+.hache-field[aria-invalid="true"] { border-color: var(--field-error); border-width: 2px; }
+.hache-field-message { color: var(--text-muted); font-size: var(--font-small-size); }
+.hache-field-message--error { color: var(--field-error); }
+.hache-field-message--error::before { content: "! "; font-weight: var(--hache-f-font-bold); }
+
+.hache-surface-0 { background: var(--surface-0); box-shadow: var(--elevation-0); }
+.hache-surface-1 { background: var(--surface-1); box-shadow: var(--elevation-1); }
+.hache-surface-2 { background: var(--surface-2); box-shadow: var(--elevation-2); }
+.hache-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--card-radius); padding: var(--space-component); }
+.hache-card--elevated { box-shadow: var(--card-shadow); }
+.hache-card-grid { display: grid; gap: var(--space-component); grid-template-columns: 1fr; }
+@container (min-width: 36rem) { .hache-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 64rem) { .hache-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.hache-status { align-items: center; display: inline-flex; gap: var(--hache-f-space-2); }
+.hache-status::before { background: currentcolor; border: 2px solid currentcolor; border-radius: 50%; content: ""; inline-size: .65em; block-size: .65em; }
+.hache-status--success { color: var(--color-success); }
+.hache-status--warning { color: var(--color-warning); }
+.hache-status--error { color: var(--color-error); }
+.hache-status--info { color: var(--color-info); }
+
+.hache-nav a { align-items: center; display: inline-flex; min-block-size: var(--target-size); padding-inline: var(--hache-f-space-3); }
+.hache-nav a[aria-current="page"] { font-weight: var(--hache-f-font-bold); text-decoration-thickness: .15em; text-underline-offset: .25em; }
+
+.hache-table-region { max-inline-size: 100%; overflow: auto; overscroll-behavior-inline: contain; }
+.hache-table { border-collapse: collapse; inline-size: 100%; }
+.hache-table :where(th, td) { border-block-end: 1px solid var(--border-subtle); padding: var(--density-block) var(--density-inline); text-align: start; }
+.hache-table th { font-family: var(--font-interface); font-size: var(--font-ui-size); }
+
+.hache-dialog { background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-surface); color: var(--text-primary); max-block-size: min(85dvb, 50rem); max-inline-size: min(90dvi, 45rem); padding: var(--hache-f-space-6); }
+.hache-dialog::backdrop { background: var(--overlay-bg); }
+
+@keyframes hache-spin { to { transform: rotate(1turn); } }
+
+@media (hover: hover) and (pointer: fine) {
+  .hache-button:not(:disabled, [aria-disabled="true"]):hover { box-shadow: var(--button-shadow); transform: translateY(-1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hache-button[aria-busy="true"]::before { animation: none; border-inline-end-color: currentcolor; }
+}
+
+@media (forced-colors: active) {
+  .hache-status::before { forced-color-adjust: auto; }
+  .hache-field[aria-invalid="true"] { border-style: double; }
+}

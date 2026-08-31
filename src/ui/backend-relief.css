@@ -1,107 +1,84 @@
-:root{
-  --hache-control-border:rgba(148,163,184,.44);
-  --hache-control-top-edge:rgba(148,163,184,.34);
-  --hache-control-border-bottom:rgba(71,85,105,.46);
-  --hache-control-focus:#2563eb;
-  --hache-control-shadow:inset 0 1px 0 rgba(255,255,255,.78),inset 0 -2px 0 rgba(15,23,42,.10),0 2px 4px rgba(15,23,42,.055),0 7px 16px rgba(15,23,42,.07);
-  --hache-control-shadow-hover:inset 0 1px 0 rgba(255,255,255,.9),inset 0 -2px 0 rgba(15,23,42,.13),0 3px 6px rgba(15,23,42,.07),0 10px 22px rgba(15,23,42,.09);
-  --hache-control-shadow-active:inset 0 2px 4px rgba(15,23,42,.15),inset 0 -1px 0 rgba(255,255,255,.28),0 1px 2px rgba(15,23,42,.06);
-  --hache-primary-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -2px 0 rgba(3,12,21,.24),0 2px 4px rgba(15,23,42,.08),0 8px 18px rgba(15,23,42,.11);
-  --hache-primary-shadow-hover:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -2px 0 rgba(3,12,21,.28),0 3px 6px rgba(15,23,42,.10),0 11px 24px rgba(15,23,42,.14);
-}
-
 /*
- * Relieve de backend reutilizable.
- * Aplicar .hache-control solo a controles que visualmente deben comportarse como botón.
- * .hache-control--flat excluye el control sin sobrescribir su geometría local.
+ * Compatibilidad del patrón de relieve. Las clases públicas se conservan.
+ * Cargar después de core/foundation.css, core/semantic.css y el Theme elegido.
  */
-.hache-control:not(.hache-control--flat){
-  border-style:solid!important;
-  border-width:1px!important;
-  border-color:var(--hache-control-border)!important;
-  border-top-color:var(--hache-control-top-edge)!important;
-  border-bottom-color:var(--hache-control-border-bottom)!important;
-  box-shadow:var(--hache-control-shadow)!important;
-  transform:translateZ(0);
-  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease,filter .15s ease!important;
+:root {
+  --hache-control-border: var(--border-subtle);
+  --hache-control-top-edge: var(--border-subtle);
+  --hache-control-border-bottom: var(--border-strong);
+  --hache-control-focus: var(--color-focus);
+  --hache-control-shadow: var(--elevation-1);
+  --hache-control-shadow-hover: var(--elevation-1);
+  --hache-control-shadow-active: var(--elevation-0);
+  --hache-primary-shadow: var(--elevation-1);
+  --hache-primary-shadow-hover: var(--elevation-1);
+  --hache-control-duration: var(--motion-fast);
+  --hache-control-easing: var(--motion-ease);
 }
 
-/* Primarios/oscuros: el borde superior vuelve a ser luminoso para contrastar con la cara oscura. */
-.hache-control.hache-control--primary:not(.hache-control--flat){
-  border-top-color:rgba(255,255,255,.34)!important;
-  border-right-color:rgba(15,23,42,.36)!important;
-  border-bottom-color:rgba(3,12,21,.62)!important;
-  border-left-color:rgba(15,23,42,.36)!important;
-  box-shadow:var(--hache-primary-shadow)!important;
+.hache-control:not(.hache-control--flat) {
+  border-color: var(--hache-control-border) !important;
+  border-style: solid !important;
+  border-width: 1px !important;
+  border-block-end-color: var(--hache-control-border-bottom) !important;
+  border-block-start-color: var(--hache-control-top-edge) !important;
+  box-shadow: var(--hache-control-shadow) !important;
+  transform: translateZ(0);
+  transition: border-color var(--hache-control-duration) var(--hache-control-easing), box-shadow var(--hache-control-duration) var(--hache-control-easing), filter var(--hache-control-duration) var(--hache-control-easing), transform var(--hache-control-duration) var(--hache-control-easing) !important;
 }
 
-.hache-control:not(.hache-control--flat):focus-visible{
-  outline:3px solid var(--hache-control-focus)!important;
-  outline-offset:2px!important;
+.hache-control.hache-control--primary:not(.hache-control--flat) {
+  border-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary)) 72%, var(--text-primary)) !important;
+  border-block-start-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary)) 68%, var(--hache-f-color-white)) !important;
+  box-shadow: var(--hache-primary-shadow) !important;
 }
 
-@media(hover:hover){
-  .hache-control:not(.hache-control--flat):not(:disabled):hover{
-    transform:translateY(-1px);
-    box-shadow:var(--hache-control-shadow-hover)!important;
-    filter:brightness(1.015);
+.hache-control:not(.hache-control--flat):focus-visible {
+  outline: max(2px, .15em) solid var(--hache-control-focus) !important;
+  outline-offset: .2em !important;
+}
+
+.hache-control:not(.hache-control--flat):active {
+  box-shadow: var(--hache-control-shadow-active) !important;
+  filter: none !important;
+  transform: translateY(1px) !important;
+}
+
+.hache-control:not(.hache-control--flat):disabled,
+.hache-control:not(.hache-control--flat)[aria-disabled="true"] {
+  cursor: not-allowed;
+  filter: none !important;
+  opacity: var(--opacity-disabled);
+  transform: none !important;
+}
+
+.hache-control:not(.hache-control--flat)[aria-busy="true"] { cursor: progress; }
+.hache-control:not(.hache-control--flat)[data-state="success"] { border-inline-start: .25rem solid var(--color-success) !important; }
+.hache-control:not(.hache-control--flat)[data-state="warning"] { border-inline-start: .25rem double var(--color-warning) !important; }
+.hache-control:not(.hache-control--flat)[data-state="error"] { border-inline-start: .25rem double var(--color-error) !important; }
+
+@media (hover: hover) and (pointer: fine) {
+  .hache-control:not(.hache-control--flat):not(:disabled, [aria-disabled="true"]):hover {
+    box-shadow: var(--hache-control-shadow-hover) !important;
+    filter: brightness(1.015);
+    transform: translateY(-1px);
   }
-
-  .hache-control.hache-control--primary:not(.hache-control--flat):not(:disabled):hover{
-    border-top-color:rgba(255,255,255,.38)!important;
-    border-right-color:rgba(15,23,42,.38)!important;
-    border-bottom-color:rgba(3,12,21,.68)!important;
-    border-left-color:rgba(15,23,42,.38)!important;
-    box-shadow:var(--hache-primary-shadow-hover)!important;
-  }
-
-  .hache-control:not(.hache-control--flat):disabled:hover{
-    transform:none!important;
-    filter:none!important;
-    box-shadow:var(--hache-control-shadow)!important;
-  }
-
-  .hache-control.hache-control--primary:not(.hache-control--flat):disabled:hover{
-    border-top-color:rgba(255,255,255,.34)!important;
-    border-right-color:rgba(15,23,42,.36)!important;
-    border-bottom-color:rgba(3,12,21,.62)!important;
-    border-left-color:rgba(15,23,42,.36)!important;
-    box-shadow:var(--hache-primary-shadow)!important;
-  }
-}
-
-.hache-control:not(.hache-control--flat):active{
-  transform:translateY(1px)!important;
-  border-top-color:rgba(71,85,105,.32)!important;
-  border-bottom-color:rgba(255,255,255,.54)!important;
-  box-shadow:var(--hache-control-shadow-active)!important;
-  filter:none!important;
-}
-
-.hache-control.hache-control--primary:not(.hache-control--flat):active{
-  border-top-color:rgba(3,12,21,.48)!important;
-  border-right-color:rgba(15,23,42,.42)!important;
-  border-bottom-color:rgba(255,255,255,.18)!important;
-  border-left-color:rgba(15,23,42,.42)!important;
-  box-shadow:inset 0 2px 5px rgba(3,12,21,.34),0 1px 2px rgba(15,23,42,.08)!important;
-}
-
-@media(max-width:750px){
-  :root{
-    --hache-control-shadow:inset 0 1px 0 rgba(255,255,255,.78),inset 0 -2px 0 rgba(15,23,42,.09),0 2px 4px rgba(15,23,42,.05),0 5px 12px rgba(15,23,42,.06);
-    --hache-control-shadow-hover:var(--hache-control-shadow);
-    --hache-primary-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -2px 0 rgba(3,12,21,.22),0 2px 4px rgba(15,23,42,.07),0 6px 14px rgba(15,23,42,.09);
-    --hache-primary-shadow-hover:var(--hache-primary-shadow);
+  .hache-control.hache-control--primary:not(.hache-control--flat):not(:disabled, [aria-disabled="true"]):hover {
+    box-shadow: var(--hache-primary-shadow-hover) !important;
   }
 }
 
-@media(hover:none){
-  .hache-control:not(.hache-control--flat):hover{
-    transform:none;
-    filter:none;
+@media (min-width: 46.875rem) {
+  :root {
+    --hache-control-shadow-hover: var(--elevation-2);
+    --hache-primary-shadow-hover: var(--elevation-2);
   }
 }
 
-@media(prefers-reduced-motion:reduce){
-  .hache-control:not(.hache-control--flat){transition:none!important}
+@media (prefers-reduced-motion: reduce) {
+  .hache-control:not(.hache-control--flat) { transition: none !important; }
+}
+
+@media (forced-colors: active) {
+  .hache-control:not(.hache-control--flat)[data-state] { border-inline-start-style: double !important; }
 }

@@ -1,0 +1,68 @@
+/* Hache Base Design System 2026 — valores físicos. No contienen identidad de proyecto. */
+:root {
+  --hache-f-color-white: #fff;
+  --hache-f-color-slate-50: #f8fafc;
+  --hache-f-color-slate-100: #f1f5f9;
+  --hache-f-color-slate-200: #e2e8f0;
+  --hache-f-color-slate-300: #cbd5e1;
+  --hache-f-color-slate-500: #64748b;
+  --hache-f-color-slate-600: #475569;
+  --hache-f-color-slate-700: #334155;
+  --hache-f-color-slate-800: #1e293b;
+  --hache-f-color-slate-900: #0f172a;
+  --hache-f-color-blue-700: #1d4ed8;
+  --hache-f-color-blue-800: #1e40af;
+  --hache-f-color-red-700: #b91c1c;
+  --hache-f-color-red-800: #991b1b;
+  --hache-f-color-amber-700: #a16207;
+  --hache-f-color-green-700: #15803d;
+  --hache-f-color-overlay: rgb(2 6 23 / .68);
+  --hache-f-opacity-disabled: .58;
+
+  --hache-f-space-0: 0;
+  --hache-f-space-1: .25rem;
+  --hache-f-space-2: .5rem;
+  --hache-f-space-3: .75rem;
+  --hache-f-space-4: 1rem;
+  --hache-f-space-6: 1.5rem;
+  --hache-f-space-8: 2rem;
+  --hache-f-space-12: 3rem;
+  --hache-f-space-16: 4rem;
+  --hache-f-space-24: 6rem;
+  --hache-f-space-32: 8rem;
+
+  --hache-f-size-touch: 2.75rem;
+  --hache-f-size-reading: 70ch;
+  --hache-f-size-container: 75rem;
+  --hache-f-size-container-wide: 90rem;
+
+  --hache-f-radius-1: .25rem;
+  --hache-f-radius-2: .5rem;
+  --hache-f-radius-3: .75rem;
+  --hache-f-radius-pill: 999rem;
+
+  --hache-f-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --hache-f-font-mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --hache-f-font-regular: 400;
+  --hache-f-font-medium: 500;
+  --hache-f-font-semibold: 600;
+  --hache-f-font-bold: 700;
+  --hache-f-leading-tight: 1.15;
+  --hache-f-leading-body: 1.6;
+  --hache-f-tracking-tight: -.02em;
+  --hache-f-tracking-ui: .01em;
+
+  --hache-f-motion-instant: 0ms;
+  --hache-f-motion-fast: 160ms;
+  --hache-f-motion-normal: 240ms;
+  --hache-f-motion-slow: 400ms;
+  --hache-f-ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --hache-f-ease-emphasized: cubic-bezier(.2, .8, .2, 1);
+
+  --hache-f-layer-base: 0;
+  --hache-f-layer-sticky: 100;
+  --hache-f-layer-dropdown: 200;
+  --hache-f-layer-overlay: 300;
+  --hache-f-layer-modal: 400;
+  --hache-f-layer-toast: 500;
+}

@@ -1,0 +1,8 @@
+/* Entrada conveniente. En producción un bundler puede concatenar estos archivos. */
+@import url("./core/foundation.css");
+@import url("./core/semantic.css");
+@import url("./core/base.css");
+@import url("./core/components.css");
+@import url("./themes/dimensional.css");
+@import url("./themes/clean.css");
+@import url("./themes/immersive.css");
