@@ -16,7 +16,7 @@ Clases principales:
 
 - `.hache-control` — relieve claro/base.
 - `.hache-control--primary` — variante para botones con fondo oscuro o de alta prioridad.
-- `.hache-control--flat` — exclusión explícita para iconos, cierres, autocompletados o encabezados que deban permanecer planos.
+- `.hache-control--flat` — exclusión explícita para iconos, cierres, autocompletados, encabezados o controles posicionados que deban conservar íntegramente su geometría local.
 
 ## Regla visual aprobada
 
@@ -48,10 +48,24 @@ El patrón incluye:
 
 - `:hover` solo cuando el dispositivo realmente soporta hover;
 - `:active` con desplazamiento de 1 px para sensación de pulsado;
-- `:focus-visible` accesible;
+- `:focus-visible` con indicador azul sólido (`#2563eb`), diseñado para mantener un contraste mínimo de 3:1 frente a superficies claras habituales del backend;
 - neutralización del hover en controles deshabilitados;
 - `prefers-reduced-motion`;
 - sombras de menor profundidad en pantallas de hasta 750 px.
+
+No sustituir el indicador de foco por un borde translúcido de bajo contraste. Si un proyecto cambia el color mediante `--hache-control-focus`, debe volver a validar contraste contra sus fondos reales.
+
+## Variante plana
+
+`.hache-control--flat` **no es un reset visual**. Su función es excluir un control de las reglas de relieve.
+
+El módulo usa selectores como:
+
+```css
+.hache-control:not(.hache-control--flat) { ... }
+```
+
+Por tanto, la variante plana no sobrescribe borde, sombra, `transform` ni `filter` definidos por el componente. Esto evita romper autocompletados, cierres, encabezados, iconos o controles posicionados que ya tienen geometría propia.
 
 ## Uso recomendado
 
@@ -69,17 +83,19 @@ No aplicar `.hache-control` indiscriminadamente a todo `<button>` del proyecto. 
 2. Cargarlo después de los estilos base del panel para que los tokens tengan precedencia predecible.
 3. Marcar explícitamente controles de acción con `.hache-control`.
 4. Añadir `.hache-control--primary` solo a controles realmente oscuros/primarios.
-5. Usar `.hache-control--flat` cuando la geometría del componente no deba recibir borde, sombra ni desplazamiento.
-6. Crear regresiones para controles dinámicos o convenciones locales que el proyecto añada.
+5. Usar `.hache-control--flat` cuando el componente deba conservar sus estilos propios sin recibir borde, sombra ni desplazamiento del módulo.
+6. Validar `--hache-control-focus` contra los fondos reales del proyecto y mantener al menos 3:1 de contraste para el indicador de foco.
+7. Crear regresiones para controles dinámicos o convenciones locales que el proyecto añada.
 
 ## Qué no debe cambiar este módulo
 
 - tamaños o jerarquía tipográfica del proyecto;
 - lógica, permisos o navegación;
-- colores de marca salvo los tokens de borde/sombra;
+- colores de marca salvo los tokens de borde/sombra/foco;
 - layout de formularios o tablas;
-- estados funcionales del negocio.
+- estados funcionales del negocio;
+- geometría propia de controles excluidos mediante `.hache-control--flat`.
 
 ## Criterio de aceptación visual
 
-En un control claro debe distinguirse una línea fina arriba incluso sobre fondo blanco/gris claro. El brillo interior debe seguir presente, pero no reemplazar el borde real. En un control oscuro el bisel claro superior y el borde inferior oscuro deben conservar contraste. En móvil el efecto debe ser perceptible pero más contenido que en escritorio.
+En un control claro debe distinguirse una línea fina arriba incluso sobre fondo blanco/gris claro. El brillo interior debe seguir presente, pero no reemplazar el borde real. En un control oscuro el bisel claro superior y el borde inferior oscuro deben conservar contraste. El indicador de foco debe ser inequívoco para teclado. En móvil el efecto debe ser perceptible pero más contenido que en escritorio.
