@@ -28,24 +28,31 @@ globalThis.CustomEvent = class CustomEvent {
 const interactions = await import(pathToFileURL(path.join(root, "src/ui/core/interactions.js")));
 
 // Un scope Element debe escuchar pointerdown exterior en ownerDocument sin tratar el panel controlado como exterior.
+// Escape debe funcionar tanto desde el contenedor como desde un panel hermano controlado.
 const documentListeners = {};
 const triggerListeners = {};
+const containerListeners = {};
+const panelListeners = {};
 const triggerAttributes = new Map([["aria-controls", "menu"], ["aria-expanded", "false"]]);
+let focusReturned = false;
 const panelControl = {};
 const panel = {
   hidden: false,
-  contains: (target) => target === panelControl
+  contains: (target) => target === panelControl,
+  addEventListener: (type, callback) => { panelListeners[type] = callback; },
+  removeEventListener: () => {}
 };
 const trigger = {
   getAttribute: (name) => triggerAttributes.get(name),
   setAttribute: (name, value) => triggerAttributes.set(name, value),
   addEventListener: (type, callback) => { triggerListeners[type] = callback; },
-  focus: () => {}
+  focus: () => { focusReturned = true; }
 };
 const container = {
   dataset: { hacheDismiss: "outside" },
   querySelector: () => trigger,
-  addEventListener: () => {},
+  addEventListener: (type, callback) => { containerListeners[type] = callback; },
+  removeEventListener: () => {},
   contains: (target) => target === trigger
 };
 const ownerDocument = {
@@ -60,10 +67,15 @@ const elementScope = {
 };
 interactions.initDisclosures(elementScope);
 assert.equal(typeof documentListeners.pointerdown, "function", "outside dismiss debe escucharse en ownerDocument para scopes Element");
+assert.equal(typeof panelListeners.keydown, "function", "Escape debe escucharse también en un panel hermano controlado");
 triggerListeners.click();
 assert.equal(panel.hidden, false);
 documentListeners.pointerdown({ target: panelControl });
 assert.equal(panel.hidden, false, "interactuar con un panel hermano controlado no debe cerrar el disclosure");
+panelListeners.keydown({ key: "Escape" });
+assert.equal(panel.hidden, true, "Escape desde un control del panel hermano debe cerrar el disclosure");
+assert.equal(focusReturned, true, "Escape desde el panel hermano debe devolver foco al trigger");
+triggerListeners.click();
 documentListeners.pointerdown({ target: {} });
 assert.equal(panel.hidden, true, "un pointerdown realmente exterior debe cerrar el disclosure");
 
