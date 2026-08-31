@@ -6,18 +6,28 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (relative) => readFile(path.join(root, relative), "utf8");
 
-// Los Themes se cargan después de base.css: cada preset debe conservar reduced-motion.
-for (const relative of [
-  "src/ui/themes/dimensional.css",
-  "src/ui/themes/clean.css",
-  "src/ui/themes/immersive.css"
+// Los Themes se cargan después de base.css: cada preset debe conservar reduced-motion
+// sin elevar la especificidad por encima de un :root de proyecto cargado después.
+for (const [relative, level] of [
+  ["src/ui/themes/dimensional.css", "dimensional"],
+  ["src/ui/themes/clean.css", "clean"],
+  ["src/ui/themes/immersive.css", "immersive"]
 ]) {
   const css = await read(relative);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, `${relative} debe preservar reduced motion`);
+  assert.match(css, new RegExp(`:root:where\\(\\[data-visual-level="${level}"\\]\\)`), `${relative} debe mantener especificidad compatible con overrides de proyecto`);
+  assert.doesNotMatch(css, /:root\[data-visual-level=/, `${relative} no debe usar selector de preset con especificidad superior a :root`);
   for (const token of ["fast", "normal", "slow"]) {
     assert.match(css, new RegExp(`--motion-${token}: var\\(--hache-f-motion-instant\\)`), `${relative} debe poner --motion-${token} en instant`);
   }
 }
+
+const semantic = await read("src/ui/core/semantic.css");
+assert.match(semantic, /:root:where\(:not\(\[data-theme="light"\]\)\)/, "system dark debe mantener especificidad compatible con overrides");
+assert.match(semantic, /:root:where\(\[data-theme="dark"\]\)/, "dark manual debe mantener especificidad compatible con overrides");
+assert.match(semantic, /:root:where\(\[data-theme="light"\]\)/, "light manual debe mantener especificidad compatible con overrides");
+assert.match(semantic, /:root:where\(\[data-density="compact"\]\)/, "density compact debe mantener especificidad compatible con overrides");
+assert.doesNotMatch(semantic, /:root\[data-(?:theme|density)=/, "los estados semánticos no deben superar la especificidad de :root");
 
 const immersive = await read("src/ui/themes/immersive.css");
 assert.match(immersive, /--advanced-effects-enabled: 0/);
@@ -102,18 +112,28 @@ assert.equal(panel.hidden, false, "un solo click tras destroy + reinit debe alte
 secondDisclosureInstances[0].destroy();
 
 // Si submit fue emitido, el guard no debe revalidar: novalidate/formnovalidate son válidos.
+// También debe incluir <button> sin type, cuyo tipo HTML predeterminado es submit.
 const formListeners = {};
 const formAttributes = new Map();
 const submitAttributes = new Map();
+const implicitSubmitAttributes = new Map();
 const submit = {
   formNoValidate: true,
   getAttribute: (name) => submitAttributes.get(name) ?? null,
   setAttribute: (name, value) => submitAttributes.set(name, value),
   removeAttribute: (name) => submitAttributes.delete(name)
 };
+const implicitSubmit = {
+  getAttribute: (name) => implicitSubmitAttributes.get(name) ?? null,
+  setAttribute: (name, value) => implicitSubmitAttributes.set(name, value),
+  removeAttribute: (name) => implicitSubmitAttributes.delete(name)
+};
 const form = {
   noValidate: true,
-  querySelectorAll: () => [submit],
+  querySelectorAll: (selector) => {
+    assert.match(selector, /button:not\(\[type\]\)/, "el guard debe seleccionar botones con submit implícito");
+    return [submit, implicitSubmit];
+  },
   checkValidity: () => { throw new Error("initSubmissionGuards no debe revalidar un submit ya emitido"); },
   getAttribute: (name) => formAttributes.get(name),
   setAttribute: (name, value) => formAttributes.set(name, value),
@@ -124,6 +144,8 @@ interactions.initSubmissionGuards({ querySelectorAll: () => [form] });
 assert.doesNotThrow(() => formListeners.submit({ submitter: submit, preventDefault: () => {} }));
 assert.equal(formAttributes.get("aria-busy"), "true");
 assert.equal(submitAttributes.get("aria-disabled"), "true");
+assert.equal(implicitSubmitAttributes.get("aria-busy"), "true", "button sin type debe recibir estado busy");
+assert.equal(implicitSubmitAttributes.get("aria-disabled"), "true", "button sin type debe anunciar estado disabled");
 let duplicatePrevented = false;
 formListeners.submit({ submitter: submit, preventDefault: () => { duplicatePrevented = true; } });
 assert.equal(duplicatePrevented, true, "el segundo submit debe bloquearse también con novalidate/formnovalidate");
