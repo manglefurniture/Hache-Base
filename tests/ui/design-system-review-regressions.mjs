@@ -112,28 +112,38 @@ assert.equal(panel.hidden, false, "un solo click tras destroy + reinit debe alte
 secondDisclosureInstances[0].destroy();
 
 // Si submit fue emitido, el guard no debe revalidar: novalidate/formnovalidate son válidos.
-// También debe incluir <button> sin type, cuyo tipo HTML predeterminado es submit.
+// Debe incluir botones con submit implícito y submitters externos asociados mediante form="...".
 const formListeners = {};
 const formAttributes = new Map();
 const submitAttributes = new Map();
 const implicitSubmitAttributes = new Map();
+const externalSubmitAttributes = new Map();
 const submit = {
+  tagName: "BUTTON",
+  type: "submit",
   formNoValidate: true,
   getAttribute: (name) => submitAttributes.get(name) ?? null,
   setAttribute: (name, value) => submitAttributes.set(name, value),
   removeAttribute: (name) => submitAttributes.delete(name)
 };
 const implicitSubmit = {
+  tagName: "BUTTON",
+  type: "submit",
   getAttribute: (name) => implicitSubmitAttributes.get(name) ?? null,
   setAttribute: (name, value) => implicitSubmitAttributes.set(name, value),
   removeAttribute: (name) => implicitSubmitAttributes.delete(name)
 };
+const externalSubmit = {
+  tagName: "BUTTON",
+  type: "submit",
+  getAttribute: (name) => externalSubmitAttributes.get(name) ?? null,
+  setAttribute: (name, value) => externalSubmitAttributes.set(name, value),
+  removeAttribute: (name) => externalSubmitAttributes.delete(name)
+};
 const form = {
   noValidate: true,
-  querySelectorAll: (selector) => {
-    assert.match(selector, /button:not\(\[type\]\)/, "el guard debe seleccionar botones con submit implícito");
-    return [submit, implicitSubmit];
-  },
+  elements: [submit, implicitSubmit, externalSubmit],
+  querySelectorAll: () => { throw new Error("con form.elements disponible no debe limitarse a descendientes del formulario"); },
   checkValidity: () => { throw new Error("initSubmissionGuards no debe revalidar un submit ya emitido"); },
   getAttribute: (name) => formAttributes.get(name),
   setAttribute: (name, value) => formAttributes.set(name, value),
@@ -141,13 +151,15 @@ const form = {
   addEventListener: (type, callback) => { formListeners[type] = callback; }
 };
 interactions.initSubmissionGuards({ querySelectorAll: () => [form] });
-assert.doesNotThrow(() => formListeners.submit({ submitter: submit, preventDefault: () => {} }));
+assert.doesNotThrow(() => formListeners.submit({ submitter: externalSubmit, preventDefault: () => {} }));
 assert.equal(formAttributes.get("aria-busy"), "true");
 assert.equal(submitAttributes.get("aria-disabled"), "true");
 assert.equal(implicitSubmitAttributes.get("aria-busy"), "true", "button sin type debe recibir estado busy");
 assert.equal(implicitSubmitAttributes.get("aria-disabled"), "true", "button sin type debe anunciar estado disabled");
+assert.equal(externalSubmitAttributes.get("aria-busy"), "true", "submitter externo asociado por form debe recibir estado busy");
+assert.equal(externalSubmitAttributes.get("aria-disabled"), "true", "submitter externo asociado por form debe anunciar estado disabled");
 let duplicatePrevented = false;
-formListeners.submit({ submitter: submit, preventDefault: () => { duplicatePrevented = true; } });
+formListeners.submit({ submitter: externalSubmit, preventDefault: () => { duplicatePrevented = true; } });
 assert.equal(duplicatePrevented, true, "el segundo submit debe bloquearse también con novalidate/formnovalidate");
 
 console.log("DESIGN_SYSTEM_REVIEW_REGRESSIONS_OK");
