@@ -1,5 +1,5 @@
 /* Opt-in explícito. Declara capacidad; no activa 3D, parallax, WebGL ni scroll effects. */
-:root[data-visual-level="immersive"] {
+:root:where([data-visual-level="immersive"]) {
   --radius-control: var(--hache-f-radius-2);
   --radius-surface: var(--hache-f-radius-3);
   --elevation-1: 0 .5rem 1.5rem rgb(15 23 42 / .12);
@@ -12,7 +12,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-visual-level="immersive"] {
+  :root:where([data-visual-level="immersive"]) {
     --motion-fast: var(--hache-f-motion-instant);
     --motion-normal: var(--hache-f-motion-instant);
     --motion-slow: var(--hache-f-motion-instant);
