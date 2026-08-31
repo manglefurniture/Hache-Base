@@ -87,9 +87,13 @@ export function initDisclosures(scope = document) {
     };
     setOpen(trigger.getAttribute("aria-expanded") === "true");
     trigger.addEventListener("click", () => setOpen(trigger.getAttribute("aria-expanded") !== "true"));
-    container.addEventListener("keydown", (event) => {
+
+    const onEscape = (event) => {
       if (event.key === "Escape" && trigger.getAttribute("aria-expanded") === "true") setOpen(false, true);
-    });
+    };
+    container.addEventListener("keydown", onEscape);
+    if (panel !== container && typeof panel.addEventListener === "function") panel.addEventListener("keydown", onEscape);
+
     const outside = (event) => {
       if (
         container.dataset.hacheDismiss === "outside" &&
@@ -98,7 +102,14 @@ export function initDisclosures(scope = document) {
       ) setOpen(false);
     };
     outsideTarget.addEventListener("pointerdown", outside);
-    instances.push({ close: () => setOpen(false), destroy: () => outsideTarget.removeEventListener("pointerdown", outside) });
+    instances.push({
+      close: () => setOpen(false),
+      destroy: () => {
+        outsideTarget.removeEventListener("pointerdown", outside);
+        container.removeEventListener?.("keydown", onEscape);
+        if (panel !== container) panel.removeEventListener?.("keydown", onEscape);
+      }
+    });
   });
   return instances;
 }
