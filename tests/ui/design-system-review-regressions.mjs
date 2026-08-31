@@ -29,55 +29,77 @@ const interactions = await import(pathToFileURL(path.join(root, "src/ui/core/int
 
 // Un scope Element debe escuchar pointerdown exterior en ownerDocument sin tratar el panel controlado como exterior.
 // Escape debe funcionar tanto desde el contenedor como desde un panel hermano controlado.
-const documentListeners = {};
-const triggerListeners = {};
-const containerListeners = {};
-const panelListeners = {};
+// destroy() debe limpiar el click del trigger para permitir reinicialización sin handlers duplicados.
+const documentListeners = new Map();
+const triggerListeners = new Map();
+const containerListeners = new Map();
+const panelListeners = new Map();
+const addListener = (registry, type, callback) => {
+  if (!registry.has(type)) registry.set(type, new Set());
+  registry.get(type).add(callback);
+};
+const removeListener = (registry, type, callback) => registry.get(type)?.delete(callback);
+const emit = (registry, type, event = {}) => {
+  for (const callback of [...(registry.get(type) || [])]) callback(event);
+};
+
 const triggerAttributes = new Map([["aria-controls", "menu"], ["aria-expanded", "false"]]);
 let focusReturned = false;
 const panelControl = {};
 const panel = {
   hidden: false,
   contains: (target) => target === panelControl,
-  addEventListener: (type, callback) => { panelListeners[type] = callback; },
-  removeEventListener: () => {}
+  addEventListener: (type, callback) => addListener(panelListeners, type, callback),
+  removeEventListener: (type, callback) => removeListener(panelListeners, type, callback)
 };
 const trigger = {
   getAttribute: (name) => triggerAttributes.get(name),
   setAttribute: (name, value) => triggerAttributes.set(name, value),
-  addEventListener: (type, callback) => { triggerListeners[type] = callback; },
+  addEventListener: (type, callback) => addListener(triggerListeners, type, callback),
+  removeEventListener: (type, callback) => removeListener(triggerListeners, type, callback),
   focus: () => { focusReturned = true; }
 };
 const container = {
   dataset: { hacheDismiss: "outside" },
   querySelector: () => trigger,
-  addEventListener: (type, callback) => { containerListeners[type] = callback; },
-  removeEventListener: () => {},
+  addEventListener: (type, callback) => addListener(containerListeners, type, callback),
+  removeEventListener: (type, callback) => removeListener(containerListeners, type, callback),
   contains: (target) => target === trigger
 };
 const ownerDocument = {
   getElementById: (id) => id === "menu" ? panel : null,
-  addEventListener: (type, callback) => { documentListeners[type] = callback; },
-  removeEventListener: () => {}
+  addEventListener: (type, callback) => addListener(documentListeners, type, callback),
+  removeEventListener: (type, callback) => removeListener(documentListeners, type, callback)
 };
 const elementScope = {
   ownerDocument,
   querySelectorAll: (selector) => selector === "[data-hache-disclosure]" ? [container] : [],
   contains: (candidate) => candidate === panel || candidate === container
 };
-interactions.initDisclosures(elementScope);
-assert.equal(typeof documentListeners.pointerdown, "function", "outside dismiss debe escucharse en ownerDocument para scopes Element");
-assert.equal(typeof panelListeners.keydown, "function", "Escape debe escucharse también en un panel hermano controlado");
-triggerListeners.click();
+const firstDisclosureInstances = interactions.initDisclosures(elementScope);
+assert.equal(documentListeners.get("pointerdown")?.size, 1, "outside dismiss debe escucharse en ownerDocument para scopes Element");
+assert.equal(panelListeners.get("keydown")?.size, 1, "Escape debe escucharse también en un panel hermano controlado");
+assert.equal(triggerListeners.get("click")?.size, 1, "debe existir un único click handler del trigger");
+emit(triggerListeners, "click");
 assert.equal(panel.hidden, false);
-documentListeners.pointerdown({ target: panelControl });
+emit(documentListeners, "pointerdown", { target: panelControl });
 assert.equal(panel.hidden, false, "interactuar con un panel hermano controlado no debe cerrar el disclosure");
-panelListeners.keydown({ key: "Escape" });
+emit(panelListeners, "keydown", { key: "Escape" });
 assert.equal(panel.hidden, true, "Escape desde un control del panel hermano debe cerrar el disclosure");
 assert.equal(focusReturned, true, "Escape desde el panel hermano debe devolver foco al trigger");
-triggerListeners.click();
-documentListeners.pointerdown({ target: {} });
+emit(triggerListeners, "click");
+emit(documentListeners, "pointerdown", { target: {} });
 assert.equal(panel.hidden, true, "un pointerdown realmente exterior debe cerrar el disclosure");
+
+firstDisclosureInstances[0].destroy();
+assert.equal(triggerListeners.get("click")?.size || 0, 0, "destroy debe retirar el click handler del trigger");
+assert.equal(panelListeners.get("keydown")?.size || 0, 0, "destroy debe retirar Escape del panel hermano");
+assert.equal(documentListeners.get("pointerdown")?.size || 0, 0, "destroy debe retirar outside dismiss");
+const secondDisclosureInstances = interactions.initDisclosures(elementScope);
+assert.equal(triggerListeners.get("click")?.size, 1, "reinicializar no debe acumular click handlers");
+emit(triggerListeners, "click");
+assert.equal(panel.hidden, false, "un solo click tras destroy + reinit debe alternar una sola vez");
+secondDisclosureInstances[0].destroy();
 
 // Si submit fue emitido, el guard no debe revalidar: novalidate/formnovalidate son válidos.
 const formListeners = {};
