@@ -73,6 +73,8 @@ export function initDisabledControls(scope = document) {
 
 export function initDisclosures(scope = document) {
   const instances = [];
+  const outsideTarget = scope.ownerDocument || scope;
+
   scope.querySelectorAll("[data-hache-disclosure]").forEach((container) => {
     const trigger = container.querySelector("[aria-controls]");
     const panel = trigger && resolveScopedId(scope, trigger.getAttribute("aria-controls"));
@@ -91,8 +93,8 @@ export function initDisclosures(scope = document) {
     const outside = (event) => {
       if (container.dataset.hacheDismiss === "outside" && !container.contains(event.target)) setOpen(false);
     };
-    scope.addEventListener("pointerdown", outside);
-    instances.push({ close: () => setOpen(false), destroy: () => scope.removeEventListener("pointerdown", outside) });
+    outsideTarget.addEventListener("pointerdown", outside);
+    instances.push({ close: () => setOpen(false), destroy: () => outsideTarget.removeEventListener("pointerdown", outside) });
   });
   return instances;
 }
@@ -143,7 +145,8 @@ export function initSubmissionGuards(scope = document) {
 
     form.addEventListener("submit", (event) => {
       if (form.getAttribute("aria-busy") === "true") { event.preventDefault(); return; }
-      if (!form.checkValidity()) return;
+      /* Si se emitió submit, el navegador ya resolvió validación o una omisión válida
+         mediante novalidate/formnovalidate. El guard no debe revalidar. */
       form.setAttribute("aria-busy", "true");
       controls().forEach(markBusy);
     });
