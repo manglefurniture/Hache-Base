@@ -98,13 +98,13 @@ La auditoría detallada de comportamiento inicial, requisito, cambio mínimo e i
 | Budget UI (CSS ≤40 KiB, helper JS ≤12 KiB) | PASS |
 | SEO fixture: metadata/canonical/schema/robots/sitemap/enlaces | PASS, 0 warnings |
 | Shell syntax y `git diff --check` | PASS |
-| Hache-Base CI de cierre (PHP, MariaDB, SEO, UI) | PENDIENTE al redactar; verificar en PR #10 |
+| Hache-Base CI #58 (PHP, MariaDB, SEO, UI, schemas/idempotencia) | PASS |
 
 ## Limitaciones y riesgos pendientes reales
 
 1. Hache Base no contiene una aplicación renderizable ni navegador en el entorno local. No se pueden afirmar capturas/inspección visual real en cinco viewports, zoom/reflow, navegación completa, foco sobre layouts concretos, errores de consola de una app ni mediciones LCP/INP/CLS. El checklist obliga esas pruebas en cada proyecto derivado.
 2. Solo los fallbacks Core tienen contraste automatizado. Toda paleta, logo, imagen, gráfico y estado sobrescrito por un Theme debe volver a validarse en light/dark.
-3. La suite PHP heredada no pudo ejecutarse localmente porque el runtime no incluía PHP y la instalación del paquete fue bloqueada por permisos del contenedor. La misma suite se ejecuta en GitHub Actions del PR borrador.
+3. La suite PHP heredada no pudo ejecutarse localmente porque el runtime no incluía PHP y la instalación del paquete fue bloqueada por permisos del contenedor. GitHub Actions #58 sí ejecutó y aprobó la suite completa, incluidas MariaDB, schemas e idempotencia.
 
 No se identificaron otros riesgos concretos. No hubo cambios de negocio, base de datos, SEO funcional, secretos, VPS, DNS, producción ni repositorios derivados.
 
