@@ -1,19 +1,19 @@
 /*
  * Compatibilidad del patrón de relieve. Las clases públicas se conservan.
- * Cargar después de core/foundation.css, core/semantic.css y el Theme elegido.
+ * Puede cargarse solo mediante fallbacks seguros; con Core + Theme consume sus tokens.
  */
 :root {
-  --hache-control-border: var(--border-subtle);
-  --hache-control-top-edge: var(--border-subtle);
-  --hache-control-border-bottom: var(--border-strong);
-  --hache-control-focus: var(--color-focus);
-  --hache-control-shadow: var(--elevation-1);
-  --hache-control-shadow-hover: var(--elevation-1);
-  --hache-control-shadow-active: var(--elevation-0);
-  --hache-primary-shadow: var(--elevation-1);
-  --hache-primary-shadow-hover: var(--elevation-1);
-  --hache-control-duration: var(--motion-fast);
-  --hache-control-easing: var(--motion-ease);
+  --hache-control-border: var(--border-subtle, rgb(148 163 184 / .44));
+  --hache-control-top-edge: var(--border-subtle, rgb(148 163 184 / .34));
+  --hache-control-border-bottom: var(--border-strong, rgb(71 85 105 / .46));
+  --hache-control-focus: var(--color-focus, rgb(37 99 235));
+  --hache-control-shadow: var(--elevation-1, inset 0 1px 0 rgb(255 255 255 / .78), inset 0 -2px 0 rgb(15 23 42 / .10), 0 2px 4px rgb(15 23 42 / .055), 0 7px 16px rgb(15 23 42 / .07));
+  --hache-control-shadow-hover: var(--elevation-1, inset 0 1px 0 rgb(255 255 255 / .9), inset 0 -2px 0 rgb(15 23 42 / .13), 0 3px 6px rgb(15 23 42 / .07), 0 10px 22px rgb(15 23 42 / .09));
+  --hache-control-shadow-active: var(--elevation-0, inset 0 2px 4px rgb(15 23 42 / .15), inset 0 -1px 0 rgb(255 255 255 / .28), 0 1px 2px rgb(15 23 42 / .06));
+  --hache-primary-shadow: var(--elevation-1, inset 0 1px 0 rgb(255 255 255 / .18), inset 0 -2px 0 rgb(3 12 21 / .24), 0 2px 4px rgb(15 23 42 / .08), 0 8px 18px rgb(15 23 42 / .11));
+  --hache-primary-shadow-hover: var(--elevation-1, inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -2px 0 rgb(3 12 21 / .28), 0 3px 6px rgb(15 23 42 / .10), 0 11px 24px rgb(15 23 42 / .14));
+  --hache-control-duration: var(--motion-fast, 160ms);
+  --hache-control-easing: var(--motion-ease, ease);
 }
 
 .hache-control:not(.hache-control--flat) {
@@ -28,8 +28,8 @@
 }
 
 .hache-control.hache-control--primary:not(.hache-control--flat) {
-  border-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary)) 72%, var(--text-primary)) !important;
-  border-block-start-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary)) 68%, var(--hache-f-color-white)) !important;
+  border-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary, rgb(15 23 42))) 72%, var(--text-primary, rgb(15 23 42))) !important;
+  border-block-start-color: color-mix(in srgb, var(--button-primary-bg, var(--color-primary, rgb(15 23 42))) 68%, var(--hache-f-color-white, rgb(255 255 255))) !important;
   box-shadow: var(--hache-primary-shadow) !important;
 }
 
@@ -48,14 +48,14 @@
 .hache-control:not(.hache-control--flat)[aria-disabled="true"] {
   cursor: not-allowed;
   filter: none !important;
-  opacity: var(--opacity-disabled);
+  opacity: var(--opacity-disabled, .58);
   transform: none !important;
 }
 
 .hache-control:not(.hache-control--flat)[aria-busy="true"] { cursor: progress; }
-.hache-control:not(.hache-control--flat)[data-state="success"] { border-inline-start: .25rem solid var(--color-success) !important; }
-.hache-control:not(.hache-control--flat)[data-state="warning"] { border-inline-start: .25rem double var(--color-warning) !important; }
-.hache-control:not(.hache-control--flat)[data-state="error"] { border-inline-start: .25rem double var(--color-error) !important; }
+.hache-control:not(.hache-control--flat)[data-state="success"] { border-inline-start: .25rem solid var(--color-success, rgb(21 128 61)) !important; }
+.hache-control:not(.hache-control--flat)[data-state="warning"] { border-inline-start: .25rem double var(--color-warning, rgb(161 98 7)) !important; }
+.hache-control:not(.hache-control--flat)[data-state="error"] { border-inline-start: .25rem double var(--color-error, rgb(185 28 28)) !important; }
 
 @media (hover: hover) and (pointer: fine) {
   .hache-control:not(.hache-control--flat):not(:disabled, [aria-disabled="true"]):hover {
@@ -70,8 +70,8 @@
 
 @media (min-width: 46.875rem) {
   :root {
-    --hache-control-shadow-hover: var(--elevation-2);
-    --hache-primary-shadow-hover: var(--elevation-2);
+    --hache-control-shadow-hover: var(--elevation-2, 0 .75rem 2.5rem rgb(15 23 42 / .18));
+    --hache-primary-shadow-hover: var(--elevation-2, 0 .75rem 2.5rem rgb(15 23 42 / .18));
   }
 }
 
