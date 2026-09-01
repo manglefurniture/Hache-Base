@@ -28,8 +28,7 @@ dump_diagnostics() {
     anon.headers anon.body \
     migrate.headers migrate.body migrate-cookies.txt \
     check-root.body \
-    preactive-login.headers preactive-login.body preactive-cookies.txt \
-    preactive-check.headers preactive-check.body; do
+    preactive-login.headers preactive-login.body; do
     if [[ -f "$TMP/$file" ]]; then
       echo "----- $file -----" >&2
       cat "$TMP/$file" >&2 || true
@@ -42,7 +41,7 @@ trap dump_diagnostics ERR
 trap cleanup EXIT
 
 # Start from an explicitly hostile PHP runtime. P0-08 must enable cookie-backed
-# sessions itself rather than relying on php.ini having session.use_cookies=1.
+# sessions itself when Hache Base starts the session.
 php -d session.use_cookies=0 -d session.save_path="$TMP/sessions" \
   -S "127.0.0.1:${PORT}" "$FIXTURE" >"$TMP/server.log" 2>&1 &
 SERVER_PID=$!
@@ -62,7 +61,8 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-# A login must persist even though the PHP server was launched with use_cookies=0.
+# A login must persist even though the PHP server was launched with use_cookies=0,
+# provided Hache Base owns session startup and can impose SEC-007 first.
 curl -fsS -D "$TMP/login.headers" -c "$TMP/cookies.txt" \
   "$BASE_URL/admin/login" -o "$TMP/login.body"
 grep -qx 'LOGIN_OK' "$TMP/login.body"
@@ -109,19 +109,17 @@ curl -fsS -b "$TMP/migrate-cookies.txt" \
   "$BASE_URL/admin/check-root" -o "$TMP/check-root.body"
 grep -qx 'MIGRATED_AUTH_OK' "$TMP/check-root.body"
 
-# A framework that calls session_start() first under the hostile runtime must not
-# bypass SEC-007. The first request adopts/rotates safely; the next request starts
-# the wrong cookie-disabled session again, then Hache Base must recover the real
-# request cookie, enforce the runtime contract and preserve authentication.
-curl -fsS -D "$TMP/preactive-login.headers" -c "$TMP/preactive-cookies.txt" \
+# A framework that has already started a session under a non-compliant runtime is
+# not safely recoverable: PHP collapses same-name cookies from different Path scopes
+# in $_COOKIE. SEC-007 therefore rejects this state before authentication instead of
+# guessing a tuple. This must be a controlled rejection, with no authenticated cookie.
+curl -fsS -D "$TMP/preactive-login.headers" \
   "$BASE_URL/preactive/login" -o "$TMP/preactive-login.body"
-grep -qx 'PREACTIVE_LOGIN_OK' "$TMP/preactive-login.body"
-grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/preactive([;[:space:]]|$)' "$TMP/preactive-login.headers"
-
-curl -fsS -D "$TMP/preactive-check.headers" \
-  -b "$TMP/preactive-cookies.txt" -c "$TMP/preactive-cookies.txt" \
-  "$BASE_URL/preactive/check" -o "$TMP/preactive-check.body"
-grep -qx 'PREACTIVE_AUTH_OK' "$TMP/preactive-check.body"
-grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/preactive([;[:space:]]|$)' "$TMP/preactive-check.headers"
+grep -qx 'PREACTIVE_REJECTED' "$TMP/preactive-login.body"
+if grep -Eiq '^Set-Cookie: HACHEBASESCOPE=' "$TMP/preactive-login.headers"; then
+  echo "A rejected insecure pre-active session emitted an authenticated session cookie" >&2
+  cat "$TMP/preactive-login.headers" >&2
+  exit 1
+fi
 
 echo "SESSION_COOKIE_SCOPE_HTTP_OK"
