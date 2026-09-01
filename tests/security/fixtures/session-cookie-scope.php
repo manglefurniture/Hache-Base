@@ -68,5 +68,50 @@ if ($path === '/admin/check-root') {
     return;
 }
 
+// Simulate a framework or historical bootstrap that starts PHP sessions before
+// Hache Base while the process-level runtime still has session.use_cookies=0.
+if ($path === '/preactive/login') {
+    if (!session_start()) {
+        http_response_code(500);
+        echo "PREACTIVE_START_FAILED\n";
+        return;
+    }
+
+    $_SESSION['framework_marker'] = 'preserve-me';
+    Auth::login(
+        ['id' => 44, 'role' => 'user'],
+        ['cookie_path' => '/preactive'],
+        $_SERVER,
+        3000,
+    );
+
+    if (($_SESSION['framework_marker'] ?? null) !== 'preserve-me') {
+        http_response_code(500);
+        echo "PREACTIVE_SNAPSHOT_LOST\n";
+        return;
+    }
+
+    echo "PREACTIVE_LOGIN_OK\n";
+    return;
+}
+
+if ($path === '/preactive/check') {
+    if (!session_start()) {
+        http_response_code(500);
+        echo "PREACTIVE_START_FAILED\n";
+        return;
+    }
+
+    $user = Auth::user([], $_SERVER, 3001);
+    if (!is_array($user) || ($user['id'] ?? null) !== 44) {
+        http_response_code(401);
+        echo "PREACTIVE_AUTH_MISSING\n";
+        return;
+    }
+
+    echo "PREACTIVE_AUTH_OK\n";
+    return;
+}
+
 http_response_code(404);
 echo "NOT_FOUND\n";
