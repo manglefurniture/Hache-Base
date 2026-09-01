@@ -105,7 +105,7 @@ REQUIRE_OBSERVATION=1 \
 bash "$APP/deployment/deploy.sh" >"$SUCCESS_OUT" 2>&1
 
 assert_contains "$SUCCESS_OUT" "DEPLOY_OK $TARGET"
-assert_contains "$SUCCESS_OUT" "DEPLOY_OBSERVATION status=passed seconds=0.01"
+assert_contains "$SUCCESS_OUT" "gate=observation status=passed"
 [[ "$(cat "$HEALTH_COUNT_FILE")" == "2" ]] || fail "readiness must run before and after observation"
 [[ "$(cat "$SMOKE_COUNT_FILE")" == "2" ]] || fail "smoke must run before and after observation"
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$TARGET" ]] || fail "successful deploy must leave target commit active"
@@ -116,12 +116,34 @@ EXPECTED_STATES=$'started\ncode_changed\nmigrations_applied\ntests_passed\nhealt
 ACTUAL_STATES="$(sed -n 's/.* state=\([^ ]*\).*/\1/p' "$SUCCESS_RECORD")"
 [[ "$ACTUAL_STATES" == "$EXPECTED_STATES" ]] || fail "unexpected success states: $ACTUAL_STATES"
 assert_contains "$SUCCESS_RECORD" "state=migrations_applied status=passed"
+assert_contains "$SUCCESS_RECORD" "gate=readiness status=passed"
+assert_contains "$SUCCESS_RECORD" "gate=smoke status=passed"
+assert_contains "$SUCCESS_RECORD" "gate=observation status=passed"
 
 ROLLBACK_REF="$(sed -n 's/^ROLLBACK_REF=//p' "$SUCCESS_OUT" | tail -n1)"
 [[ -n "$ROLLBACK_REF" ]] || fail "rollback ref missing"
 DEPLOY_RECORD_FILE="$SUCCESS_RECORD" APP_ROOT="$APP" bash "$APP/deployment/rollback.sh" "$ROLLBACK_REF" >"$TMP/rollback.out" 2>&1
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "rollback must restore previous code commit"
 assert_contains "$SUCCESS_RECORD" "state=rolled_back status=passed"
+
+# Backward-compatible defaults stay visible as NOT_EVALUATED in the persistent record.
+make_fixture optional-gates
+OPTIONAL_OUT="$TMP/optional-gates.out"
+OPTIONAL_HEALTH_COUNT="$TMP/optional-health-count"
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/optional-backups" \
+DEPLOY_RECORD_ROOT="$TMP/optional-records" \
+HEALTH_COUNT_FILE="$OPTIONAL_HEALTH_COUNT" \
+TEST_COMMAND='echo TEST_OK' \
+bash "$APP/deployment/deploy.sh" >"$OPTIONAL_OUT" 2>&1
+
+OPTIONAL_RECORD="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$OPTIONAL_OUT" | tail -n1)"
+[[ -f "$OPTIONAL_RECORD" ]] || fail "optional-gates deploy record missing"
+assert_contains "$OPTIONAL_RECORD" "gate=smoke status=not_evaluated"
+assert_contains "$OPTIONAL_RECORD" "gate=observation status=not_evaluated"
+assert_contains "$OPTIONAL_RECORD" "evidence=NOT_EVALUATED"
+assert_contains "$OPTIONAL_RECORD" "state=healthy status=passed"
 
 # Failure path: partial deploy remains visible and manual recovery can close the record explicitly.
 make_fixture failure
@@ -189,5 +211,24 @@ set -e
 assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_CONFIG_FAILED smoke is required"
 assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "configuration failure must happen before code change"
+
+# Deploy evidence must never be created inside the application working tree.
+make_fixture record-inside
+RECORD_INSIDE_OUT="$TMP/record-inside.out"
+set +e
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/record-inside-backups" \
+DEPLOY_RECORD_ROOT="$APP/.deploy-records" \
+bash "$APP/deployment/deploy.sh" >"$RECORD_INSIDE_OUT" 2>&1
+RECORD_INSIDE_CODE=$?
+set -e
+
+[[ "$RECORD_INSIDE_CODE" != "0" ]] || fail "record root inside working tree must fail"
+assert_contains "$RECORD_INSIDE_OUT" "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside APP_ROOT"
+assert_contains "$RECORD_INSIDE_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
+[[ ! -e "$APP/.deploy-records" ]] || fail "rejected record root must not be created inside working tree"
+[[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "record-root validation must happen before code change"
+[[ -z "$(git -C "$APP" status --porcelain=v1)" ]] || fail "record-root validation must leave working tree clean"
 
 echo "DEPLOY_RUNNER_OK"
