@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace HacheBase\Security;
 
 use InvalidArgumentException;
+use LogicException;
 
 require_once __DIR__ . '/session-security.php';
 
@@ -61,6 +62,16 @@ final class Auth
     ): void {
         self::assertUserIdentity($user);
         self::startSecureSession($sessionConfig, $server, $now);
+
+        $current = $_SESSION['user'] ?? null;
+        if (!is_array($current) || !array_key_exists('id', $current) || $current['id'] === null || $current['id'] === '') {
+            throw new LogicException('Privilege elevation requires an authenticated session.');
+        }
+
+        if ((string)$current['id'] !== (string)$user['id']) {
+            throw new InvalidArgumentException('Privilege elevation cannot switch the authenticated principal.');
+        }
+
         SessionSecurity::regenerateForPrivilegeChange($now);
         $_SESSION['user'] = $user;
     }
