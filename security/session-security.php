@@ -20,6 +20,15 @@ final class SessionSecurity
 {
     private const META_KEY = '__hache_session';
 
+    /**
+     * Exact old cookie tuple that must survive any session-module Set-Cookie replacement
+     * later in the same request (for example session_regenerate_id() during login).
+     * Request-local static state is deliberate; it is never persisted across requests.
+     *
+     * @var array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}|null
+     */
+    private static ?array $pendingCookieExpiry = null;
+
     private const DEFAULT_CONFIG = [
         'idle_timeout' => 1800,
         'absolute_timeout' => 43200,
@@ -130,9 +139,7 @@ final class SessionSecurity
         $now ??= time();
         $policy = self::requireStoredPolicy();
 
-        if (!session_regenerate_id(true)) {
-            throw new LogicException('Unable to regenerate session ID after authentication.');
-        }
+        self::regenerateIdOrFail('Unable to regenerate session ID after authentication.');
 
         self::writeMeta([
             'created_at' => $now,
@@ -152,9 +159,7 @@ final class SessionSecurity
             throw new LogicException('Cannot elevate a session with invalid security metadata.');
         }
 
-        if (!session_regenerate_id(true)) {
-            throw new LogicException('Unable to regenerate session ID after privilege change.');
-        }
+        self::regenerateIdOrFail('Unable to regenerate session ID after privilege change.');
 
         $meta['last_seen_at'] = $now;
         $meta['privilege_changed_at'] = $now;
@@ -176,6 +181,7 @@ final class SessionSecurity
 
         $destroyed = session_destroy();
         session_id('');
+        self::$pendingCookieExpiry = null;
 
         if (!$destroyed) {
             throw new LogicException('Unable to destroy server-side session.');
@@ -339,9 +345,14 @@ final class SessionSecurity
 
         // Only a supplied stored policy is authoritative evidence of an old cookie
         // tuple. Runtime params on a new request may already be the candidate policy
-        // and must never substitute for the stored tuple during migration.
-        if ($needsPreviousScopeExpiry && !self::expireCookie($previous)) {
-            throw new LogicException('Unable to expire the previous session cookie scope.');
+        // and must never substitute for the stored tuple during migration. Keep that
+        // tuple request-locally as well because the PHP session module can replace
+        // same-name Set-Cookie headers during a subsequent ID regeneration.
+        if ($needsPreviousScopeExpiry) {
+            if (!self::expireCookie($previous)) {
+                throw new LogicException('Unable to expire the previous session cookie scope.');
+            }
+            self::$pendingCookieExpiry = $previous;
         }
 
         if (!self::setSessionCookie(session_id(), $desired)) {
@@ -390,9 +401,7 @@ final class SessionSecurity
     private static function rotateToAnonymous(array $policy, int $now): void
     {
         $_SESSION = [];
-        if (!session_regenerate_id(true)) {
-            throw new LogicException('Unable to rotate expired or legacy session.');
-        }
+        self::regenerateIdOrFail('Unable to rotate expired or legacy session.');
 
         self::writeMeta(self::newMeta($now, $policy));
     }
@@ -482,6 +491,23 @@ final class SessionSecurity
         }
         if (ini_set('session.use_trans_sid', '0') === false) {
             throw new LogicException('Unable to disable session.use_trans_sid.');
+        }
+    }
+
+    private static function regenerateIdOrFail(string $errorMessage): void
+    {
+        if (!session_regenerate_id(true)) {
+            throw new LogicException($errorMessage);
+        }
+
+        // session_regenerate_id() may replace prior Set-Cookie headers for the same
+        // session name. Re-emit the authoritative old-scope deletion afterwards so a
+        // migrated cookie cannot shadow the newly authenticated cookie.
+        if (self::$pendingCookieExpiry !== null) {
+            if (!self::expireCookie(self::$pendingCookieExpiry)) {
+                throw new LogicException('Unable to expire the previous session cookie scope after session ID rotation.');
+            }
+            self::$pendingCookieExpiry = null;
         }
     }
 
