@@ -15,6 +15,28 @@ cleanup() {
   fi
   rm -rf "$TMP"
 }
+
+dump_diagnostics() {
+  local status=$?
+  local line=${BASH_LINENO[0]:-unknown}
+  trap - ERR
+  echo "Session cookie HTTP regression failed at line ${line} (status ${status})" >&2
+  for file in \
+    server.log \
+    login.headers login.body cookies.txt \
+    touch.headers touch.body \
+    anon.headers anon.body \
+    migrate.headers migrate.body migrate-cookies.txt \
+    check-root.body; do
+    if [[ -f "$TMP/$file" ]]; then
+      echo "----- $file -----" >&2
+      cat "$TMP/$file" >&2 || true
+    fi
+  done
+  exit "$status"
+}
+
+trap dump_diagnostics ERR
 trap cleanup EXIT
 
 # Start from an explicitly hostile PHP runtime. P0-08 must enable cookie-backed
