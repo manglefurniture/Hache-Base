@@ -217,7 +217,7 @@ final class SessionSecurity
 
         if (!is_string($resolved['cookie_path'])
             || !str_starts_with($resolved['cookie_path'], '/')
-            || preg_match('/[;\r\n\x00]/', $resolved['cookie_path']) === 1) {
+            || preg_match('/[\x00-\x20\x7F,;]/', $resolved['cookie_path']) === 1) {
             throw new InvalidArgumentException('cookie_path must be an absolute safe cookie path.');
         }
 
