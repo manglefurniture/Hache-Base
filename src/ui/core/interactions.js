@@ -71,8 +71,11 @@ export function initThemePreference({
     return current;
   };
 
+  const controlBindings = [];
   scope.querySelectorAll("[data-hache-theme-value]").forEach((control) => {
-    control.addEventListener("click", () => set(control.dataset.hacheThemeValue));
+    const onClick = () => set(control.dataset.hacheThemeValue);
+    control.addEventListener("click", onClick);
+    controlBindings.push([control, onClick]);
   });
 
   const eventTarget = scope?.defaultView?.addEventListener
@@ -85,7 +88,7 @@ export function initThemePreference({
 
   const onStorage = (event) => {
     if (event.key !== storageKey && event.key !== null) return;
-    if (event.storageArea && resolvedStorage && event.storageArea !== resolvedStorage) return;
+    if (event.storageArea && event.storageArea !== resolvedStorage) return;
 
     let value = event.newValue;
     if (event.key === null) {
@@ -94,12 +97,15 @@ export function initThemePreference({
     applyIncoming(value || "system");
   };
 
-  eventTarget?.addEventListener("storage", onStorage);
+  if (resolvedStorage) eventTarget?.addEventListener("storage", onStorage);
   updateControls();
   return {
     get: () => current,
     set,
-    destroy: () => eventTarget?.removeEventListener?.("storage", onStorage)
+    destroy: () => {
+      if (resolvedStorage) eventTarget?.removeEventListener?.("storage", onStorage);
+      controlBindings.forEach(([control, onClick]) => control.removeEventListener?.("click", onClick));
+    }
   };
 }
 
