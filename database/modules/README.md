@@ -25,6 +25,20 @@ Incluye:
 
 Antes de usarla, leer `integrations/payments/CREDENTIAL-VERSIONING.md`. La tabla de dominio puede ser pedidos, reservas, suscripciones u otra obligación; no copiar literalmente el ejemplo `orders` si no corresponde al proyecto.
 
+## `async-inbox-outbox.sql`
+
+Plantilla opt-in P0-06 para integraciones repetibles o asíncronas que justifican persistencia de dedupe/retry.
+
+Incluye:
+
+- `integration_inbox` con unicidad `(source, external_event_id)`;
+- `integration_outbox` con `idempotency_key` única, claims y `dispatch_started_at`;
+- `integration_idempotency_claims` para efectos que necesitan un claim persistente sin una outbox completa;
+- `request_id`/`correlation_id` para trazabilidad;
+- vocabulario de `operation_state` compatible con `AsyncOperationState`.
+
+No crea workers, cron, Redis ni colas. Antes de adoptarla, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` y leer `integrations/async/README.md`. El proyecto debe definir retención, PII, cleanup, backoff, recuperación de claims y reconciliación.
+
 ## Selección
 
 Un restaurante, por ejemplo, podría reutilizar organizaciones, sedes, usuarios y clientes pero reemplazar inscripciones/sesiones por mesas, órdenes e inventario. Un SPA podría reutilizar sedes, clientes, servicios, pagos y adaptar horarios a citas.
