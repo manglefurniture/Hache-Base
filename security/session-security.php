@@ -60,15 +60,22 @@ final class SessionSecurity
         $explicitPolicy = $config !== [];
         $server ??= $_SERVER;
         $now ??= time();
+        $incomingSessionCookie = self::hasIncomingSessionCookie();
 
         self::openOrAdoptSession($candidatePolicy, $server);
 
         $storedPolicy = self::readStoredPolicy();
 
+        if ($storedPolicy === null && $incomingSessionCookie) {
+            throw new LogicException(
+                'An incoming PHP session cookie has no verifiable Hache Base SEC-007 metadata. Its original cookie scope cannot be safely inferred; clear or destroy the legacy session before authentication.',
+            );
+        }
+
         if ($storedPolicy === null) {
-            // Sessions created before P0-08 have no policy metadata. If they already
-            // carry authenticated state, invalidate that state instead of guessing a
-            // timeout/cookie contract and silently grandfathering the session.
+            // A metadata-less session is adoptable only when no session cookie arrived
+            // in this request, so Hache Base knows it is establishing a new cookie tuple.
+            // Historical authenticated state without metadata is still invalidated.
             if (array_key_exists('user', $_SESSION)) {
                 self::ensureCookiePolicy($candidatePolicy, $server);
                 self::rotateToAnonymous($candidatePolicy, $now);
@@ -372,6 +379,13 @@ final class SessionSecurity
             && (bool)ini_get('session.use_cookies')
             && (bool)ini_get('session.use_only_cookies')
             && !(bool)ini_get('session.use_trans_sid');
+    }
+
+    private static function hasIncomingSessionCookie(): bool
+    {
+        $name = session_name();
+
+        return $name !== '' && array_key_exists($name, $_COOKIE);
     }
 
     /**
