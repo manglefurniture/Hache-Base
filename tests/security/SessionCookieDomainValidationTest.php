@@ -34,6 +34,10 @@ foreach ([
     'bad-.example',
     'bücher.example',
     '127.0.0.1',
+    '2130706433',
+    '127.1',
+    '0177.0.0.1',
+    '0x7f000001',
 ] as $invalidDomain) {
     assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
         'cookie_domain' => $invalidDomain,
