@@ -133,6 +133,7 @@ assert($params['httponly'] === true);
 assert($params['samesite'] === 'Lax');
 assert($params['domain'] === '');
 assert((string)ini_get('session.use_strict_mode') === '1');
+assert((string)ini_get('session.use_cookies') === '1');
 assert((string)ini_get('session.use_only_cookies') === '1');
 assert((string)ini_get('session.use_trans_sid') === '0');
 
@@ -233,7 +234,12 @@ assert($throwsLogic(static fn () => Auth::startSecureSession([
 ], $trustedProxyRequest, 4003)));
 assert(Auth::user([], $trustedProxyRequest, 4004)['id'] === 10);
 
-Auth::logout($proxySessionConfig, $trustedProxyRequest, 4005);
+// Logout is the exception to policy-conflict rejection: a deployment may change the
+// configured timeout while a user still has the old stored policy. Logout must use
+// that stored policy to expire the real cookie tuple and destroy the server session.
+$changedLogoutConfig = $proxySessionConfig;
+$changedLogoutConfig['idle_timeout'] = 90;
+Auth::logout($changedLogoutConfig, $trustedProxyRequest, 4005);
 assert(session_status() === PHP_SESSION_NONE);
 assert($_SESSION === []);
 assert(session_id() === '');
