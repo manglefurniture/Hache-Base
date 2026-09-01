@@ -59,6 +59,7 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Definir timeouts, reintentos y comportamiento degradado.
 - [ ] Definir rotación y alcance mínimo de API keys/tokens.
 - [ ] Si hay correo transaccional, verificar el dominio/subdominio remitente y autenticación DNS requerida.
+- [ ] Si una notificación corresponde a un evento de negocio, inventariar todos los entry points capaces de confirmarlo y definir una política común post-commit/outbox.
 - [ ] Si hay pagos, definir consulta autoritativa al proveedor después del webhook.
 - [ ] Documentar cómo desactivar la integración sin romper el producto principal.
 
@@ -71,6 +72,8 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Mantener Core, Theme y Extensions separados.
 - [ ] Usar Foundation → Semantic → Component sin hardcodes repetidos en Core.
 - [ ] Verificar light, dark y `prefers-color-scheme`; probar persistencia si existe selector.
+- [ ] Si la preferencia de tema se comparte mediante `localStorage`, comprobar que tabs/iframes same-origin ya abiertos se actualizan sin refresh y sin loops de persistencia.
+- [ ] Hacer que dropdowns, autocompletes, popovers y otras superficies inyectadas por JavaScript consuman tokens semánticos/componentes; probar contraste y estados en light y dark.
 - [ ] Diseñar mobile-first y probar móvil pequeño, móvil grande, tablet, laptop y desktop amplio.
 - [ ] Verificar que no existe scroll horizontal accidental y que zoom/reflow funcionan.
 - [ ] Usar Container Queries cuando el componente dependa de su espacio interno.
@@ -98,6 +101,7 @@ Completar antes de desarrollar los flujos principales.
 - [ ] Probar que la UI preventiva no sustituye el rechazo del servidor en acciones inválidas/duplicadas.
 - [ ] En acciones asíncronas sensibles, probar que una respuesta antigua no puede modificar una operación o modal posterior.
 - [ ] Para webhooks/jobs repetibles, probar idempotencia y eventos fuera de orden.
+- [ ] Para eventos con notificación, añadir una regresión que cubra los entry points capaces de confirmar el evento y asegure que el fallo de correo no revierte el estado durable.
 - [ ] Para pagos, probar mismatch de importe/moneda y que un fallo de notificación no revierta el estado financiero.
 - [ ] Para reservas, probar expiración y carrera concurrente por la última unidad/cupo.
 
