@@ -35,7 +35,9 @@ Ejemplos:
 
 `outcome_unknown` existe para impedir el error clásico de tratar un timeout como fallo seguro. Desde ese estado el contrato base obliga a resolver mediante `reconciling` o evidencia autoritativa; no permite pasar directamente a `retry_pending`.
 
-`retry_pending` significa que el proyecto ya demostró que reintentar es seguro, por ejemplo por idempotency key, claim persistente o verificación autoritativa de que el efecto no ocurrió. La implementación de inbox/outbox/idempotency claim pertenece a P0-06 y no se adelanta aquí.
+`retry_pending` significa que el proyecto ya demostró que reintentar es seguro, por ejemplo por idempotency key, claim persistente o verificación autoritativa de que el efecto no ocurrió.
+
+P0-06 implementa de forma separada y opt-in la plantilla de inbox/outbox/idempotency claim en `integrations/async/README.md` y `database/modules/async-inbox-outbox.sql`. Esa persistencia no cambia las transiciones de P0-05: únicamente aporta dedupe, claims y evidencia para aplicarlas con seguridad.
 
 ## Ledger
 
@@ -48,17 +50,17 @@ Ejemplos:
 - retry/reconciliation timestamps;
 - transición append-only y error seguro.
 
-La plantilla es conceptual/opt-in, no una migración. Un proyecto que necesite persistirla debe crear un schema propio con índices, constraints, retención y tratamiento de PII adecuados.
+La plantilla es conceptual/opt-in. P0-06 añade un schema opcional de persistencia para proyectos que realmente lo necesitan; sigue siendo responsabilidad del proyecto definir índices finales, retención, tratamiento de PII y runbooks.
 
 ## Relación con módulos existentes
 
 - `RequestContext` aporta request/correlation IDs.
 - `StructuredLogger` aporta observabilidad operativa redactada.
 - `integrations/email/README.md` ya advierte que aceptación del proveedor no equivale a entrega; P0-05 formaliza esa diferencia sin cambiar el mailer.
+- `integrations/async/README.md` define dedupe, claims, out-of-order y reprocess de P0-06 sin activar workers/colas globales.
 - `docs/ESTADOS-TEMPORALES-E-INTEGRIDAD.md` trata estados derivados del tiempo; no sustituye este ciclo asíncrono.
-- P0-06 añadirá, de forma separada y opt-in, inbox/outbox/idempotency claim cuando exista un caso real que lo justifique.
 
-## Fixtures de esta fase
+## Fixtures de P0-05
 
 `tests/fixtures/async-operations/scenarios.json` cubre:
 
@@ -67,4 +69,4 @@ La plantilla es conceptual/opt-in, no una migración. Un proyecto que necesite p
 3. fallo conocido reintentable + nuevo intento;
 4. fallo final autoritativo.
 
-Ningún fixture llama proveedores ni escribe DB.
+Ningún fixture de P0-05 llama proveedores ni escribe DB. P0-06 añade por separado una regresión MariaDB real de la plantilla opcional.
