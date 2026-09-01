@@ -91,6 +91,10 @@ assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
     'absolute_timeout' => 60,
 ])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => 'relative'])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => '/admin,panel'])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => '/admin panel'])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => "/admin\tpanel"])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => '/admin;panel'])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_domain' => "bad\r\nSet-Cookie:x"])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
     'proxy' => ['trusted_ips' => ['not-an-ip']],
