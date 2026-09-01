@@ -13,8 +13,8 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `security/ProductionReadinessCoreTest.php`: contrato de errores HTTP, request/correlation IDs y redacción/log schema mínimo.
 - `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
 - `smoke/http-smoke.sh`: smoke HTTP configurable y separado de liveness/readiness.
-- `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS, HMAC de webhooks y cifrado/versionado de credenciales de pago.
-- `run.sh`: punto de entrada común.
+- `integration/`: contratos e integraciones reutilizables; incluye mailer HTTPS, HMAC de webhooks, cifrado/versionado de credenciales y persistencia P0-06 inbox/outbox/idempotency.
+- `run.sh`: punto de entrada común para pruebas que no requieren MariaDB persistente del workflow.
 
 ## Ejecución
 
@@ -23,6 +23,8 @@ bash tests/run.sh
 ```
 
 Si se define `SMOKE_BASE_URL`, el runner ejecuta también el smoke HTTP contra el entorno indicado.
+
+La regresión `tests/integration/InboxOutboxMariaDbTest.sh` se ejecuta desde CI después de cargar los schemas opcionales en MariaDB.
 
 ## Regla
 
@@ -58,7 +60,20 @@ La regresión demuestra especialmente que:
 - los estados terminales no vuelven silenciosamente a estados activos;
 - cada evento de fixture conserva `request_id` y `correlation_id`.
 
-Estos fixtures no escriben DB ni llaman proveedores. Un proyecto que adopte persistencia debe añadir pruebas de schema, idempotencia, concurrencia y reconciliación propias.
+## Persistencia P0-06
+
+`tests/integration/AsyncPersistenceContractTest.php` comprueba offline que la plantilla SQL conserva las ocho etiquetas de `AsyncOperationState`, las tres restricciones de unicidad y las marcas `dispatch_started_at`/`effect_started_at` necesarias para distinguir fallos ambiguos.
+
+`tests/integration/InboxOutboxMariaDbTest.sh` usa MariaDB real en CI y demuestra:
+
+- el mismo evento inbound se persiste una sola vez;
+- dos workers compitiendo solo consiguen un claim;
+- una operación con `dispatch_started_at` + `outcome_unknown` no vuelve a la ruta normal de envío;
+- un evento con secuencia antigua no degrada una proyección;
+- el reprocess seguro conserva fila e `idempotency_key`;
+- un claim ligero duplicado no crea un segundo efecto lógico.
+
+Estos tests validan la plantilla de Hache Base, no sustituyen pruebas del worker/proveedor real de un proyecto derivado.
 
 ## Liveness, readiness y smoke
 
