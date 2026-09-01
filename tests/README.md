@@ -7,7 +7,8 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `static/php-syntax.sh`: sintaxis PHP.
 - `static/ProductionReadinessDocsTest.php`: paridad 126/126 entre el registro canónico del Standard y la Checklist.
 - `audit/`: pruebas del módulo de auditoría.
-- `common/`: utilidades reutilizables, incluyendo estados temporales y zona horaria.
+- `common/`: utilidades reutilizables, incluyendo estados temporales, zona horaria y contrato de estados asíncronos P0-05.
+- `fixtures/async-operations/scenarios.json`: escenarios offline para aceptación, confirmación, timeout ambiguo, retry seguro y reconciliación.
 - `ui/`: regresiones de tokens, temas, contraste de fallbacks, presets, estados, responsive/container queries, reduced motion, peso y comportamiento JS; incluye compatibilidad del relieve de backend.
 - `security/ProductionReadinessCoreTest.php`: contrato de errores HTTP, request/correlation IDs y redacción/log schema mínimo.
 - `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
@@ -43,6 +44,21 @@ El Core prueba offline:
 - schema mínimo de logging y redacción de claves sensibles.
 
 Los proyectos siguen siendo responsables de probar sus códigos de dominio, rutas reales y eventos operativos.
+
+## Estados asíncronos P0-05
+
+`tests/common/AsyncOperationStateTest.php` valida el contrato neutral de operaciones asíncronas y los fixtures de `tests/fixtures/async-operations/scenarios.json`.
+
+La regresión demuestra especialmente que:
+
+- `accepted` no es éxito autoritativo;
+- `confirmed` sí es éxito autoritativo del contrato base;
+- `outcome_unknown` exige seguimiento/reconciliación y no habilita retry ciego;
+- `retry_pending` solo representa un retry ya considerado seguro;
+- los estados terminales no vuelven silenciosamente a estados activos;
+- cada evento de fixture conserva `request_id` y `correlation_id`.
+
+Estos fixtures no escriben DB ni llaman proveedores. Un proyecto que adopte persistencia debe añadir pruebas de schema, idempotencia, concurrencia y reconciliación propias.
 
 ## Liveness, readiness y smoke
 
