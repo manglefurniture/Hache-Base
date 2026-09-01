@@ -244,6 +244,53 @@ assert(session_status() === PHP_SESSION_NONE);
 assert($_SESSION === []);
 assert(session_id() === '');
 
+// A proxy rotation must not make logout impossible for a cookie that was originally
+// emitted as Secure + SameSite=None. Persist the effective cookie tuple at emission
+// time, close the request, reset runtime cookie params as a fresh worker would, then
+// reopen the same server-side session under the new trusted proxy configuration.
+$sameSiteNoneConfig = [
+    'idle_timeout' => 60,
+    'absolute_timeout' => 180,
+    'same_site' => 'None',
+    'cookie_path' => '/secure',
+    'proxy' => $proxyConfig,
+];
+Auth::login(['id' => 11, 'role' => 'user'], $sameSiteNoneConfig, $trustedProxyRequest, 5000);
+$sameSiteNoneId = session_id();
+$sameSiteNoneParams = session_get_cookie_params();
+assert($sameSiteNoneParams['secure'] === true);
+assert($sameSiteNoneParams['samesite'] === 'None');
+assert($sameSiteNoneParams['path'] === '/secure');
+assert(session_write_close());
+
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'domain' => '',
+    'secure' => false,
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+session_id($sameSiteNoneId);
+
+$newProxyConfig = [
+    'trusted_ips' => ['10.0.0.6'],
+    'forwarded_proto_header' => 'HTTP_X_FORWARDED_PROTO',
+];
+$newTrustedProxyRequest = [
+    'HTTPS' => 'off',
+    'SERVER_PORT' => '80',
+    'REMOTE_ADDR' => '10.0.0.6',
+    'HTTP_X_FORWARDED_PROTO' => 'https',
+];
+$newProxyLogoutConfig = $sameSiteNoneConfig;
+$newProxyLogoutConfig['proxy'] = $newProxyConfig;
+assert(RequestSecurity::isHttps($newTrustedProxyRequest, $newProxyConfig) === true);
+Auth::logout($newProxyLogoutConfig, $newTrustedProxyRequest, 5001);
+assert(session_status() === PHP_SESSION_NONE);
+assert($_SESSION === []);
+assert(session_id() === '');
+
 $cleanup();
 
 echo "SESSION_SECURITY_OK\n";
