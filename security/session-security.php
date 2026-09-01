@@ -61,12 +61,15 @@ final class SessionSecurity
         $server ??= $_SERVER;
         $now ??= time();
         $incomingSessionCookie = self::hasIncomingSessionCookie();
+        $initialPolicy = $candidatePolicy;
 
         if ($incomingSessionCookie && session_status() !== PHP_SESSION_ACTIVE) {
-            self::assertIncomingSessionCookieHasHacheMetadata();
+            // Validate provenance without cookie output, then reopen the real session
+            // under the policy that was actually stored with that Hache session.
+            $initialPolicy = self::preflightIncomingSessionCookie();
         }
 
-        self::openOrAdoptSession($candidatePolicy, $server);
+        self::openOrAdoptSession($initialPolicy, $server);
 
         $storedPolicy = self::readStoredPolicy();
 
@@ -392,7 +395,14 @@ final class SessionSecurity
         return $name !== '' && array_key_exists($name, $_COOKIE);
     }
 
-    private static function assertIncomingSessionCookieHasHacheMetadata(): void
+    /**
+     * Validate an incoming browser session without allowing PHP to emit a candidate
+     * cookie first. On success, prime session_id() with the validated Hache ID and
+     * return its stored policy so normal startup uses the authoritative cookie scope.
+     *
+     * @return array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}
+     */
+    private static function preflightIncomingSessionCookie(): array
     {
         $name = session_name();
         $incomingId = $name === '' ? null : ($_COOKIE[$name] ?? null);
@@ -404,9 +414,9 @@ final class SessionSecurity
         self::assertHeadersAvailable('validate incoming session cookie');
         self::configurePhpSessionRuntime();
 
-        // Preflight the browser-supplied ID without allowing PHP to emit a replacement
-        // cookie. In strict mode an expired/unknown ID may be replaced during
-        // session_start(); cookie output must remain disabled until provenance is known.
+        // In strict mode an expired/unknown ID may be replaced during session_start().
+        // Keep cookie output off until we know whether the incoming ID is a real Hache
+        // session, otherwise PHP could emit a fresh root/candidate cookie before reject.
         if (ini_set('session.use_cookies', '0') === false) {
             throw new LogicException('Unable to disable session cookies for incoming-session provenance validation.');
         }
@@ -425,19 +435,32 @@ final class SessionSecurity
                 $storedPolicy = self::readStoredPolicy();
             }
         } catch (\Throwable $exception) {
-            self::closeIncomingSessionPreflight($incomingId, $resolvedId);
-            self::restoreCookieRuntimeAfterPreflight();
+            try {
+                self::closeIncomingSessionPreflight($incomingId, $resolvedId);
+            } finally {
+                self::restoreCookieRuntimeAfterPreflight();
+            }
             throw $exception;
         }
 
-        self::closeIncomingSessionPreflight($incomingId, $resolvedId);
-        self::restoreCookieRuntimeAfterPreflight();
+        try {
+            self::closeIncomingSessionPreflight($incomingId, $resolvedId);
+        } finally {
+            self::restoreCookieRuntimeAfterPreflight();
+        }
 
         if ($resolvedId !== $incomingId || $storedPolicy === null) {
             throw new LogicException(
                 'An incoming PHP session cookie has no verifiable Hache Base SEC-007 metadata. Its original cookie scope cannot be safely inferred; clear or destroy the legacy session before authentication.',
             );
         }
+
+        // PHP does not reliably re-consume the request cookie after a preflight
+        // session has been closed in the same request. Prime the already validated ID
+        // explicitly so the real session_start() reopens exactly that Hache session.
+        session_id($incomingId);
+
+        return $storedPolicy;
     }
 
     private static function closeIncomingSessionPreflight(string $incomingId, string $resolvedId): void
