@@ -12,7 +12,7 @@ OBSERVATION_SECONDS="${OBSERVATION_SECONDS:-0}"
 REQUIRE_SMOKE="${REQUIRE_SMOKE:-0}"
 REQUIRE_OBSERVATION="${REQUIRE_OBSERVATION:-0}"
 
-current_phase="started"
+current_phase="configuration"
 previous_commit=""
 rollback_branch=""
 deploy_record=""
@@ -62,9 +62,9 @@ on_error() {
   printf 'DEPLOY_RECOVERY_REQUIRED failed_phase=%s exit_code=%s runbook=%s record=%s rollback_ref=%s\n' \
     "$(sanitize_field "$current_phase")" \
     "$exit_code" \
-    "$APP_ROOT/deployment/DEPLOY-FAILURE-RUNBOOK.md" \
-    "${deploy_record:-unavailable}" \
-    "${rollback_branch:-unavailable}" >&2
+    "$(sanitize_field "$APP_ROOT/deployment/DEPLOY-FAILURE-RUNBOOK.md")" \
+    "$(sanitize_field "${deploy_record:-unavailable}")" \
+    "$(sanitize_field "${rollback_branch:-unavailable}")" >&2
   exit "$exit_code"
 }
 trap on_error ERR
@@ -92,11 +92,15 @@ if [[ "$REQUIRE_OBSERVATION" == "1" && "$OBSERVATION_SECONDS" =~ ^0+([.]0+)?$ ]]
   false
 fi
 
+current_phase="started"
 started_line="$(format_state "started" "running" "runner_started")"
 printf '%s\n' "$started_line"
 
+current_phase="preflight"
 bash "$APP_ROOT/deployment/preflight.sh"
 
+current_phase="deploy_record"
+umask 077
 install -d -m 700 "$DEPLOY_RECORD_ROOT"
 stamp="$(date -u +%Y%m%d-%H%M%S)"
 deploy_record="$DEPLOY_RECORD_ROOT/deploy-${stamp}-$$.log"
@@ -105,13 +109,16 @@ chmod 600 "$deploy_record"
 printf '%s\n' "$started_line" > "$deploy_record"
 printf 'DEPLOY_RECORD_FILE=%s\n' "$deploy_record"
 
+current_phase="rollback_ref"
 previous_commit="$(git rev-parse HEAD)"
 rollback_branch="rollback/pre-deploy-${stamp}-$$"
 git branch "$rollback_branch" "$previous_commit"
 printf 'ROLLBACK_REF=%s\n' "$rollback_branch"
 
+current_phase="backup"
 bash "$APP_ROOT/deployment/backup.sh"
 
+current_phase="code_change"
 git fetch origin --prune
 git rev-parse --verify "${TARGET_COMMIT}^{commit}" >/dev/null
 git checkout --detach "$TARGET_COMMIT"
@@ -168,6 +175,7 @@ if [[ ! "$OBSERVATION_SECONDS" =~ ^0+([.]0+)?$ ]]; then
   printf 'DEPLOY_OBSERVATION status=started seconds=%s\n' "$OBSERVATION_SECONDS"
   sleep "$OBSERVATION_SECONDS"
   run_release_gates
+  current_phase="observation"
   printf 'DEPLOY_OBSERVATION status=passed seconds=%s\n' "$OBSERVATION_SECONDS"
 else
   echo "DEPLOY_OBSERVATION status=not_configured evidence=NOT_EVALUATED"
