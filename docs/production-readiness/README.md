@@ -12,6 +12,7 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
+- `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización documental Standard ↔ Checklist y de la comprobación exhaustiva 126/126 previa a la implementación.
 
 Si una síntesis contradice el registro canónico de la sección 24 del Standard, **prevalece el Standard**.
 
