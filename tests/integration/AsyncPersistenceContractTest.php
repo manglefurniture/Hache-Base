@@ -20,15 +20,45 @@ foreach ($reflection->getConstants() as $value) {
     }
 }
 
-assert(count($states) === 8);
+$canonicalStates = array_keys($states);
+sort($canonicalStates);
+assert(count($canonicalStates) === 8);
 
-foreach (array_keys($states) as $state) {
-    $quoted = "'" . $state . "'";
+$constraints = [
+    'chk_integration_outbox_operation_state',
+    'chk_integration_claim_operation_state',
+];
+
+foreach ($constraints as $constraintName) {
+    $pattern = '/CONSTRAINT\s+' . preg_quote($constraintName, '/')
+        . '\s+CHECK\s*\(\s*operation_state\s+IN\s*\((.*?)\)\s*\)/is';
+
     assert(
-        substr_count($sql, $quoted) >= 2,
-        sprintf('State %s must be constrained in outbox and idempotency claims', $state),
+        preg_match($pattern, $sql, $match) === 1,
+        sprintf('Missing or unparsable state constraint: %s', $constraintName),
+    );
+
+    preg_match_all("/'([^']+)'/", $match[1], $stateMatches);
+    $sqlStates = $stateMatches[1];
+    sort($sqlStates);
+
+    assert(
+        $sqlStates === $canonicalStates,
+        sprintf(
+            'SQL state vocabulary drift in %s: expected [%s], got [%s]',
+            $constraintName,
+            implode(', ', $canonicalStates),
+            implode(', ', $sqlStates),
+        ),
     );
 }
+
+assert(str_contains($sql, 'source VARCHAR(80) COLLATE utf8mb4_bin'));
+assert(str_contains($sql, 'external_event_id VARCHAR(191) COLLATE utf8mb4_bin'));
+assert(str_contains($sql, 'idempotency_key VARCHAR(191) COLLATE utf8mb4_bin'));
+assert(str_contains($sql, 'scope_name VARCHAR(80) COLLATE utf8mb4_bin'));
+assert(str_contains($sql, 'claim_key VARCHAR(191) COLLATE utf8mb4_bin'));
+assert(substr_count($sql, 'operation_state VARCHAR(32) COLLATE utf8mb4_bin') === 2);
 
 assert(str_contains($sql, 'UNIQUE KEY uq_integration_inbox_source_event'));
 assert(str_contains($sql, 'UNIQUE KEY uq_integration_outbox_idempotency'));
