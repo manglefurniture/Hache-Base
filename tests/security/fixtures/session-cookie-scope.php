@@ -68,6 +68,66 @@ if ($path === '/admin/check-root') {
     return;
 }
 
+// Seed a historical anonymous session outside Hache Base. Its browser cookie is
+// scoped to /admin and its server-side data deliberately contains no SEC-007 metadata.
+if ($path === '/admin/legacy-anonymous') {
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_cookies', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.use_trans_sid', '0');
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/admin',
+        'domain' => '',
+        'secure' => false,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    if (!session_start()) {
+        http_response_code(500);
+        echo "LEGACY_ANON_START_FAILED\n";
+        return;
+    }
+
+    $_SESSION['legacy_marker'] = 'anonymous-no-hache-meta';
+    echo "LEGACY_ANON_OK\n";
+    return;
+}
+
+// Hache Base owns session_start() here, but the browser already supplied a legacy
+// /admin cookie. Without stored Hache metadata its original scope is unverifiable,
+// so login must fail closed instead of creating an authenticated root cookie.
+if ($path === '/admin/legacy-login-root') {
+    try {
+        Auth::login(
+            ['id' => 45, 'role' => 'user'],
+            ['cookie_path' => '/'],
+            $_SERVER,
+            4000,
+        );
+    } catch (LogicException) {
+        if (array_key_exists('user', $_SESSION)) {
+            http_response_code(500);
+            echo "LEGACY_INCOMING_AUTH_ATTACHED\n";
+            return;
+        }
+
+        if (($_SESSION['legacy_marker'] ?? null) !== 'anonymous-no-hache-meta') {
+            http_response_code(500);
+            echo "LEGACY_INCOMING_SESSION_REPLACED\n";
+            return;
+        }
+
+        echo "LEGACY_INCOMING_REJECTED\n";
+        return;
+    }
+
+    http_response_code(500);
+    echo "LEGACY_INCOMING_NOT_REJECTED\n";
+    return;
+}
+
 // Simulate a framework or historical bootstrap that starts PHP sessions before
 // Hache Base while the process-level runtime still has session.use_cookies=0.
 // This state is ambiguous when same-name cookies exist at multiple paths, so SEC-007
