@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, security headers configurables, contrato de sesión P0-08, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, security headers configurables, contrato de sesión P0-08, deploy/recovery P0-10, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -48,17 +48,18 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 18. Inbox/outbox/claims son Extensions opt-in: dedupe, concurrencia y reprocess deben demostrarse en servidor sin obligar a todos los proyectos a operar una cola.
 19. CSP/HSTS no se endurecen a ciegas: CSP empieza report-only cuando sea necesario, HSTS exige HTTPS estable y `includeSubDomains`/preload son decisiones explícitas del proyecto.
 20. Una sesión no cruza de anónima a autenticada/privilegiada sin rotar ID; expiración y logout deben demostrarse, no inferirse por la UI.
+21. Un deploy no termina cuando acaba el script: fases, health, smoke, ventana y recuperación deben dejar evidencia; rollback de código nunca se confunde con restore de DB.
 
 ## Estructura
 
 - `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI, Production Readiness y bootstrap.
-- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox, security headers, session security y archivos de referencia.
+- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox, security headers, session security, deploy/recovery y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales, incluida la plantilla P0-06 no automática.
 - `security/` — patrones reutilizables de seguridad, respuesta API, headers configurables, trusted HTTPS y contrato de sesión.
 - `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context, logging mínimo y estados asíncronos.
 - `integrations/` — async delivery opt-in, correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
-- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, security headers, sesiones, integración, readiness y smoke.
-- `deployment/` — preflight, backup, despliegue, liveness/readiness, proxy HTTPS documentado y rollback.
+- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, security headers, sesiones, deploy/recovery, integración, readiness y smoke.
+- `deployment/` — preflight, backup, despliegue por fases, records, liveness/readiness, smoke/observación, runbook de fallo y rollback explícito.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
 ## Production Readiness
@@ -71,9 +72,11 @@ P0-05 está implementado mediante `AsyncOperationState`, documentación, plantil
 
 P0-06 está implementado como **Extension opt-in** mediante contrato de inbox/outbox/idempotency claim, schema plantilla MariaDB y regresiones de duplicado, concurrencia, out-of-order y reprocess. No activa proveedores, workers, Redis ni colas globales.
 
-P0-07 está implementado como **Core configurable** para SEC-001/SEC-002/SEC-003: baseline defensivo, CSP report-only/enforce explícita, HSTS opt-in sin `includeSubDomains`/preload por defecto y confianza de proxy limitada a IPs exactas para detectar HTTPS.
+P0-07 está implementado como **Core configurable** para SEC-001/SEC-002/SEC-003: baseline defensivo, CSP report-only/enforce explícita, HSTS opt-in y trusted HTTPS.
 
-P0-08 está implementado como **Core configurable** para SEC-007: cookies seguras, trusted HTTPS compartido con P0-07, strict mode, idle/absolute expiry, rotación en login/elevación y logout efectivo. `templates/SESSION-SECURITY.md` conserva la evidencia que sigue siendo responsabilidad del proyecto.
+P0-08 está implementado como **Core configurable** para SEC-007: cookies seguras, trusted HTTPS compartido, strict mode, idle/absolute expiry, rotación en login/elevación y logout efectivo.
+
+P0-10 está implementado como **Core de deploy/recovery**: estados por fases, `DEPLOY_RECORD_FILE`, failure trap/runbook, smoke y ventana configurables, matriz código/DB/assets/config y registro explícito de rollback/manual recovery. No automatiza restore ni rollback inseguro.
 
 Esto **no** significa que cualquier proyecto derivado sea automáticamente Production Ready; debe evaluar sus controles aplicables con evidencia real.
 
