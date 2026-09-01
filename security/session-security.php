@@ -62,6 +62,10 @@ final class SessionSecurity
         $now ??= time();
         $incomingSessionCookie = self::hasIncomingSessionCookie();
 
+        if ($incomingSessionCookie && session_status() !== PHP_SESSION_ACTIVE) {
+            self::assertIncomingSessionCookieHasHacheMetadata();
+        }
+
         self::openOrAdoptSession($candidatePolicy, $server);
 
         $storedPolicy = self::readStoredPolicy();
@@ -386,6 +390,85 @@ final class SessionSecurity
         $name = session_name();
 
         return $name !== '' && array_key_exists($name, $_COOKIE);
+    }
+
+    private static function assertIncomingSessionCookieHasHacheMetadata(): void
+    {
+        $name = session_name();
+        $incomingId = $name === '' ? null : ($_COOKIE[$name] ?? null);
+
+        if (!is_string($incomingId) || $incomingId === '') {
+            throw new LogicException('An incoming PHP session cookie does not contain a usable session ID.');
+        }
+
+        self::assertHeadersAvailable('validate incoming session cookie');
+        self::configurePhpSessionRuntime();
+
+        // Preflight the browser-supplied ID without allowing PHP to emit a replacement
+        // cookie. In strict mode an expired/unknown ID may be replaced during
+        // session_start(); cookie output must remain disabled until provenance is known.
+        if (ini_set('session.use_cookies', '0') === false) {
+            throw new LogicException('Unable to disable session cookies for incoming-session provenance validation.');
+        }
+
+        session_id($incomingId);
+        $resolvedId = '';
+        $storedPolicy = null;
+
+        try {
+            if (!session_start()) {
+                throw new LogicException('Unable to validate incoming session cookie.');
+            }
+
+            $resolvedId = session_id();
+            if ($resolvedId === $incomingId) {
+                $storedPolicy = self::readStoredPolicy();
+            }
+        } catch (\Throwable $exception) {
+            self::closeIncomingSessionPreflight($incomingId, $resolvedId);
+            self::restoreCookieRuntimeAfterPreflight();
+            throw $exception;
+        }
+
+        self::closeIncomingSessionPreflight($incomingId, $resolvedId);
+        self::restoreCookieRuntimeAfterPreflight();
+
+        if ($resolvedId !== $incomingId || $storedPolicy === null) {
+            throw new LogicException(
+                'An incoming PHP session cookie has no verifiable Hache Base SEC-007 metadata. Its original cookie scope cannot be safely inferred; clear or destroy the legacy session before authentication.',
+            );
+        }
+    }
+
+    private static function closeIncomingSessionPreflight(string $incomingId, string $resolvedId): void
+    {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_id('');
+            return;
+        }
+
+        $closed = true;
+        if ($resolvedId !== '' && $resolvedId !== $incomingId) {
+            // Strict mode may have generated a fresh replacement for an expired ID.
+            // It is preflight-only state: remove it so rejection leaves no orphan.
+            $_SESSION = [];
+            $closed = session_destroy();
+        } else {
+            $closed = session_abort();
+        }
+
+        session_id('');
+
+        if (!$closed) {
+            throw new LogicException('Unable to close incoming-session provenance validation safely.');
+        }
+    }
+
+    private static function restoreCookieRuntimeAfterPreflight(): void
+    {
+        if (ini_set('session.use_cookies', '1') === false) {
+            throw new LogicException('Unable to restore session.use_cookies after provenance validation.');
+        }
     }
 
     /**
