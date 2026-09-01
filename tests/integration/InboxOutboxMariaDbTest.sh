@@ -29,16 +29,18 @@ VALUES ('CI_P0_06', 'evt-duplicate', 'fixture.updated', 'agg-1', 10, 'received')
 count="$(sql "SELECT COUNT(*) FROM integration_inbox WHERE source='CI_P0_06' AND external_event_id='evt-duplicate';")"
 test "$count" = "1"
 
-# Opaque provider identities are exact: case and accents must not collapse.
+# Opaque provider identities are exact: case, accents and trailing spaces must not collapse.
 sql "INSERT INTO integration_inbox
   (source, external_event_id, event_type, processing_status)
 VALUES
   ('CI_P0_06', 'evt-case-A', 'fixture.identity', 'received'),
   ('CI_P0_06', 'evt-case-a', 'fixture.identity', 'received'),
   ('CI_P0_06', 'evt-accent-a', 'fixture.identity', 'received'),
-  ('CI_P0_06', 'evt-accent-á', 'fixture.identity', 'received');"
+  ('CI_P0_06', 'evt-accent-á', 'fixture.identity', 'received'),
+  ('CI_P0_06', 'evt-space', 'fixture.identity', 'received'),
+  ('CI_P0_06', 'evt-space ', 'fixture.identity', 'received');"
 identity_count="$(sql "SELECT COUNT(*) FROM integration_inbox WHERE source='CI_P0_06' AND event_type='fixture.identity';")"
-test "$identity_count" = "4"
+test "$identity_count" = "6"
 
 # 2) Outbox idempotency keys are also exact opaque identities.
 sql "INSERT INTO integration_outbox
@@ -46,15 +48,23 @@ sql "INSERT INTO integration_outbox
 VALUES
   ('ci-p0-06-Key-A', 'fixture.identity', 'agg-identity', '{}', 'requested'),
   ('ci-p0-06-Key-a', 'fixture.identity', 'agg-identity', '{}', 'requested'),
-  ('ci-p0-06-key-á', 'fixture.identity', 'agg-identity', '{}', 'requested');"
+  ('ci-p0-06-key-á', 'fixture.identity', 'agg-identity', '{}', 'requested'),
+  ('ci-p0-06-key-space', 'fixture.identity', 'agg-identity', '{}', 'requested'),
+  ('ci-p0-06-key-space ', 'fixture.identity', 'agg-identity', '{}', 'requested');"
 outbox_identity_count="$(sql "SELECT COUNT(*) FROM integration_outbox WHERE event_type='fixture.identity';")"
-test "$outbox_identity_count" = "3"
+test "$outbox_identity_count" = "5"
 
-# The SQL state vocabulary is exact/case-sensitive, matching AsyncOperationState.
+# The SQL state vocabulary is exact, matching AsyncOperationState byte-for-byte.
 if sql "INSERT INTO integration_outbox
   (idempotency_key, event_type, aggregate_key, payload_json, operation_state)
 VALUES ('ci-p0-06-uppercase-state', 'fixture.invalid', 'agg-invalid', '{}', 'REQUESTED');" >/dev/null 2>&1; then
   echo "uppercase outbox operation_state was accepted"
+  exit 1
+fi
+if sql "INSERT INTO integration_outbox
+  (idempotency_key, event_type, aggregate_key, payload_json, operation_state)
+VALUES ('ci-p0-06-trailing-state', 'fixture.invalid', 'agg-invalid', '{}', 'requested ');" >/dev/null 2>&1; then
+  echo "trailing-space outbox operation_state was accepted"
   exit 1
 fi
 
@@ -166,14 +176,22 @@ sql "INSERT INTO integration_idempotency_claims
 VALUES
   ('CI_P0_06', 'effect-Key-A', 'requested', 'identity', 0),
   ('CI_P0_06', 'effect-Key-a', 'requested', 'identity', 0),
-  ('CI_P0_06', 'effect-key-á', 'requested', 'identity', 0);"
+  ('CI_P0_06', 'effect-key-á', 'requested', 'identity', 0),
+  ('CI_P0_06', 'effect-key-space', 'requested', 'identity', 0),
+  ('CI_P0_06', 'effect-key-space ', 'requested', 'identity', 0);"
 claim_identity_count="$(sql "SELECT COUNT(*) FROM integration_idempotency_claims WHERE scope_name='CI_P0_06' AND claim_token='identity';")"
-test "$claim_identity_count" = "3"
+test "$claim_identity_count" = "5"
 
 if sql "INSERT INTO integration_idempotency_claims
   (scope_name, claim_key, operation_state)
 VALUES ('CI_P0_06', 'uppercase-state', 'REQUESTED');" >/dev/null 2>&1; then
   echo "uppercase claim operation_state was accepted"
+  exit 1
+fi
+if sql "INSERT INTO integration_idempotency_claims
+  (scope_name, claim_key, operation_state)
+VALUES ('CI_P0_06', 'trailing-state', 'requested ');" >/dev/null 2>&1; then
+  echo "trailing-space claim operation_state was accepted"
   exit 1
 fi
 
