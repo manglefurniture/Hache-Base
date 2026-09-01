@@ -61,15 +61,7 @@ final class SessionSecurity
         $server ??= $_SERVER;
         $now ??= time();
 
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            self::assertHeadersAvailable('start secure session');
-            self::configurePhpSessionRuntime();
-            session_set_cookie_params(self::buildCookieParamsFromResolved($candidatePolicy, $server));
-
-            if (!session_start()) {
-                throw new LogicException('Unable to start session.');
-            }
-        }
+        self::openOrAdoptSession($candidatePolicy, $server);
 
         $storedPolicy = self::readStoredPolicy();
 
@@ -119,6 +111,48 @@ final class SessionSecurity
         }
 
         self::refreshOrExpire($effectivePolicy, $now);
+    }
+
+    /**
+     * Open a session only for destruction/logout.
+     *
+     * A valid stored policy always wins over a newly supplied fallback policy so a
+     * deployment-time policy change can never make logout impossible. Invalid or
+     * missing legacy metadata also must not prevent server-side session destruction.
+     *
+     * @param array<string, mixed> $fallbackConfig
+     * @param array<string, mixed>|null $server
+     */
+    public static function startForDestruction(
+        array $fallbackConfig = [],
+        ?array $server = null,
+    ): void {
+        $server ??= $_SERVER;
+        self::openOrAdoptSession(null, $server);
+
+        try {
+            $storedPolicy = self::readStoredPolicy();
+        } catch (LogicException) {
+            // Corrupt legacy metadata must never make logout unavailable. destroy()
+            // will still invalidate the server-side session and expire current scope.
+            return;
+        }
+
+        if ($storedPolicy !== null) {
+            self::ensureCookiePolicy($storedPolicy, $server);
+            return;
+        }
+
+        if ($fallbackConfig === []) {
+            return;
+        }
+
+        try {
+            self::ensureCookiePolicy(self::resolveConfig($fallbackConfig), $server);
+        } catch (InvalidArgumentException) {
+            // The fallback is advisory only for metadata-less legacy sessions.
+            // Destruction takes precedence over rejecting a newly changed config.
+        }
     }
 
     /**
@@ -274,6 +308,77 @@ final class SessionSecurity
 
         return preg_match('/^[0-9]+$/D', $last) === 1
             || preg_match('/^0x[0-9a-f]+$/D', $last) === 1;
+    }
+
+    /**
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}|null $initialPolicy
+     * @param array<string, mixed> $server
+     */
+    private static function openOrAdoptSession(?array $initialPolicy, array $server): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            self::adoptPreActiveSessionRuntime();
+            return;
+        }
+
+        self::assertHeadersAvailable('start secure session');
+        self::configurePhpSessionRuntime();
+
+        if ($initialPolicy !== null) {
+            session_set_cookie_params(self::buildCookieParamsFromResolved($initialPolicy, $server));
+        }
+
+        if (!session_start()) {
+            throw new LogicException('Unable to start session.');
+        }
+    }
+
+    private static function adoptPreActiveSessionRuntime(): void
+    {
+        if (self::phpSessionRuntimeCompliant()) {
+            return;
+        }
+
+        self::assertHeadersAvailable('adopt pre-active session');
+
+        $sessionName = session_name();
+        $preActiveId = session_id();
+        $snapshot = $_SESSION;
+        $requestCookie = $_COOKIE[$sessionName] ?? null;
+        $preserveSnapshot = !is_string($requestCookie)
+            || $requestCookie === ''
+            || ($preActiveId !== '' && hash_equals($preActiveId, $requestCookie));
+
+        // Abort the potentially URL-backed or cookie-disabled session instead of
+        // persisting it. After enforcing cookie-only + strict mode, session_start()
+        // re-resolves the authoritative request cookie (if any) under the safe rules.
+        if (!session_abort()) {
+            throw new LogicException('Unable to close pre-active session before applying the secure runtime contract.');
+        }
+        session_id('');
+
+        self::configurePhpSessionRuntime();
+
+        if (!session_start()) {
+            throw new LogicException('Unable to reopen pre-active session under the secure runtime contract.');
+        }
+
+        if ($preserveSnapshot) {
+            $_SESSION = $snapshot;
+        }
+
+        // Crossing from an unconstrained runtime into SEC-007 is itself a trust
+        // boundary. Rotate even when the request cookie was valid to eliminate any
+        // identifier accepted before strict/cookie-only enforcement.
+        self::regenerateIdOrFail('Unable to rotate session ID after adopting a pre-active session.');
+    }
+
+    private static function phpSessionRuntimeCompliant(): bool
+    {
+        return (bool)ini_get('session.use_strict_mode')
+            && (bool)ini_get('session.use_cookies')
+            && (bool)ini_get('session.use_only_cookies')
+            && !(bool)ini_get('session.use_trans_sid');
     }
 
     /**
