@@ -64,7 +64,7 @@ assert($strictCookie['samesite'] === 'Strict');
 assert($strictCookie['path'] === '/admin');
 assert($strictCookie['domain'] === 'example.test');
 
-$throws = static function (callable $callback): bool {
+$throwsInvalid = static function (callable $callback): bool {
     try {
         $callback();
     } catch (InvalidArgumentException) {
@@ -74,18 +74,28 @@ $throws = static function (callable $callback): bool {
     return false;
 };
 
-assert($throws(static fn () => SessionSecurity::buildCookieParams(['same_site' => 'None'], $http)));
-assert($throws(static fn () => SessionSecurity::resolveConfig(['idle_timeout' => 0])));
-assert($throws(static fn () => SessionSecurity::resolveConfig([
+$throwsLogic = static function (callable $callback): bool {
+    try {
+        $callback();
+    } catch (LogicException) {
+        return true;
+    }
+
+    return false;
+};
+
+assert($throwsInvalid(static fn () => SessionSecurity::buildCookieParams(['same_site' => 'None'], $http)));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['idle_timeout' => 0])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
     'idle_timeout' => 120,
     'absolute_timeout' => 60,
 ])));
-assert($throws(static fn () => SessionSecurity::resolveConfig(['cookie_path' => 'relative'])));
-assert($throws(static fn () => SessionSecurity::resolveConfig(['cookie_domain' => "bad\r\nSet-Cookie:x"])));
-assert($throws(static fn () => SessionSecurity::resolveConfig([
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => 'relative'])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_domain' => "bad\r\nSet-Cookie:x"])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
     'proxy' => ['trusted_ips' => ['not-an-ip']],
 ])));
-assert($throws(static fn () => SessionSecurity::resolveConfig(['unknown' => true])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['unknown' => true])));
 
 $tmp = sys_get_temp_dir() . '/hache-base-session-' . bin2hex(random_bytes(6));
 if (!mkdir($tmp, 0700, true) && !is_dir($tmp)) {
@@ -120,10 +130,17 @@ assert((string)ini_get('session.use_strict_mode') === '1');
 assert((string)ini_get('session.use_only_cookies') === '1');
 assert((string)ini_get('session.use_trans_sid') === '0');
 
+assert($throwsLogic(static fn () => Auth::elevate(['id' => 7, 'role' => 'admin'], $config, $https, 1000)));
+
 Auth::login(['id' => 7, 'role' => 'user'], $config, $https, 1000);
 $loginId = session_id();
 assert($loginId !== '' && $loginId !== $anonymousId);
 assert(Auth::user($config, $https, 1001)['role'] === 'user');
+
+$beforeWrongPrincipal = session_id();
+assert($throwsInvalid(static fn () => Auth::elevate(['id' => 8, 'role' => 'admin'], $config, $https, 1002)));
+assert(session_id() === $beforeWrongPrincipal);
+assert(Auth::user($config, $https, 1003)['id'] === 7);
 
 $beforeElevation = session_id();
 Auth::elevate(['id' => 7, 'role' => 'admin'], $config, $https, 1010);
