@@ -23,6 +23,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/StructuredL
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/HeadersTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionSecurityTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionCookieDomainValidationTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionAnonymousMigrationProxyTest.php"
 bash "$ROOT/tests/security/SessionCookieScopeHttpTest.sh"
 bash "$ROOT/tests/deployment/HealthCheckTest.sh"
 
