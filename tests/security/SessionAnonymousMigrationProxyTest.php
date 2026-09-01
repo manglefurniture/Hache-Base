@@ -56,9 +56,11 @@ assert($oldParams['secure'] === true);
 assert($oldParams['samesite'] === 'None');
 assert($oldParams['path'] === '/legacy-secure');
 assert(session_write_close());
+session_id('');
 
-// Emulate a fresh worker/request after deploy: runtime cookie params no longer prove
-// which tuple the browser received, while the persisted session metadata still does.
+// Emulate a fresh worker/request after deploy. The browser supplies the real old
+// cookie; runtime params no longer prove which tuple produced it. The persisted
+// session metadata is the only authoritative source for reopening provenance.
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
@@ -67,7 +69,7 @@ session_set_cookie_params([
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
-session_id($anonymousId);
+$_COOKIE[session_name()] = $anonymousId;
 
 $newProxy = [
     'trusted_ips' => ['10.0.0.6'],
@@ -89,9 +91,9 @@ $newConfig = [
 
 assert(RequestSecurity::isHttps($newRequest, $newProxy) === true);
 
-// Regression: before the persisted-cookie migration fix, this rebuilt the previous
-// SameSite=None tuple through the old proxy policy, considered the new request HTTP,
-// and threw InvalidArgumentException before authentication could rotate the ID.
+// Regression: an incoming SameSite=None cookie created behind the old proxy must be
+// reopened from its persisted cookie tuple, not by re-evaluating the old proxy policy
+// against the new topology. The anonymous migration may then adopt the new policy.
 Auth::login(['id' => 12, 'role' => 'user'], $newConfig, $newRequest, 6001);
 $authenticatedId = session_id();
 assert($authenticatedId !== '' && $authenticatedId !== $anonymousId);
@@ -106,6 +108,7 @@ assert(session_status() === PHP_SESSION_NONE);
 assert($_SESSION === []);
 assert(session_id() === '');
 
+unset($_COOKIE[session_name()]);
 $cleanup();
 
 echo "SESSION_ANONYMOUS_MIGRATION_PROXY_OK\n";
