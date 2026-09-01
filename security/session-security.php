@@ -93,10 +93,11 @@ final class SessionSecurity
             }
 
             // Anonymous sessions may be upgraded to the explicit project policy
-            // before authentication. In this branch the previous policy is known,
-            // so its old cookie tuple may be expired after re-binding.
+            // before authentication. The stored policy is authoritative evidence of
+            // the previous cookie tuple, even when runtime params already equal the
+            // candidate policy because they were installed before session_start().
             $effectivePolicy = $candidatePolicy;
-            self::ensureCookiePolicy($effectivePolicy, $server, true);
+            self::ensureCookiePolicy($effectivePolicy, $server, $storedPolicy);
             $meta = self::readMeta();
             self::writeMeta($meta === null
                 ? self::newMeta($now, $effectivePolicy)
@@ -297,14 +298,22 @@ final class SessionSecurity
     /**
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
      * @param array<string, mixed> $server
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}|null $previousPolicy
      */
-    private static function ensureCookiePolicy(array $policy, array $server, bool $expirePreviousScope = false): void
+    private static function ensureCookiePolicy(array $policy, array $server, ?array $previousPolicy = null): void
     {
         self::requireActiveSession();
         $desired = self::buildCookieParamsFromResolved($policy, $server);
         $current = self::currentCookieParams();
+        $previous = $previousPolicy === null
+            ? null
+            : self::buildCookieParamsFromResolved($previousPolicy, $server);
 
-        if ($current === $desired) {
+        $needsRebind = $current !== $desired;
+        $needsPreviousScopeExpiry = $previous !== null
+            && ($previous['path'] !== $desired['path'] || $previous['domain'] !== $desired['domain']);
+
+        if (!$needsRebind && !$needsPreviousScopeExpiry) {
             return;
         }
 
@@ -315,25 +324,24 @@ final class SessionSecurity
             throw new LogicException('Cannot re-bind cookie policy without a session ID.');
         }
 
-        if (!session_write_close()) {
-            throw new LogicException('Unable to persist session before re-binding cookie policy.');
-        }
-
-        session_set_cookie_params($desired);
-        session_id($sessionId);
-
-        if (!session_start()) {
-            throw new LogicException('Unable to reopen session with the effective cookie policy.');
-        }
-
-        // Only an explicit anonymous policy migration proves that the previous tuple
-        // represented the session cookie. On a new request the pre-start params may
-        // merely be defaults and must never be used to delete an inferred scope.
-        if ($expirePreviousScope
-            && ($current['path'] !== $desired['path'] || $current['domain'] !== $desired['domain'])) {
-            if (!self::expireCookie($current)) {
-                throw new LogicException('Unable to expire the previous session cookie scope.');
+        if ($needsRebind) {
+            if (!session_write_close()) {
+                throw new LogicException('Unable to persist session before re-binding cookie policy.');
             }
+
+            session_set_cookie_params($desired);
+            session_id($sessionId);
+
+            if (!session_start()) {
+                throw new LogicException('Unable to reopen session with the effective cookie policy.');
+            }
+        }
+
+        // Only a supplied stored policy is authoritative evidence of an old cookie
+        // tuple. Runtime params on a new request may already be the candidate policy
+        // and must never substitute for the stored tuple during migration.
+        if ($needsPreviousScopeExpiry && !self::expireCookie($previous)) {
+            throw new LogicException('Unable to expire the previous session cookie scope.');
         }
 
         if (!self::setSessionCookie(session_id(), $desired)) {
@@ -465,6 +473,9 @@ final class SessionSecurity
     {
         if (ini_set('session.use_strict_mode', '1') === false) {
             throw new LogicException('Unable to enable session.use_strict_mode.');
+        }
+        if (ini_set('session.use_cookies', '1') === false) {
+            throw new LogicException('Unable to enable session.use_cookies.');
         }
         if (ini_set('session.use_only_cookies', '1') === false) {
             throw new LogicException('Unable to enable session.use_only_cookies.');
