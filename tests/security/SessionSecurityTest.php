@@ -131,6 +131,8 @@ assert((string)ini_get('session.use_only_cookies') === '1');
 assert((string)ini_get('session.use_trans_sid') === '0');
 
 assert($throwsLogic(static fn () => Auth::elevate(['id' => 7, 'role' => 'admin'], $config, $https, 1000)));
+assert($throwsInvalid(static fn () => Auth::login(['id' => ['tenant' => 1, 'user' => 7]], $config, $https, 1000)));
+assert($throwsInvalid(static fn () => Auth::login(['id' => new stdClass()], $config, $https, 1000)));
 
 Auth::login(['id' => 7, 'role' => 'user'], $config, $https, 1000);
 $loginId = session_id();
@@ -141,6 +143,21 @@ $beforeWrongPrincipal = session_id();
 assert($throwsInvalid(static fn () => Auth::elevate(['id' => 8, 'role' => 'admin'], $config, $https, 1002)));
 assert(session_id() === $beforeWrongPrincipal);
 assert(Auth::user($config, $https, 1003)['id'] === 7);
+
+// Even a string with the same printable value is a different canonical principal type.
+$beforeTypeChange = session_id();
+assert($throwsInvalid(static fn () => Auth::elevate(['id' => '7', 'role' => 'admin'], $config, $https, 1004)));
+assert(session_id() === $beforeTypeChange);
+assert(Auth::user($config, $https, 1005)['id'] === 7);
+
+// Composite/non-scalar IDs are rejected before principal comparison and cannot rotate state.
+$beforeComposite = session_id();
+assert($throwsInvalid(static fn () => Auth::elevate([
+    'id' => ['tenant' => 2, 'user' => 7],
+    'role' => 'admin',
+], $config, $https, 1006)));
+assert(session_id() === $beforeComposite);
+assert(Auth::user($config, $https, 1007)['id'] === 7);
 
 $beforeElevation = session_id();
 Auth::elevate(['id' => 7, 'role' => 'admin'], $config, $https, 1010);
