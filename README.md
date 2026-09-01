@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, security headers configurables, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -46,17 +46,18 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 16. Production Ready es un estado demostrable: Standard → Checklist → evidencia por CUF; un build, un 200 o un backup sin restore no bastan.
 17. En operaciones asíncronas, `accepted` no equivale a `confirmed`; los resultados ambiguos deben reconciliarse antes de reintentar a ciegas.
 18. Inbox/outbox/claims son Extensions opt-in: dedupe, concurrencia y reprocess deben demostrarse en servidor sin obligar a todos los proyectos a operar una cola.
+19. CSP/HSTS no se endurecen a ciegas: CSP empieza report-only cuando sea necesario, HSTS exige HTTPS estable y `includeSubDomains`/preload son decisiones explícitas del proyecto.
 
 ## Estructura
 
 - `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI, Production Readiness y bootstrap.
-- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox y archivos de referencia.
+- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox, security headers y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales, incluida la plantilla P0-06 no automática.
-- `security/` — patrones reutilizables de seguridad y contrato de respuesta API.
+- `security/` — patrones reutilizables de seguridad, contrato de respuesta API y helper P0-07 de headers configurables.
 - `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context, logging mínimo y estados asíncronos.
 - `integrations/` — async delivery opt-in, correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
-- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, integración, readiness y smoke.
-- `deployment/` — preflight, backup, despliegue, liveness/readiness y rollback.
+- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, security headers, integración, readiness y smoke.
+- `deployment/` — preflight, backup, despliegue, liveness/readiness, proxy HTTPS documentado y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
 ## Production Readiness
@@ -68,6 +69,8 @@ La primera fase Core implementada se limitó a P0-01, P0-02, P0-03, P0-04 y P0-0
 P0-05 está implementado mediante `AsyncOperationState`, documentación, plantilla de operation/event ledger y fixtures offline.
 
 P0-06 está implementado como **Extension opt-in** mediante contrato de inbox/outbox/idempotency claim, schema plantilla MariaDB y regresiones de duplicado, concurrencia, out-of-order y reprocess. No activa proveedores, workers, Redis ni colas globales.
+
+P0-07 está implementado como **Core configurable** para SEC-001/SEC-002/SEC-003: baseline defensivo, CSP report-only/enforce explícita, HSTS opt-in sin `includeSubDomains`/preload por defecto y confianza de proxy limitada a IPs exactas para detectar HTTPS. `templates/SECURITY-HEADERS.md` conserva la evidencia que sigue siendo responsabilidad del proyecto.
 
 Esto **no** significa que cualquier proyecto derivado sea automáticamente Production Ready; debe evaluar sus controles aplicables con evidencia real.
 
