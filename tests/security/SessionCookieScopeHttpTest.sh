@@ -30,6 +30,7 @@ dump_diagnostics() {
     check-root.body \
     legacy-anon.headers legacy-anon.body legacy-cookies.txt \
     legacy-login.headers legacy-login.body \
+    stale-login.headers stale-login.body \
     preactive-login.headers preactive-login.body; do
     if [[ -f "$TMP/$file" ]]; then
       echo "----- $file -----" >&2
@@ -112,9 +113,8 @@ curl -fsS -b "$TMP/migrate-cookies.txt" \
 grep -qx 'MIGRATED_AUTH_OK' "$TMP/check-root.body"
 
 # A legacy anonymous session can exist server-side without Hache metadata. Even when
-# Hache Base itself later calls session_start(), an incoming /admin cookie does not
-# reveal its historical Path/Domain to PHP. Login must fail closed rather than attach
-# auth and emit a second root-scoped cookie that the legacy cookie can shadow.
+# Hache Base later handles the request, its incoming /admin cookie does not expose
+# historical Path/Domain. Provenance preflight must reject before normal cookie output.
 curl -fsS -D "$TMP/legacy-anon.headers" -c "$TMP/legacy-cookies.txt" \
   "$BASE_URL/admin/legacy-anonymous" -o "$TMP/legacy-anon.body"
 grep -qx 'LEGACY_ANON_OK' "$TMP/legacy-anon.body"
@@ -139,6 +139,20 @@ fi
 if awk '$6 == "HACHEBASESCOPE" && $3 == "/" { found=1 } END { exit found ? 0 : 1 }' "$TMP/legacy-cookies.txt"; then
   echo "The rejected legacy session created a root cookie in the browser jar" >&2
   cat "$TMP/legacy-cookies.txt" >&2
+  exit 1
+fi
+
+# A stale/nonexistent incoming ID is subtler: strict mode would normally replace it
+# during session_start() and immediately emit the candidate root cookie. The preflight
+# runs with cookie output disabled, so rejection must produce no session Set-Cookie.
+curl -fsS -D "$TMP/stale-login.headers" \
+  -H 'Cookie: HACHEBASESCOPE=deadbeefdeadbeefdeadbeef12' \
+  "$BASE_URL/admin/legacy-login-root" -o "$TMP/stale-login.body"
+grep -qx 'LEGACY_INCOMING_REJECTED' "$TMP/stale-login.body"
+
+if grep -Eiq '^Set-Cookie: HACHEBASESCOPE=' "$TMP/stale-login.headers"; then
+  echo "A rejected stale incoming session ID emitted a replacement session cookie" >&2
+  cat "$TMP/stale-login.headers" >&2
   exit 1
 fi
 
