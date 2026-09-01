@@ -9,7 +9,7 @@ Hache-Base adopta un despliegue verificable, observable y recuperable. El runner
 - `deploy.sh`: commit fijado, rollback ref, backup, migraciones configurables, pruebas, readiness, smoke y ventana de observación P0-10.
 - `liveness-check.sh`: confirma que el proceso/endpoint responde; no afirma que el servicio esté listo para tráfico.
 - `health-check.sh`: nombre compatible del gate de **readiness**; valida status y puede exigir body/version.
-- `rollback.sh`: reversión explícita de código; puede anexar `rolled_back` al record del deploy.
+- `rollback.sh`: reversión explícita de código; puede anexar `rolled_back` al record del deploy sin convertir un fallo de logging en fallo del rollback ya ejecutado.
 - `mark-deploy-recovery.sh`: registra explícitamente `manual_recovery` o `rolled_back` cuando la recuperación ocurrió fuera del runner.
 - `DEPLOY-FAILURE-RUNBOOK.md`: respuesta mínima ante fallo parcial.
 - `BACKUP-ROLLBACK.md`: política y límites de recuperación.
@@ -32,9 +32,11 @@ El registro persistente usa estados canónicos según aplicabilidad:
 - `failed`
 - `rolled_back` o `manual_recovery` después de una recuperación explícita
 
-Cada línea empieza por `DEPLOY_STATE`. `deploy.sh` crea `DEPLOY_RECORD_FILE` bajo `DEPLOY_RECORD_ROOT` (por default `$BACKUP_ROOT/deploy-records`) con permisos restrictivos y lo imprime al comenzar la ejecución verificable.
+Las líneas `DEPLOY_STATE` registran fases/resultados del deploy. Las líneas `DEPLOY_GATE` conservan evidencia de readiness, smoke y observación, incluido `status=not_evaluated` cuando un gate compatible no está configurado.
 
-El runner se detiene ante errores. El trap emite `DEPLOY_RECOVERY_REQUIRED` con `failed_phase`, exit code, runbook, record y rollback ref disponibles. **No ejecuta automáticamente un rollback de base de datos ni un rollback ciego de código**: después de migraciones una reversión automática puede dejar esquema/código incompatibles.
+`deploy.sh` crea `DEPLOY_RECORD_FILE` bajo `DEPLOY_RECORD_ROOT` (por default `$BACKUP_ROOT/deploy-records`) con `umask 077`, directorio 700 y archivo 600. `DEPLOY_RECORD_ROOT` se resuelve físicamente y **debe quedar fuera de `APP_ROOT`**; si apunta al working tree directa o indirectamente mediante symlink, el runner falla antes de cambiar código.
+
+El runner se detiene ante errores. El trap emite `DEPLOY_RECOVERY_REQUIRED` con `failed_phase`, exit code, runbook, record y rollback ref disponibles. Preflight, creación del record, rollback ref, backup y cambio de código tienen fases diferenciadas, además de migraciones/tests/gates. **No ejecuta automáticamente un rollback de base de datos ni un rollback ciego de código**: después de migraciones una reversión automática puede dejar esquema/código incompatibles.
 
 Completar `templates/DEPLOY-RECOVERY.md` por proyecto para declarar la matriz código/DB/assets/config, punto de no retorno, smoke, ventana, señales y criterio exacto de rollback.
 
@@ -47,13 +49,13 @@ El runner admite dos formas:
 
 `REQUIRE_SMOKE=1` hace que ausencia de ambos sea un error de configuración **antes de cambiar código**.
 
-Por compatibilidad, el default es `REQUIRE_SMOKE=0`. Si no existe smoke configurado, el runner imprime `DEPLOY_SMOKE status=not_configured evidence=NOT_EVALUATED`; no lo transforma en PASS. Un proyecto solo puede marcar DPL-005 según la evidencia real y aplicabilidad del Standard.
+Por compatibilidad, el default es `REQUIRE_SMOKE=0`. Si no existe smoke configurado, el runner persiste `DEPLOY_GATE ... gate=smoke status=not_evaluated ... evidence=NOT_EVALUATED`; no lo transforma en PASS. Un proyecto solo puede marcar DPL-005 según la evidencia real y aplicabilidad del Standard.
 
 ## Ventana de observación
 
 `OBSERVATION_SECONDS` controla una ventana mínima después del primer readiness/smoke. Si es mayor que cero, al finalizar la espera el runner vuelve a ejecutar readiness y smoke antes de registrar `healthy`.
 
-`REQUIRE_OBSERVATION=1` exige una ventana mayor que cero antes de cambiar código. Por compatibilidad ambos defaults son `OBSERVATION_SECONDS=0` y `REQUIRE_OBSERVATION=0`; en ese caso se imprime `DEPLOY_OBSERVATION status=not_configured evidence=NOT_EVALUATED`.
+`REQUIRE_OBSERVATION=1` exige una ventana mayor que cero antes de cambiar código. Por compatibilidad ambos defaults son `OBSERVATION_SECONDS=0` y `REQUIRE_OBSERVATION=0`; en ese caso el record conserva `DEPLOY_GATE ... gate=observation status=not_evaluated ... evidence=NOT_EVALUATED`.
 
 La segunda comprobación es un gate mínimo. Error rate, logs, métricas de negocio e integridad continúan siendo responsabilidad del proyecto cuando su riesgo los requiera.
 
@@ -106,7 +108,7 @@ Antes de activar HSTS, promover CSP a enforcement o adoptar cookies `Secure` det
 
 ## Recuperación explícita
 
-`rollback.sh <commit-o-rama>` revierte solo código. Si se conoce el `DEPLOY_RECORD_FILE`, pasarlo en el entorno para anexar `state=rolled_back` al mismo record.
+`rollback.sh <commit-o-rama>` revierte solo código. Si se conoce el `DEPLOY_RECORD_FILE`, pasarlo en el entorno para anexar `state=rolled_back` al mismo record. Si el append del record falla después del checkout, el script emite `ROLLBACK_RECORD_WARNING` pero conserva el éxito del rollback de código.
 
 Cuando la recuperación fue manual:
 
@@ -121,6 +123,8 @@ El helper registra evidencia; no ejecuta la recuperación.
 ## Requisitos por proyecto
 
 Configurar en el entorno real `APP_ROOT`, `BACKUP_ROOT`, conexión de base, `HEALTHCHECK_URL`, `TARGET_COMMIT` y, cuando aplique, `MIGRATION_COMMAND`/`TEST_COMMAND`.
+
+`realpath` forma parte del preflight P0-10 porque la ubicación física del record debe verificarse antes de escribir evidencia.
 
 Antes de declarar Production Ready, definir además:
 
