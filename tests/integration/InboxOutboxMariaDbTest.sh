@@ -29,7 +29,36 @@ VALUES ('CI_P0_06', 'evt-duplicate', 'fixture.updated', 'agg-1', 10, 'received')
 count="$(sql "SELECT COUNT(*) FROM integration_inbox WHERE source='CI_P0_06' AND external_event_id='evt-duplicate';")"
 test "$count" = "1"
 
-# 2) Concurrent outbox claim: only one worker can claim the same logical effect.
+# Opaque provider identities are exact: case and accents must not collapse.
+sql "INSERT INTO integration_inbox
+  (source, external_event_id, event_type, processing_status)
+VALUES
+  ('CI_P0_06', 'evt-case-A', 'fixture.identity', 'received'),
+  ('CI_P0_06', 'evt-case-a', 'fixture.identity', 'received'),
+  ('CI_P0_06', 'evt-accent-a', 'fixture.identity', 'received'),
+  ('CI_P0_06', 'evt-accent-á', 'fixture.identity', 'received');"
+identity_count="$(sql "SELECT COUNT(*) FROM integration_inbox WHERE source='CI_P0_06' AND event_type='fixture.identity';")"
+test "$identity_count" = "4"
+
+# 2) Outbox idempotency keys are also exact opaque identities.
+sql "INSERT INTO integration_outbox
+  (idempotency_key, event_type, aggregate_key, payload_json, operation_state)
+VALUES
+  ('ci-p0-06-Key-A', 'fixture.identity', 'agg-identity', '{}', 'requested'),
+  ('ci-p0-06-Key-a', 'fixture.identity', 'agg-identity', '{}', 'requested'),
+  ('ci-p0-06-key-á', 'fixture.identity', 'agg-identity', '{}', 'requested');"
+outbox_identity_count="$(sql "SELECT COUNT(*) FROM integration_outbox WHERE event_type='fixture.identity';")"
+test "$outbox_identity_count" = "3"
+
+# The SQL state vocabulary is exact/case-sensitive, matching AsyncOperationState.
+if sql "INSERT INTO integration_outbox
+  (idempotency_key, event_type, aggregate_key, payload_json, operation_state)
+VALUES ('ci-p0-06-uppercase-state', 'fixture.invalid', 'agg-invalid', '{}', 'REQUESTED');" >/dev/null 2>&1; then
+  echo "uppercase outbox operation_state was accepted"
+  exit 1
+fi
+
+# Concurrent outbox claim: only one worker can claim the same logical effect.
 sql "INSERT INTO integration_outbox
   (idempotency_key, event_type, aggregate_key, payload_json, operation_state)
 VALUES ('ci-p0-06-concurrent', 'fixture.notify', 'agg-1', '{}', 'requested');"
@@ -130,5 +159,22 @@ claim_count="$(sql "SELECT COUNT(*) FROM integration_idempotency_claims WHERE sc
 test "$claim_count" = "1"
 claim_owner="$(sql "SELECT claim_token FROM integration_idempotency_claims WHERE scope_name='CI_P0_06' AND claim_key='effect-1';")"
 test "$claim_owner" = "worker_a"
+
+# Claim scopes/keys are exact identities too.
+sql "INSERT INTO integration_idempotency_claims
+  (scope_name, claim_key, operation_state, claim_token, attempts)
+VALUES
+  ('CI_P0_06', 'effect-Key-A', 'requested', 'identity', 0),
+  ('CI_P0_06', 'effect-Key-a', 'requested', 'identity', 0),
+  ('CI_P0_06', 'effect-key-á', 'requested', 'identity', 0);"
+claim_identity_count="$(sql "SELECT COUNT(*) FROM integration_idempotency_claims WHERE scope_name='CI_P0_06' AND claim_token='identity';")"
+test "$claim_identity_count" = "3"
+
+if sql "INSERT INTO integration_idempotency_claims
+  (scope_name, claim_key, operation_state)
+VALUES ('CI_P0_06', 'uppercase-state', 'REQUESTED');" >/dev/null 2>&1; then
+  echo "uppercase claim operation_state was accepted"
+  exit 1
+fi
 
 echo "INBOX_OUTBOX_IDEMPOTENCY_OK"
