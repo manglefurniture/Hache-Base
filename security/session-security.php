@@ -94,11 +94,13 @@ final class SessionSecurity
             }
 
             // Anonymous sessions may be upgraded to the explicit project policy
-            // before authentication. The stored policy is authoritative evidence of
-            // the previous cookie tuple, even when runtime params already equal the
-            // candidate policy because they were installed before session_start().
+            // before authentication. Prefer the exact cookie tuple persisted when
+            // that anonymous session was emitted; rebuilding it from an old proxy
+            // policy under today's topology can make SameSite=None appear insecure.
+            // Legacy sessions without a cookie snapshot fall back to stored policy.
             $effectivePolicy = $candidatePolicy;
-            self::ensureCookiePolicy($effectivePolicy, $server, $storedPolicy);
+            $storedCookie = self::readStoredCookieParams();
+            self::ensureCookiePolicy($effectivePolicy, $server, $storedPolicy, $storedCookie);
             $meta = self::readMeta();
             self::writeMeta($meta === null
                 ? self::newMeta($now, $effectivePolicy)
@@ -401,15 +403,20 @@ final class SessionSecurity
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
      * @param array<string, mixed> $server
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}|null $previousPolicy
+     * @param array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}|null $previousCookie
      */
-    private static function ensureCookiePolicy(array $policy, array $server, ?array $previousPolicy = null): void
-    {
+    private static function ensureCookiePolicy(
+        array $policy,
+        array $server,
+        ?array $previousPolicy = null,
+        ?array $previousCookie = null,
+    ): void {
         self::requireActiveSession();
         $desired = self::buildCookieParamsFromResolved($policy, $server);
         $current = self::currentCookieParams();
-        $previous = $previousPolicy === null
+        $previous = $previousCookie ?? ($previousPolicy === null
             ? null
-            : self::buildCookieParamsFromResolved($previousPolicy, $server);
+            : self::buildCookieParamsFromResolved($previousPolicy, $server));
 
         $needsRebind = $current !== $desired;
         $needsPreviousScopeExpiry = $previous !== null
@@ -439,9 +446,9 @@ final class SessionSecurity
             }
         }
 
-        // Only a supplied stored policy is authoritative evidence of an old cookie
-        // tuple. Runtime params on a new request may already be the candidate policy
-        // and must never substitute for the stored tuple during migration. Keep that
+        // A persisted previous cookie tuple is authoritative when available. Only
+        // legacy sessions fall back to rebuilding from the stored policy. Runtime
+        // params on a new request must never substitute for the old tuple. Keep the
         // tuple request-locally as well because the PHP session module can replace
         // same-name Set-Cookie headers during a subsequent ID regeneration.
         if ($needsPreviousScopeExpiry) {
@@ -616,8 +623,8 @@ final class SessionSecurity
     private static function writeMeta(array $meta): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
-            // Persist what PHP is actually configured to emit. Logout must not need
-            // to re-run trusted-proxy detection after infrastructure has changed.
+            // Persist what PHP is actually configured to emit. Logout and migrations
+            // must not need to re-run trusted-proxy detection after infrastructure changes.
             $meta['cookie'] = self::currentCookieParams();
         }
 
