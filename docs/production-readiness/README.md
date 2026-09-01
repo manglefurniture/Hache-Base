@@ -33,12 +33,24 @@ P0-05 añade, sin modificar proveedores ni persistencia real:
 
 - `src/common/AsyncOperationState.php` — vocabulario y transiciones base para operaciones asíncronas/externas;
 - `docs/production-readiness/ASYNC-OPERATIONS.md` — semántica de `accepted != confirmed`, ambigüedad, retry y reconciliación;
-- `templates/ASYNC-OPERATION-LEDGER.md` — plantilla conceptual de operation/event ledger, sin schema SQL universal;
+- `templates/ASYNC-OPERATION-LEDGER.md` — plantilla conceptual de operation/event ledger;
 - `tests/fixtures/async-operations/scenarios.json` + `tests/common/AsyncOperationStateTest.php` — fixtures offline que ejercitan aceptación, confirmación, timeout ambiguo, retry seguro y reconciliación.
 
-P0-05 **no** integra todavía el contrato dentro de `ResendMailer`, pagos, n8n ni otros módulos reales. Tampoco añade tablas, migraciones, colas, Redis, workers ni inbox/outbox. Esas decisiones permanecen opt-in y P0-06 sigue separado.
+P0-05 no integra el contrato dentro de `ResendMailer`, pagos, n8n ni otros módulos reales.
 
-No se implementan todavía P0-06/P0-07/P0-08/P0-10/P0-11/P0-12 ni P1+.
+## Tercera fase incremental implementada — P0-06
+
+P0-06 añade una Extension **opt-in** de persistencia y claims; no la activa globalmente:
+
+- `integrations/async/README.md` — contrato de inbox, outbox, idempotency claim, concurrencia, eventos fuera de orden y reprocess;
+- `database/modules/async-inbox-outbox.sql` — schema plantilla para `integration_inbox`, `integration_outbox` e `integration_idempotency_claims`;
+- `templates/INBOX-OUTBOX-IDEMPOTENCY.md` — plantilla de adopción por CUF/integración;
+- `tests/integration/AsyncPersistenceContractTest.php` — evita drift entre el vocabulario persistido y `AsyncOperationState`;
+- `tests/integration/InboxOutboxMariaDbTest.sh` — regresión MariaDB de duplicado, claim concurrente, ambigüedad, out-of-order y reprocess.
+
+P0-06 **no** introduce Redis, broker, queue manager, worker universal, cron global ni integración automática con Resend/pagos/n8n. El proyecto que adopte la Extension debe crear su migración, worker/scheduler, retención, observabilidad y runbook según su riesgo.
+
+No se implementan todavía P0-07/P0-08/P0-10/P0-11/P0-12 ni P1+.
 
 ## Uso en un proyecto derivado
 
@@ -46,8 +58,9 @@ No se implementan todavía P0-06/P0-07/P0-08/P0-10/P0-11/P0-12 ni P1+.
 2. Completar `templates/CRITICAL-USER-FLOWS.md` para sus CUF reales.
 3. Evaluar la Checklist solo con evidencia del proyecto/entorno real.
 4. Adoptar las primitives Core que apliquen; no copiar Extensions innecesarias.
-5. Si existe una operación asíncrona/externa crítica, definir qué evidencia significa `accepted`, `confirmed`, `failed_final` y cuándo un retry es seguro antes de persistir un ledger.
-6. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+5. Si existe una operación asíncrona/externa crítica, definir qué evidencia significa `accepted`, `confirmed`, `failed_final` y cuándo un retry es seguro.
+6. Si el CUF necesita dedupe persistente, efectos posteriores al commit o reprocesamiento seguro, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` antes de adoptar el schema P0-06.
+7. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
@@ -73,7 +86,18 @@ El logger es una primitive, no una plataforma APM. OpenTelemetry, error trackers
 
 `src/common/AsyncOperationState.php` define estados neutrales para distinguir intención local, aceptación externa, resultado ambiguo, retry seguro, reconciliación y resultado autoritativo. `confirmed` es el único éxito autoritativo del contrato base; `accepted` nunca se interpreta automáticamente como éxito final.
 
-El ledger de `templates/ASYNC-OPERATION-LEDGER.md` es una plantilla opt-in. No sustituye audit logs, historial financiero, idempotency claims ni schemas específicos del proyecto.
+El ledger de `templates/ASYNC-OPERATION-LEDGER.md` sigue siendo conceptual. La persistencia P0-06 es opt-in y no sustituye audit logs ni historial financiero.
+
+### Inbox/outbox/idempotency Extension
+
+P0-06 conserva dos niveles separados:
+
+- Core: semántica de estado de P0-05;
+- Extension: persistencia/claims solo cuando un proyecto los necesita.
+
+La inbox deduplica una recepción lógica; la outbox conserva una operación saliente e `idempotency_key` estable; el claim ligero cubre efectos que necesitan exclusión persistente sin una outbox completa.
+
+Si `dispatch_started_at`/`effect_started_at` demuestra que la frontera externa pudo haberse cruzado y el resultado se perdió, no se permite retry ciego. La operación debe reconciliarse primero.
 
 ### Liveness, readiness y smoke
 
@@ -85,4 +109,4 @@ Para nuevos proyectos se recomienda configurar `EXPECTED_HEALTH_BODY` o `EXPECTE
 
 ## Regla de promoción
 
-Una primitive no se considera cumplimiento automático de un proyecto derivado. El proyecto debe aportar la evidencia exigida por su nivel/CUF y por la Checklist.
+Una primitive o Extension disponible en Hache Base no se considera cumplimiento automático de un proyecto derivado. El proyecto debe aportar la evidencia exigida por su nivel/CUF y por la Checklist.
