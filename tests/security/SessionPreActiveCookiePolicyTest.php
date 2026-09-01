@@ -36,53 +36,50 @@ $http = [
     'REMOTE_ADDR' => '203.0.113.20',
 ];
 
-// Framework opens a standards-compliant anonymous session before Hache Base, but
-// scopes its cookie to /admin. The SEC-007 candidate later requests the root scope.
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/admin',
-    'domain' => '',
-    'secure' => false,
-    'httponly' => true,
-    'samesite' => 'Lax',
-]);
-assert(session_start());
-$preActiveId = session_id();
-assert($preActiveId !== '');
+$expectRejectedPreActive = static function (string $path, int $id, int $now) use ($http): void {
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => $path,
+        'domain' => '',
+        'secure' => false,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    assert(session_start());
+    $preActiveId = session_id();
+    assert($preActiveId !== '');
 
-$blocked = false;
-try {
-    Auth::login(['id' => 21, 'role' => 'user'], ['cookie_path' => '/'], $http, 7000);
-} catch (LogicException) {
-    $blocked = true;
-}
+    $blocked = false;
+    try {
+        Auth::login(['id' => $id, 'role' => 'user'], ['cookie_path' => '/'], $http, $now);
+    } catch (LogicException) {
+        $blocked = true;
+    }
 
-assert($blocked === true);
-assert(session_id() === $preActiveId);
-assert(!array_key_exists('user', $_SESSION));
-assert(session_destroy());
-session_id('');
+    assert($blocked === true);
+    assert(session_id() === $preActiveId);
+    assert(!array_key_exists('user', $_SESSION));
+    assert(session_destroy());
+    session_id('');
+};
 
-// An externally pre-active session whose tuple already exactly matches the requested
-// policy is adoptable; this guards against turning the fail-closed check into a ban on
-// every compliant framework-owned session.
-session_set_cookie_params([
-    'lifetime' => 0,
-    'path' => '/',
-    'domain' => '',
-    'secure' => false,
-    'httponly' => true,
-    'samesite' => 'Lax',
-]);
-assert(session_start());
-$matchingId = session_id();
-assert($matchingId !== '');
+// Unknown browser-cookie provenance must fail closed even when runtime params expose
+// the obviously different /admin scope.
+$expectRejectedPreActive('/admin', 21, 7000);
 
-Auth::login(['id' => 22, 'role' => 'user'], ['cookie_path' => '/'], $http, 7100);
-assert(session_id() !== '' && session_id() !== $matchingId);
-assert(Auth::user([], $http, 7101)['id'] === 22);
+// Regression for the subtle case from review: a framework may set runtime params to
+// '/' before session_start() while the browser actually supplied an older /admin
+// cookie. session_get_cookie_params() would appear to match, but cannot prove the
+// incoming cookie's Path/Domain. Therefore even a runtime-exact pre-active tuple is
+// rejected unless Hache Base itself established provenance in this request.
+$expectRejectedPreActive('/', 22, 7100);
 
-Auth::logout(['cookie_path' => '/'], $http, 7102);
+// Normal Hache-owned session creation remains supported and proves the gate does not
+// block legitimate use when Hache Base starts the session itself.
+Auth::login(['id' => 23, 'role' => 'user'], ['cookie_path' => '/'], $http, 7200);
+assert(session_status() === PHP_SESSION_ACTIVE);
+assert(Auth::user([], $http, 7201)['id'] === 23);
+Auth::logout(['cookie_path' => '/'], $http, 7202);
 assert(session_status() === PHP_SESSION_NONE);
 assert($_SESSION === []);
 assert(session_id() === '');
