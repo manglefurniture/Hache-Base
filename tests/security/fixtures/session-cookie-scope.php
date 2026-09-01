@@ -95,9 +95,9 @@ if ($path === '/admin/legacy-anonymous') {
     return;
 }
 
-// Hache Base owns session_start() here, but the browser already supplied a legacy
-// /admin cookie. Without stored Hache metadata its original scope is unverifiable,
-// so login must fail closed instead of creating an authenticated root cookie.
+// Hache Base owns normal session startup here, but the browser may already supply
+// a legacy /admin cookie or a stale/nonexistent ID. Provenance preflight must reject
+// both before a candidate root cookie or authenticated state can be emitted.
 if ($path === '/admin/legacy-login-root') {
     try {
         Auth::login(
@@ -107,15 +107,9 @@ if ($path === '/admin/legacy-login-root') {
             4000,
         );
     } catch (LogicException) {
-        if (array_key_exists('user', $_SESSION)) {
+        if (session_status() === PHP_SESSION_ACTIVE && array_key_exists('user', $_SESSION)) {
             http_response_code(500);
             echo "LEGACY_INCOMING_AUTH_ATTACHED\n";
-            return;
-        }
-
-        if (($_SESSION['legacy_marker'] ?? null) !== 'anonymous-no-hache-meta') {
-            http_response_code(500);
-            echo "LEGACY_INCOMING_SESSION_REPLACED\n";
             return;
         }
 
