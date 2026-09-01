@@ -48,6 +48,8 @@ final class SessionSecurity
     public static function start(array $config = [], ?array $server = null, ?int $now = null): void
     {
         $resolved = self::resolveConfig($config);
+        $server ??= $_SERVER;
+        $cookieParams = self::buildCookieParamsFromResolved($resolved, $server);
         $now ??= time();
 
         if (session_status() === PHP_SESSION_ACTIVE) {
@@ -69,7 +71,6 @@ final class SessionSecurity
             throw new LogicException('Unable to disable session.use_trans_sid.');
         }
 
-        $cookieParams = self::buildCookieParams($resolved, $server ?? $_SERVER);
         session_set_cookie_params($cookieParams);
 
         if (!session_start()) {
@@ -88,26 +89,7 @@ final class SessionSecurity
      */
     public static function buildCookieParams(array $config = [], array $server = []): array
     {
-        $resolved = self::resolveConfig($config);
-        $secure = RequestSecurity::isHttps($server, $resolved['proxy']);
-
-        if ($resolved['same_site'] === 'None' && !$secure) {
-            throw new InvalidArgumentException('SameSite=None requires an HTTPS request so the cookie can be Secure.');
-        }
-
-        $params = [
-            'lifetime' => 0,
-            'path' => $resolved['cookie_path'],
-            'secure' => $secure,
-            'httponly' => true,
-            'samesite' => $resolved['same_site'],
-        ];
-
-        if ($resolved['cookie_domain'] !== null) {
-            $params['domain'] = $resolved['cookie_domain'];
-        }
-
-        return $params;
+        return self::buildCookieParamsFromResolved(self::resolveConfig($config), $server);
     }
 
     public static function regenerateForAuthentication(?int $now = null): void
@@ -149,6 +131,7 @@ final class SessionSecurity
         }
 
         $_SESSION = [];
+        $cookieDeleted = true;
 
         if ((bool)ini_get('session.use_cookies')) {
             $params = session_get_cookie_params();
@@ -164,11 +147,18 @@ final class SessionSecurity
                 $options['domain'] = (string)$params['domain'];
             }
 
-            setcookie(session_name(), '', $options);
+            $cookieDeleted = setcookie(session_name(), '', $options);
         }
 
-        session_destroy();
+        $destroyed = session_destroy();
         session_id('');
+
+        if (!$destroyed) {
+            throw new LogicException('Unable to destroy server-side session.');
+        }
+        if (!$cookieDeleted) {
+            throw new LogicException('Server-side session was destroyed but the session cookie could not be expired.');
+        }
     }
 
     /**
@@ -224,6 +214,34 @@ final class SessionSecurity
 
         /** @var array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $resolved */
         return $resolved;
+    }
+
+    /**
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $config
+     * @param array<string, mixed> $server
+     * @return array{lifetime:int,path:string,secure:bool,httponly:bool,samesite:string,domain?:string}
+     */
+    private static function buildCookieParamsFromResolved(array $config, array $server): array
+    {
+        $secure = RequestSecurity::isHttps($server, $config['proxy']);
+
+        if ($config['same_site'] === 'None' && !$secure) {
+            throw new InvalidArgumentException('SameSite=None requires an HTTPS request so the cookie can be Secure.');
+        }
+
+        $params = [
+            'lifetime' => 0,
+            'path' => $config['cookie_path'],
+            'secure' => $secure,
+            'httponly' => true,
+            'samesite' => $config['same_site'],
+        ];
+
+        if ($config['cookie_domain'] !== null) {
+            $params['domain'] = $config['cookie_domain'];
+        }
+
+        return $params;
     }
 
     /**
