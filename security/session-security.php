@@ -12,9 +12,9 @@ require_once __DIR__ . '/request-security.php';
 /**
  * Reusable server-side session contract for SEC-007.
  *
- * It provides secure cookie defaults, trusted-proxy HTTPS detection, explicit
- * idle/absolute expiration, session ID rotation, and effective destruction.
- * Authentication, authorization, password policy and MFA remain project concerns.
+ * The effective policy is persisted inside the server-side session. This prevents
+ * helpers that call Auth::startSecureSession() without arguments from silently
+ * refreshing an authenticated session under different timeout/cookie defaults.
  */
 final class SessionSecurity
 {
@@ -47,37 +47,66 @@ final class SessionSecurity
      */
     public static function start(array $config = [], ?array $server = null, ?int $now = null): void
     {
-        $resolved = self::resolveConfig($config);
+        $candidatePolicy = self::resolveConfig($config);
+        $explicitPolicy = $config !== [];
         $server ??= $_SERVER;
-        $cookieParams = self::buildCookieParamsFromResolved($resolved, $server);
         $now ??= time();
 
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            self::refreshOrExpire($resolved, $now);
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            self::assertHeadersAvailable('start secure session');
+            self::configurePhpSessionRuntime();
+            session_set_cookie_params(self::buildCookieParamsFromResolved($candidatePolicy, $server));
+
+            if (!session_start()) {
+                throw new LogicException('Unable to start session.');
+            }
+        }
+
+        $storedPolicy = self::readStoredPolicy();
+
+        if ($storedPolicy === null) {
+            // Sessions created before P0-08 have no policy metadata. If they already
+            // carry authenticated state, invalidate that state instead of guessing a
+            // timeout/cookie contract and silently grandfathering the session.
+            if (array_key_exists('user', $_SESSION)) {
+                self::ensureCookiePolicy($candidatePolicy, $server);
+                self::rotateToAnonymous($candidatePolicy, $now);
+                return;
+            }
+
+            self::ensureCookiePolicy($candidatePolicy, $server);
+            self::writeMeta(self::newMeta($now, $candidatePolicy));
+            self::refreshOrExpire($candidatePolicy, $now);
             return;
         }
 
-        if (headers_sent($file, $line)) {
-            throw new LogicException(sprintf('Cannot start secure session after headers were sent at %s:%d.', $file, $line));
+        $effectivePolicy = $storedPolicy;
+
+        if ($explicitPolicy && $candidatePolicy !== $storedPolicy) {
+            if (array_key_exists('user', $_SESSION)) {
+                // Re-bind the current request to the authoritative stored cookie
+                // policy before failing. Most importantly, do not refresh last_seen.
+                self::ensureCookiePolicy($storedPolicy, $server);
+                throw new LogicException(
+                    'Cannot change session policy while authenticated. Configure one policy before session use or log out first.',
+                );
+            }
+
+            // Anonymous sessions may be upgraded to the explicit project policy
+            // before authentication. This fixes the common flow where a CSRF helper
+            // opened a default anonymous session before Auth::login($config).
+            $effectivePolicy = $candidatePolicy;
+            self::ensureCookiePolicy($effectivePolicy, $server);
+            $meta = self::readMeta();
+            self::writeMeta($meta === null
+                ? self::newMeta($now, $effectivePolicy)
+                : array_replace($meta, ['policy' => $effectivePolicy]));
+        } else {
+            // A no-argument helper must inherit the stored policy rather than defaults.
+            self::ensureCookiePolicy($effectivePolicy, $server);
         }
 
-        if (ini_set('session.use_strict_mode', '1') === false) {
-            throw new LogicException('Unable to enable session.use_strict_mode.');
-        }
-        if (ini_set('session.use_only_cookies', '1') === false) {
-            throw new LogicException('Unable to enable session.use_only_cookies.');
-        }
-        if (ini_set('session.use_trans_sid', '0') === false) {
-            throw new LogicException('Unable to disable session.use_trans_sid.');
-        }
-
-        session_set_cookie_params($cookieParams);
-
-        if (!session_start()) {
-            throw new LogicException('Unable to start session.');
-        }
-
-        self::refreshOrExpire($resolved, $now);
+        self::refreshOrExpire($effectivePolicy, $now);
     }
 
     /**
@@ -85,7 +114,7 @@ final class SessionSecurity
      *
      * @param array<string, mixed> $config
      * @param array<string, mixed> $server
-     * @return array{lifetime:int,path:string,secure:bool,httponly:bool,samesite:string,domain?:string}
+     * @return array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}
      */
     public static function buildCookieParams(array $config = [], array $server = []): array
     {
@@ -96,16 +125,18 @@ final class SessionSecurity
     {
         self::requireActiveSession();
         $now ??= time();
+        $policy = self::requireStoredPolicy();
 
         if (!session_regenerate_id(true)) {
             throw new LogicException('Unable to regenerate session ID after authentication.');
         }
 
-        $_SESSION[self::META_KEY] = [
+        self::writeMeta([
             'created_at' => $now,
             'last_seen_at' => $now,
             'authenticated_at' => $now,
-        ];
+            'policy' => $policy,
+        ]);
     }
 
     public static function regenerateForPrivilegeChange(?int $now = null): void
@@ -113,7 +144,10 @@ final class SessionSecurity
         self::requireActiveSession();
         $now ??= time();
 
-        $meta = self::readMeta($now);
+        $meta = self::readMeta();
+        if ($meta === null || !isset($meta['policy']) || !is_array($meta['policy'])) {
+            throw new LogicException('Cannot elevate a session with invalid security metadata.');
+        }
 
         if (!session_regenerate_id(true)) {
             throw new LogicException('Unable to regenerate session ID after privilege change.');
@@ -121,7 +155,7 @@ final class SessionSecurity
 
         $meta['last_seen_at'] = $now;
         $meta['privilege_changed_at'] = $now;
-        $_SESSION[self::META_KEY] = $meta;
+        self::writeMeta($meta);
     }
 
     public static function destroy(): void
@@ -134,20 +168,7 @@ final class SessionSecurity
         $cookieDeleted = true;
 
         if ((bool)ini_get('session.use_cookies')) {
-            $params = session_get_cookie_params();
-            $options = [
-                'expires' => time() - 42000,
-                'path' => (string)$params['path'],
-                'secure' => (bool)$params['secure'],
-                'httponly' => (bool)$params['httponly'],
-                'samesite' => (string)($params['samesite'] ?? 'Lax'),
-            ];
-
-            if ((string)$params['domain'] !== '') {
-                $options['domain'] = (string)$params['domain'];
-            }
-
-            $cookieDeleted = setcookie(session_name(), '', $options);
+            $cookieDeleted = self::expireCookie(self::currentCookieParams());
         }
 
         $destroyed = session_destroy();
@@ -219,7 +240,7 @@ final class SessionSecurity
     /**
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $config
      * @param array<string, mixed> $server
-     * @return array{lifetime:int,path:string,secure:bool,httponly:bool,samesite:string,domain?:string}
+     * @return array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}
      */
     private static function buildCookieParamsFromResolved(array $config, array $server): array
     {
@@ -229,76 +250,264 @@ final class SessionSecurity
             throw new InvalidArgumentException('SameSite=None requires an HTTPS request so the cookie can be Secure.');
         }
 
-        $params = [
+        return [
             'lifetime' => 0,
             'path' => $config['cookie_path'],
+            // Empty domain explicitly requests a host-only cookie and avoids inheriting
+            // a broader php.ini session.cookie_domain by accident.
+            'domain' => $config['cookie_domain'] ?? '',
             'secure' => $secure,
             'httponly' => true,
             'samesite' => $config['same_site'],
         ];
-
-        if ($config['cookie_domain'] !== null) {
-            $params['domain'] = $config['cookie_domain'];
-        }
-
-        return $params;
     }
 
     /**
-     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $config
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
+     * @param array<string, mixed> $server
      */
-    private static function refreshOrExpire(array $config, int $now): void
+    private static function ensureCookiePolicy(array $policy, array $server): void
     {
-        $meta = self::readMeta($now);
+        self::requireActiveSession();
+        $desired = self::buildCookieParamsFromResolved($policy, $server);
+        $current = self::currentCookieParams();
+
+        if ($current === $desired) {
+            return;
+        }
+
+        self::assertHeadersAvailable('re-bind session cookie policy');
+
+        $sessionId = session_id();
+        if ($sessionId === '') {
+            throw new LogicException('Cannot re-bind cookie policy without a session ID.');
+        }
+
+        if (!session_write_close()) {
+            throw new LogicException('Unable to persist session before re-binding cookie policy.');
+        }
+
+        session_set_cookie_params($desired);
+        session_id($sessionId);
+
+        if (!session_start()) {
+            throw new LogicException('Unable to reopen session with the effective cookie policy.');
+        }
+
+        // If path/domain changed, remove the old cookie tuple. Secure/SameSite changes
+        // on the same tuple are overwritten by the new Set-Cookie below.
+        if ($current['path'] !== $desired['path'] || $current['domain'] !== $desired['domain']) {
+            if (!self::expireCookie($current)) {
+                throw new LogicException('Unable to expire the previous session cookie scope.');
+            }
+        }
+
+        if (!self::setSessionCookie(session_id(), $desired)) {
+            throw new LogicException('Unable to apply the effective session cookie policy.');
+        }
+    }
+
+    /**
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
+     */
+    private static function refreshOrExpire(array $policy, int $now): void
+    {
+        $meta = self::readMeta();
+
+        if ($meta === null) {
+            if (array_key_exists('user', $_SESSION)) {
+                self::rotateToAnonymous($policy, $now);
+                return;
+            }
+
+            self::writeMeta(self::newMeta($now, $policy));
+            return;
+        }
+
         $createdAt = $meta['created_at'];
         $lastSeenAt = $meta['last_seen_at'];
 
         $expired = $now < $createdAt
             || $now < $lastSeenAt
-            || ($now - $createdAt) >= $config['absolute_timeout']
-            || ($now - $lastSeenAt) >= $config['idle_timeout'];
+            || ($now - $createdAt) >= $policy['absolute_timeout']
+            || ($now - $lastSeenAt) >= $policy['idle_timeout'];
 
         if ($expired) {
-            $_SESSION = [];
-            if (!session_regenerate_id(true)) {
-                throw new LogicException('Unable to rotate expired session.');
-            }
-
-            $_SESSION[self::META_KEY] = [
-                'created_at' => $now,
-                'last_seen_at' => $now,
-            ];
+            self::rotateToAnonymous($policy, $now);
             return;
         }
 
         $meta['last_seen_at'] = $now;
-        $_SESSION[self::META_KEY] = $meta;
+        $meta['policy'] = $policy;
+        self::writeMeta($meta);
     }
 
     /**
-     * @return array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int}
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
      */
-    private static function readMeta(int $now): array
+    private static function rotateToAnonymous(array $policy, int $now): void
+    {
+        $_SESSION = [];
+        if (!session_regenerate_id(true)) {
+            throw new LogicException('Unable to rotate expired or legacy session.');
+        }
+
+        self::writeMeta(self::newMeta($now, $policy));
+    }
+
+    /**
+     * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
+     * @return array{created_at:int,last_seen_at:int,policy:array<string,mixed>}
+     */
+    private static function newMeta(int $now, array $policy): array
+    {
+        return [
+            'created_at' => $now,
+            'last_seen_at' => $now,
+            'policy' => $policy,
+        ];
+    }
+
+    /**
+     * @return array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>}|null
+     */
+    private static function readMeta(): ?array
     {
         $meta = $_SESSION[self::META_KEY] ?? null;
         if (!is_array($meta)
             || !isset($meta['created_at'], $meta['last_seen_at'])
             || !is_int($meta['created_at'])
             || !is_int($meta['last_seen_at'])) {
-            return [
-                'created_at' => $now,
-                'last_seen_at' => $now,
-            ];
+            return null;
         }
 
-        /** @var array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int} $meta */
+        /** @var array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>} $meta */
         return $meta;
+    }
+
+    /**
+     * @return array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}|null
+     */
+    private static function readStoredPolicy(): ?array
+    {
+        $meta = $_SESSION[self::META_KEY] ?? null;
+        if (!is_array($meta) || !array_key_exists('policy', $meta)) {
+            return null;
+        }
+
+        if (!is_array($meta['policy'])) {
+            throw new LogicException('Stored session security policy is invalid.');
+        }
+
+        try {
+            return self::resolveConfig($meta['policy']);
+        } catch (InvalidArgumentException $exception) {
+            throw new LogicException('Stored session security policy is invalid.', 0, $exception);
+        }
+    }
+
+    /**
+     * @return array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}
+     */
+    private static function requireStoredPolicy(): array
+    {
+        $policy = self::readStoredPolicy();
+        if ($policy === null) {
+            throw new LogicException('Session security policy metadata is missing.');
+        }
+
+        return $policy;
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     */
+    private static function writeMeta(array $meta): void
+    {
+        $_SESSION[self::META_KEY] = $meta;
+    }
+
+    private static function configurePhpSessionRuntime(): void
+    {
+        if (ini_set('session.use_strict_mode', '1') === false) {
+            throw new LogicException('Unable to enable session.use_strict_mode.');
+        }
+        if (ini_set('session.use_only_cookies', '1') === false) {
+            throw new LogicException('Unable to enable session.use_only_cookies.');
+        }
+        if (ini_set('session.use_trans_sid', '0') === false) {
+            throw new LogicException('Unable to disable session.use_trans_sid.');
+        }
+    }
+
+    /**
+     * @return array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}
+     */
+    private static function currentCookieParams(): array
+    {
+        $params = session_get_cookie_params();
+
+        return [
+            'lifetime' => (int)$params['lifetime'],
+            'path' => (string)$params['path'],
+            'domain' => (string)$params['domain'],
+            'secure' => (bool)$params['secure'],
+            'httponly' => (bool)$params['httponly'],
+            'samesite' => (string)($params['samesite'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string} $params
+     */
+    private static function setSessionCookie(string $value, array $params): bool
+    {
+        $options = [
+            'expires' => 0,
+            'path' => $params['path'],
+            'secure' => $params['secure'],
+            'httponly' => $params['httponly'],
+            'samesite' => $params['samesite'],
+        ];
+
+        if ($params['domain'] !== '') {
+            $options['domain'] = $params['domain'];
+        }
+
+        return setcookie(session_name(), $value, $options);
+    }
+
+    /**
+     * @param array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string} $params
+     */
+    private static function expireCookie(array $params): bool
+    {
+        $options = [
+            'expires' => time() - 42000,
+            'path' => $params['path'],
+            'secure' => $params['secure'],
+            'httponly' => $params['httponly'],
+            'samesite' => $params['samesite'] !== '' ? $params['samesite'] : 'Lax',
+        ];
+
+        if ($params['domain'] !== '') {
+            $options['domain'] = $params['domain'];
+        }
+
+        return setcookie(session_name(), '', $options);
     }
 
     private static function requireActiveSession(): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             throw new LogicException('An active session is required.');
+        }
+    }
+
+    private static function assertHeadersAvailable(string $action): void
+    {
+        if (headers_sent($file, $line)) {
+            throw new LogicException(sprintf('Cannot %s after headers were sent at %s:%d.', $action, $file, $line));
         }
     }
 
