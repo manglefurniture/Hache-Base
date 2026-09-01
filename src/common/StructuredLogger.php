@@ -7,10 +7,13 @@ namespace HacheBase\Common;
 use InvalidArgumentException;
 use JsonException;
 
+require_once __DIR__ . '/RequestContext.php';
+
 final class StructuredLogger
 {
     private const SEVERITIES = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];
     private const REDACTED = '[REDACTED]';
+    private const OBJECT_REDACTED = '[OBJECT_REDACTED]';
     private const MAX_STRING_LENGTH = 4096;
 
     /** @var callable(string): mixed */
@@ -85,6 +88,13 @@ final class StructuredLogger
                 $redacted[$childKey] = self::redact($childValue, is_string($childKey) ? $childKey : null);
             }
             return $redacted;
+        }
+
+        // Do not let json_encode() serialize arbitrary DTO/stdClass/JsonSerializable
+        // instances after redaction. Their public or custom serialized payload can
+        // expose credentials under fields this logger did not inspect.
+        if (is_object($value)) {
+            return self::OBJECT_REDACTED;
         }
 
         if (is_string($value) && strlen($value) > self::MAX_STRING_LENGTH) {
