@@ -224,7 +224,7 @@ final class SessionSecurity
         if ($resolved['cookie_domain'] !== null) {
             if (!is_string($resolved['cookie_domain'])
                 || trim($resolved['cookie_domain']) === ''
-                || preg_match('/[;\s\r\n\x00]/', $resolved['cookie_domain']) === 1) {
+                || preg_match('/[\x00-\x20\x7F,;]/', $resolved['cookie_domain']) === 1) {
                 throw new InvalidArgumentException('cookie_domain must be null or a safe explicit domain.');
             }
         }
