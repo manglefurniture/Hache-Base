@@ -31,11 +31,20 @@ const root = {
 
 const lightAttrs = new Map();
 const darkAttrs = new Map();
-const makeControl = (value, attrs) => ({
-  dataset: { hacheThemeValue: value },
-  setAttribute: (name, next) => attrs.set(name, next),
-  addEventListener: () => {}
-});
+const makeControl = (value, attrs) => {
+  const controlListeners = new Map();
+  return {
+    dataset: { hacheThemeValue: value },
+    setAttribute: (name, next) => attrs.set(name, next),
+    addEventListener: (type, callback) => {
+      if (!controlListeners.has(type)) controlListeners.set(type, new Set());
+      controlListeners.get(type).add(callback);
+    },
+    removeEventListener: (type, callback) => controlListeners.get(type)?.delete(callback),
+    emit: (type) => { for (const callback of [...(controlListeners.get(type) || [])]) callback(); },
+    listenerCount: (type) => controlListeners.get(type)?.size || 0
+  };
+};
 const lightControl = makeControl("light", lightAttrs);
 const darkControl = makeControl("dark", darkAttrs);
 
@@ -58,6 +67,8 @@ const controller = interactions.initThemePreference({ root, scope, storage });
 assert.equal(controller.get(), "dark");
 assert.equal(darkAttrs.get("aria-pressed"), "true");
 assert.equal(listeners.get("storage")?.size, 1, "debe escuchar cambios de storage del contexto");
+assert.equal(lightControl.listenerCount("click"), 1, "debe registrar un único click por control");
+assert.equal(darkControl.listenerCount("click"), 1, "debe registrar un único click por control");
 
 emit("storage", { key: "hache-theme", newValue: "light", storageArea: storage });
 assert.equal(controller.get(), "light", "otro contexto same-origin debe actualizar el tema sin refresh");
@@ -81,8 +92,30 @@ assert.equal(writes, 0, "sincronizar clear tampoco debe persistir de vuelta");
 
 controller.destroy();
 assert.equal(listeners.get("storage")?.size || 0, 0, "destroy debe retirar el listener de storage");
+assert.equal(lightControl.listenerCount("click"), 0, "destroy debe retirar el click del control light");
+assert.equal(darkControl.listenerCount("click"), 0, "destroy debe retirar el click del control dark");
 emit("storage", { key: "hache-theme", newValue: "dark", storageArea: storage });
 assert.equal(controller.get(), "system", "después de destroy no debe reaccionar a otros contextos");
+lightControl.emit("click");
+assert.equal(controller.get(), "system", "después de destroy un control viejo no debe mutar la preferencia");
+assert.equal(writes, 0, "después de destroy un control viejo no debe escribir en storage");
+
+const noStorageAttributes = new Map();
+const noStorageRoot = {
+  setAttribute: (name, value) => noStorageAttributes.set(name, value),
+  removeAttribute: (name) => noStorageAttributes.delete(name),
+  dispatchEvent: () => true
+};
+const noStorageController = interactions.initThemePreference({
+  root: noStorageRoot,
+  scope: { defaultView: view, querySelectorAll: () => [] },
+  storage: null
+});
+assert.equal(noStorageController.get(), "system");
+assert.equal(listeners.get("storage")?.size || 0, 0, "storage:null no debe registrar listener de storage");
+emit("storage", { key: "hache-theme", newValue: "dark", storageArea: storage });
+assert.equal(noStorageController.get(), "system", "storage:null debe aislar la instancia de localStorage real");
+noStorageController.destroy();
 
 const emailDocs = await read("integrations/email/README.md");
 assert.match(emailDocs, /evento de negocio confirmado/);
