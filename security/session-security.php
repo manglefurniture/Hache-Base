@@ -93,16 +93,18 @@ final class SessionSecurity
             }
 
             // Anonymous sessions may be upgraded to the explicit project policy
-            // before authentication. This fixes the common flow where a CSRF helper
-            // opened a default anonymous session before Auth::login($config).
+            // before authentication. In this branch the previous policy is known,
+            // so its old cookie tuple may be expired after re-binding.
             $effectivePolicy = $candidatePolicy;
-            self::ensureCookiePolicy($effectivePolicy, $server);
+            self::ensureCookiePolicy($effectivePolicy, $server, true);
             $meta = self::readMeta();
             self::writeMeta($meta === null
                 ? self::newMeta($now, $effectivePolicy)
                 : array_replace($meta, ['policy' => $effectivePolicy]));
         } else {
             // A no-argument helper must inherit the stored policy rather than defaults.
+            // The pre-session runtime params are only an inference here, not proof of
+            // the browser cookie tuple, so never expire that inferred scope.
             self::ensureCookiePolicy($effectivePolicy, $server);
         }
 
@@ -250,11 +252,21 @@ final class SessionSecurity
             || str_starts_with($normalized, '.')
             || str_ends_with($normalized, '.')
             || filter_var($normalized, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
-            || filter_var($normalized, FILTER_VALIDATE_IP) !== false) {
+            || filter_var($normalized, FILTER_VALIDATE_IP) !== false
+            || self::endsInWhatwgIpv4Number($normalized)) {
             throw new InvalidArgumentException('cookie_domain must be null or a valid ASCII hostname; use punycode for IDN domains.');
         }
 
         return $normalized;
+    }
+
+    private static function endsInWhatwgIpv4Number(string $hostname): bool
+    {
+        $labels = explode('.', $hostname);
+        $last = $labels[count($labels) - 1] ?? '';
+
+        return preg_match('/^[0-9]+$/D', $last) === 1
+            || preg_match('/^0x[0-9a-f]+$/D', $last) === 1;
     }
 
     /**
@@ -286,7 +298,7 @@ final class SessionSecurity
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $policy
      * @param array<string, mixed> $server
      */
-    private static function ensureCookiePolicy(array $policy, array $server): void
+    private static function ensureCookiePolicy(array $policy, array $server, bool $expirePreviousScope = false): void
     {
         self::requireActiveSession();
         $desired = self::buildCookieParamsFromResolved($policy, $server);
@@ -314,9 +326,11 @@ final class SessionSecurity
             throw new LogicException('Unable to reopen session with the effective cookie policy.');
         }
 
-        // If path/domain changed, remove the old cookie tuple. Secure/SameSite changes
-        // on the same tuple are overwritten by the new Set-Cookie below.
-        if ($current['path'] !== $desired['path'] || $current['domain'] !== $desired['domain']) {
+        // Only an explicit anonymous policy migration proves that the previous tuple
+        // represented the session cookie. On a new request the pre-start params may
+        // merely be defaults and must never be used to delete an inferred scope.
+        if ($expirePreviousScope
+            && ($current['path'] !== $desired['path'] || $current['domain'] !== $desired['domain'])) {
             if (!self::expireCookie($current)) {
                 throw new LogicException('Unable to expire the previous session cookie scope.');
             }
