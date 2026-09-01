@@ -39,5 +39,34 @@ if ($path === '/admin/touch') {
     return;
 }
 
+if ($path === '/admin/anonymous') {
+    Auth::startSecureSession(['cookie_path' => '/admin'], $_SERVER, 2000);
+    echo "ANON_OK\n";
+    return;
+}
+
+if ($path === '/admin/migrate-root') {
+    Auth::login(
+        ['id' => 43, 'role' => 'user'],
+        ['cookie_path' => '/'],
+        $_SERVER,
+        2001,
+    );
+    echo "MIGRATE_OK\n";
+    return;
+}
+
+if ($path === '/admin/check-root') {
+    $user = Auth::user([], $_SERVER, 2002);
+    if (!is_array($user) || ($user['id'] ?? null) !== 43) {
+        http_response_code(401);
+        echo "MIGRATED_AUTH_MISSING\n";
+        return;
+    }
+
+    echo "MIGRATED_AUTH_OK\n";
+    return;
+}
+
 http_response_code(404);
 echo "NOT_FOUND\n";
