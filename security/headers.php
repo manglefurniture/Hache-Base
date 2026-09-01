@@ -6,6 +6,8 @@ namespace HacheBase\Security;
 
 use InvalidArgumentException;
 
+require_once __DIR__ . '/request-security.php';
+
 final class Headers
 {
     private const DEFAULT_HSTS_MAX_AGE = 31536000;
@@ -160,30 +162,7 @@ final class Headers
      */
     private static function isHttps(array $server, array $proxy): bool
     {
-        $https = strtolower(trim((string)($server['HTTPS'] ?? '')));
-        if ($https !== '' && $https !== 'off' && $https !== '0') {
-            return true;
-        }
-
-        if (strtolower(trim((string)($server['REQUEST_SCHEME'] ?? ''))) === 'https') {
-            return true;
-        }
-
-        if ((string)($server['SERVER_PORT'] ?? '') === '443') {
-            return true;
-        }
-
-        $remoteAddress = (string)($server['REMOTE_ADDR'] ?? '');
-        if ($remoteAddress === '' || !in_array($remoteAddress, $proxy['trusted_ips'], true)) {
-            return false;
-        }
-
-        $header = $proxy['forwarded_proto_header'];
-        $forwardedProto = strtolower(trim((string)($server[$header] ?? '')));
-
-        // Reject comma-separated/multi-hop values. The trusted proxy must overwrite or
-        // normalize this header to one authoritative token before it reaches the app.
-        return $forwardedProto === 'https';
+        return RequestSecurity::isHttps($server, $proxy);
     }
 
     /**

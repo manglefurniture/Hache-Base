@@ -16,6 +16,7 @@ Todo archivo de esta carpeta debe:
 - `ASYNC-OPERATION-LEDGER.md`: operación/event ledger opt-in para estados asíncronos, retry y reconciliación.
 - `INBOX-OUTBOX-IDEMPOTENCY.md`: adopción P0-06 de dedupe inbound, outbox, claims, concurrencia, out-of-order y reprocess.
 - `SECURITY-HEADERS.md`: adopción P0-07 de CSP report-only/enforce, HSTS, inventario de subdominios y frontera TLS/proxy.
+- `SESSION-SECURITY.md`: adopción P0-08 de cookies, fixation, idle/absolute expiry, logout y trusted proxy para sesión.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
 - `PERFORMANCE-BUDGET.md`: presupuesto de performance.
 - `staging.env.example`: referencia de configuración de staging.
