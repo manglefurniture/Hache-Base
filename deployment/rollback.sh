@@ -43,7 +43,9 @@ printf '%s\n' "$recovery_line"
 
 if [[ -n "${DEPLOY_RECORD_FILE:-}" ]]; then
   if [[ -f "$DEPLOY_RECORD_FILE" && -w "$DEPLOY_RECORD_FILE" ]]; then
-    printf '%s\n' "$recovery_line" >> "$DEPLOY_RECORD_FILE"
+    if ! printf '%s\n' "$recovery_line" >> "$DEPLOY_RECORD_FILE"; then
+      echo "ROLLBACK_RECORD_WARNING unable to append deploy record: $DEPLOY_RECORD_FILE" >&2
+    fi
   else
     echo "ROLLBACK_RECORD_WARNING deploy record is not writable: $DEPLOY_RECORD_FILE" >&2
   fi
