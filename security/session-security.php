@@ -29,6 +29,16 @@ final class SessionSecurity
      */
     private static ?array $pendingCookieExpiry = null;
 
+    /**
+     * Incoming sessions are provenance-validated with session.use_cookies=0 so PHP
+     * cannot emit a replacement cookie before SEC-007 verifies the exact ID/metadata.
+     * While that validated session remains active, this request-local tuple is the
+     * authoritative cookie identity and all cookie emission is performed manually.
+     *
+     * @var array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}|null
+     */
+    private static ?array $manualCookieParams = null;
+
     private const DEFAULT_CONFIG = [
         'idle_timeout' => 1800,
         'absolute_timeout' => 43200,
@@ -64,9 +74,10 @@ final class SessionSecurity
         $initialPolicy = $candidatePolicy;
 
         if ($incomingSessionCookie && session_status() !== PHP_SESSION_ACTIVE) {
-            // Validate provenance without cookie output, then reopen the real session
-            // under the policy that was actually stored with that Hache session.
-            $initialPolicy = self::preflightIncomingSessionCookie();
+            // Validate provenance without cookie output. The second validation uses the
+            // exact persisted cookie tuple and leaves that session active, so there is
+            // no cookie-emitting reopen window after provenance is established.
+            $initialPolicy = self::preflightIncomingSessionCookie($server);
         }
 
         self::openOrAdoptSession($initialPolicy, $server);
@@ -244,14 +255,27 @@ final class SessionSecurity
 
         $_SESSION = [];
         $cookieDeleted = true;
+        $cookiesToExpire = [];
 
-        if ((bool)ini_get('session.use_cookies')) {
-            $cookieDeleted = self::expireCookie(self::$pendingCookieExpiry ?? self::currentCookieParams());
+        if (self::$manualCookieParams !== null) {
+            $cookiesToExpire[] = self::$manualCookieParams;
+        } elseif ((bool)ini_get('session.use_cookies')) {
+            $cookiesToExpire[] = self::currentCookieParams();
+        }
+
+        if (self::$pendingCookieExpiry !== null
+            && !in_array(self::$pendingCookieExpiry, $cookiesToExpire, true)) {
+            $cookiesToExpire[] = self::$pendingCookieExpiry;
+        }
+
+        foreach ($cookiesToExpire as $cookieParams) {
+            $cookieDeleted = self::expireCookie($cookieParams) && $cookieDeleted;
         }
 
         $destroyed = session_destroy();
         session_id('');
         self::$pendingCookieExpiry = null;
+        self::$manualCookieParams = null;
 
         if (!$destroyed) {
             throw new LogicException('Unable to destroy server-side session.');
@@ -353,6 +377,10 @@ final class SessionSecurity
     private static function openOrAdoptSession(?array $initialPolicy, array $server): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
+            if (self::$manualCookieParams !== null) {
+                return;
+            }
+
             self::assertPreActiveSessionRuntimeCompliant();
             return;
         }
@@ -396,13 +424,17 @@ final class SessionSecurity
     }
 
     /**
-     * Validate an incoming browser session without allowing PHP to emit a candidate
-     * cookie first. On success, prime session_id() with the validated Hache ID and
-     * return its stored policy so normal startup uses the authoritative cookie scope.
+     * Validate an incoming browser session twice without allowing PHP to emit a
+     * candidate cookie. The first read establishes provenance and obtains the exact
+     * persisted cookie tuple. The second read reopens the same ID under that tuple
+     * while cookie output remains disabled; if the session disappeared between reads,
+     * strict mode may replace the ID but no Set-Cookie can escape. On success the
+     * second session remains active in request-local manual-cookie mode.
      *
+     * @param array<string, mixed> $server
      * @return array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}}
      */
-    private static function preflightIncomingSessionCookie(): array
+    private static function preflightIncomingSessionCookie(array $server): array
     {
         $name = session_name();
         $incomingId = $name === '' ? null : ($_COOKIE[$name] ?? null);
@@ -415,8 +447,8 @@ final class SessionSecurity
         self::configurePhpSessionRuntime();
 
         // In strict mode an expired/unknown ID may be replaced during session_start().
-        // Keep cookie output off until we know whether the incoming ID is a real Hache
-        // session, otherwise PHP could emit a fresh root/candidate cookie before reject.
+        // Keep cookie output off through both provenance reads so no replacement can
+        // be committed to the browser before the exact ID and metadata are revalidated.
         if (ini_set('session.use_cookies', '0') === false) {
             throw new LogicException('Unable to disable session cookies for incoming-session provenance validation.');
         }
@@ -424,6 +456,8 @@ final class SessionSecurity
         session_id($incomingId);
         $resolvedId = '';
         $storedPolicy = null;
+        $storedCookie = null;
+        $storedCookieWasPersisted = false;
 
         try {
             if (!session_start()) {
@@ -433,6 +467,14 @@ final class SessionSecurity
             $resolvedId = session_id();
             if ($resolvedId === $incomingId) {
                 $storedPolicy = self::readStoredPolicy();
+                $storedCookie = self::readStoredCookieParams();
+                $storedCookieWasPersisted = $storedCookie !== null;
+
+                if ($storedPolicy !== null && $storedCookie === null) {
+                    // Legacy SEC-007 metadata from before cookie snapshots may still be
+                    // adopted when its old policy can be reconstructed safely.
+                    $storedCookie = self::buildCookieParamsFromResolved($storedPolicy, $server);
+                }
             }
         } catch (\Throwable $exception) {
             try {
@@ -445,20 +487,69 @@ final class SessionSecurity
 
         try {
             self::closeIncomingSessionPreflight($incomingId, $resolvedId);
-        } finally {
-            self::restoreCookieRuntimeAfterPreflight();
+        } catch (\Throwable $exception) {
+            try {
+                self::restoreCookieRuntimeAfterPreflight();
+            } finally {
+                throw $exception;
+            }
         }
 
-        if ($resolvedId !== $incomingId || $storedPolicy === null) {
+        if ($resolvedId !== $incomingId || $storedPolicy === null || $storedCookie === null) {
+            self::restoreCookieRuntimeAfterPreflight();
             throw new LogicException(
                 'An incoming PHP session cookie has no verifiable Hache Base SEC-007 metadata. Its original cookie scope cannot be safely inferred; clear or destroy the legacy session before authentication.',
             );
         }
 
-        // PHP does not reliably re-consume the request cookie after a preflight
-        // session has been closed in the same request. Prime the already validated ID
-        // explicitly so the real session_start() reopens exactly that Hache session.
+        // Reopen with the exact tuple that produced the validated browser cookie.
+        // Cookie output is intentionally still disabled during this second read.
+        session_set_cookie_params($storedCookie);
         session_id($incomingId);
+        $reopenedId = '';
+        $reopenedPolicy = null;
+        $reopenedCookie = null;
+
+        try {
+            if (!session_start()) {
+                throw new LogicException('Unable to revalidate incoming session cookie.');
+            }
+
+            $reopenedId = session_id();
+            if ($reopenedId === $incomingId) {
+                $reopenedPolicy = self::readStoredPolicy();
+                $reopenedCookie = self::readStoredCookieParams();
+            }
+        } catch (\Throwable $exception) {
+            try {
+                self::closeIncomingSessionPreflight($incomingId, $reopenedId);
+            } finally {
+                self::restoreCookieRuntimeAfterPreflight();
+            }
+            throw $exception;
+        }
+
+        $samePolicy = $reopenedPolicy !== null && $reopenedPolicy === $storedPolicy;
+        $sameCookie = $storedCookieWasPersisted
+            ? $reopenedCookie !== null && $reopenedCookie === $storedCookie
+            : $reopenedCookie === null || $reopenedCookie === $storedCookie;
+
+        if ($reopenedId !== $incomingId || !$samePolicy || !$sameCookie) {
+            try {
+                self::closeIncomingSessionPreflight($incomingId, $reopenedId);
+            } finally {
+                self::restoreCookieRuntimeAfterPreflight();
+            }
+
+            throw new LogicException(
+                'The incoming PHP session changed during SEC-007 provenance validation. Authentication was rejected before any replacement cookie could be emitted.',
+            );
+        }
+
+        // Keep the validated second session open and keep automatic session-cookie
+        // output disabled for this request. All later rebinds and ID rotations emit
+        // only after their state transition has succeeded.
+        self::$manualCookieParams = $storedCookie;
 
         return $storedPolicy;
     }
@@ -532,7 +623,10 @@ final class SessionSecurity
         ?array $previousCookie = null,
     ): void {
         self::requireActiveSession();
-        $desired = self::buildCookieParamsFromResolved($policy, $server);
+        $manualMode = self::$manualCookieParams !== null;
+        $desired = $manualMode && $previousPolicy === null
+            ? self::$manualCookieParams
+            : self::buildCookieParamsFromResolved($policy, $server);
         $current = self::currentCookieParams();
         $previous = $previousCookie ?? ($previousPolicy === null
             ? null
@@ -543,6 +637,9 @@ final class SessionSecurity
             && ($previous['path'] !== $desired['path'] || $previous['domain'] !== $desired['domain']);
 
         if (!$needsRebind && !$needsPreviousScopeExpiry) {
+            if ($manualMode && !self::setSessionCookie(session_id(), $desired)) {
+                throw new LogicException('Unable to re-emit the validated session cookie.');
+            }
             return;
         }
 
@@ -563,6 +660,18 @@ final class SessionSecurity
 
             if (!session_start()) {
                 throw new LogicException('Unable to reopen session with the effective cookie policy.');
+            }
+
+            if ($manualMode) {
+                // Automatic cookie output remains disabled in manual mode. If the
+                // session vanished during the controlled rebind, strict mode may
+                // replace the ID but no cookie has escaped; reject before mutation.
+                if (session_id() !== $sessionId || self::readStoredPolicy() === null) {
+                    $resolvedId = session_id();
+                    self::closeIncomingSessionPreflight($sessionId, $resolvedId);
+                    throw new LogicException('Session changed while re-binding cookie policy.');
+                }
+                self::$manualCookieParams = $desired;
             }
         }
 
@@ -771,6 +880,12 @@ final class SessionSecurity
     {
         if (!session_regenerate_id(true)) {
             throw new LogicException($errorMessage);
+        }
+
+        if (self::$manualCookieParams !== null) {
+            if (!self::setSessionCookie(session_id(), self::$manualCookieParams)) {
+                throw new LogicException('Unable to emit the rotated validated session cookie.');
+            }
         }
 
         // session_regenerate_id() may replace prior Set-Cookie headers for the same
