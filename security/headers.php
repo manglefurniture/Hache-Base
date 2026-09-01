@@ -12,7 +12,7 @@ final class Headers
 
     private const DEFAULT_CONFIG = [
         'hsts' => [
-            'enabled' => true,
+            'enabled' => false,
             'max_age' => self::DEFAULT_HSTS_MAX_AGE,
             'include_subdomains' => false,
             'preload' => false,
@@ -60,7 +60,7 @@ final class Headers
      * Apply the reusable baseline headers.
      *
      * Existing consumers can continue calling Headers::apply() with no arguments.
-     * Project-specific CSP/HSTS/proxy behavior is opt-in through $config.
+     * HSTS and CSP are deliberately not activated until a project opts in with evidence.
      */
     public static function apply(array $config = [], ?array $server = null): void
     {
@@ -84,7 +84,7 @@ final class Headers
 
         $headers = [
             'X-Content-Type-Options' => 'nosniff',
-            'X-Frame-Options' => $resolved['x_frame_options'],
+            'X-Frame-Options' => strtoupper($resolved['x_frame_options']),
             'Referrer-Policy' => $resolved['referrer_policy'],
             'Permissions-Policy' => $resolved['permissions_policy'],
         ];
@@ -130,7 +130,7 @@ final class Headers
                 $sources = [$sources];
             }
 
-            if (!is_array($sources)) {
+            if (!is_array($sources) || !array_is_list($sources)) {
                 throw new InvalidArgumentException(sprintf('Invalid CSP sources for %s.', $directive));
             }
 
@@ -179,13 +179,11 @@ final class Headers
         }
 
         $header = $proxy['forwarded_proto_header'];
-        $forwardedProto = (string)($server[$header] ?? '');
-        if ($forwardedProto === '') {
-            return false;
-        }
+        $forwardedProto = strtolower(trim((string)($server[$header] ?? '')));
 
-        $firstHop = strtolower(trim(explode(',', $forwardedProto, 2)[0]));
-        return $firstHop === 'https';
+        // Reject comma-separated/multi-hop values. The trusted proxy must overwrite or
+        // normalize this header to one authoritative token before it reaches the app.
+        return $forwardedProto === 'https';
     }
 
     /**
@@ -286,8 +284,6 @@ final class Headers
             || !in_array(strtoupper($resolved['x_frame_options']), ['DENY', 'SAMEORIGIN'], true)) {
             throw new InvalidArgumentException('X-Frame-Options must be DENY or SAMEORIGIN.');
         }
-
-        $resolved['x_frame_options'] = strtoupper($resolved['x_frame_options']);
 
         if ($csp['mode'] !== 'off') {
             self::buildCspPolicy($csp['directives']);
