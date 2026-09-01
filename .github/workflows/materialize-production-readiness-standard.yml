@@ -1,0 +1,46 @@
+name: Materialize Production Readiness Standard
+
+on:
+  push:
+    branches:
+      - feat/production-readiness-p0-phase1-20260901
+    paths:
+      - '.production-readiness-transfer/**'
+      - '.github/workflows/materialize-production-readiness-standard.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify approved Standard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/production-readiness
+          cat .production-readiness-transfer/standard.part01.b64 \
+              .production-readiness-transfer/standard.part02.b64 \
+              .production-readiness-transfer/standard.part03.b64 \
+            | base64 --decode \
+            | gzip --decompress \
+            > docs/production-readiness/PRODUCTION-READINESS-STANDARD.md
+
+          test "$(wc -c < docs/production-readiness/PRODUCTION-READINESS-STANDARD.md)" -eq 64678
+          test "$(git hash-object docs/production-readiness/PRODUCTION-READINESS-STANDARD.md)" = "a806d07a8b5b503e5408dbb7dfd1ae89926f35a8"
+
+      - name: Commit exact approved Standard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "Hache Interactive"
+          git config user.email "manglefurniture@gmail.com"
+          git add docs/production-readiness/PRODUCTION-READINESS-STANDARD.md
+          git commit -m "Materialize approved Production Readiness Standard"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
