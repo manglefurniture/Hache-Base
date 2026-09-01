@@ -121,6 +121,10 @@ final class Auth
     }
 
     /**
+     * Logout must remain available even if deployment configuration changed after
+     * the session was created. SessionSecurity therefore prefers the stored policy
+     * for the exact cookie tuple and uses this argument only as a legacy fallback.
+     *
      * @param array<string, mixed> $sessionConfig
      * @param array<string, mixed>|null $server
      */
@@ -129,7 +133,7 @@ final class Auth
         ?array $server = null,
         ?int $now = null,
     ): void {
-        self::startSecureSession($sessionConfig, $server, $now);
+        SessionSecurity::startForDestruction($sessionConfig, $server);
         SessionSecurity::destroy();
     }
 
