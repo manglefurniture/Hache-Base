@@ -64,9 +64,27 @@ P0-07 endurece exclusivamente el baseline de headers asociado a **SEC-001 / SEC-
 - `templates/SECURITY-HEADERS.md` obliga a inventariar recursos CSP, subdominios, topología TLS/proxy, evidencia y rollback;
 - `tests/security/HeadersTest.php` cubre defaults, HSTS opt-in, `includeSubDomains`/preload, CSP report-only/enforce, header injection y proxy spoofing/ambigüedad.
 
-P0-07 **no** cambia sesiones, cookies, identidad de cliente, IP de auditoría ni auth detrás de proxy; ese contrato pertenece a P0-08. Tampoco activa una CSP o HSTS reales en ningún proyecto derivado.
+P0-07 no activa una CSP o HSTS reales en ningún proyecto derivado.
 
-No se implementan todavía P0-08/P0-10/P0-11/P0-12 ni P1+.
+## Quinta fase incremental implementada — P0-08
+
+P0-08 implementa el contrato reusable de **SEC-007** sin adelantar SEC-008/009/010:
+
+- `security/request-security.php` centraliza la detección de HTTPS directo o detrás de proxy confiable para que headers y cookies usen la misma frontera;
+- `security/session-security.php` configura cookies seguras, `session.use_strict_mode`, idle/absolute timeout, rotación de ID y destrucción efectiva;
+- `security/auth.php` conserva `startSecureSession()`, `user()`, `requireUser()` y `logout()` compatibles y añade `login()`/`elevate()` como fronteras explícitas de regeneración;
+- `login()` regenera el ID antes de adjuntar identidad autenticada;
+- `elevate()` exige sesión autenticada, conserva el mismo principal y regenera el ID después de una elevación ya autorizada por el proyecto;
+- idle/absolute expiry eliminan auth y rotan a una nueva sesión anónima;
+- `SameSite=None` solo se admite cuando HTTPS efectivo permite `Secure`;
+- `templates/SESSION-SECURITY.md` documenta cookies, fixation, expiración, logout, proxy y evidencia del proyecto;
+- `tests/security/SessionSecurityTest.php` cubre cookies, proxy spoofing/multi-hop, login/elevación, expiración exacta y logout.
+
+Defaults P0-08: idle 1800 s, absolute 43200 s, `SameSite=Lax`, cookie host-only, `path=/`, `HttpOnly=true` y `Secure` según HTTPS efectivo. Son baseline configurable y **no sustituyen la decisión/evidencia del proyecto**.
+
+P0-08 no implementa hashing de passwords, recuperación, MFA, no-enumeración, rate limiting de login ni autorización. Tampoco deriva la IP real del cliente desde headers de proxy.
+
+No se implementan todavía P0-10/P0-11/P0-12 ni P1+.
 
 ## Uso en un proyecto derivado
 
@@ -77,62 +95,45 @@ No se implementan todavía P0-08/P0-10/P0-11/P0-12 ni P1+.
 5. Si existe una operación asíncrona/externa crítica, definir qué evidencia significa `accepted`, `confirmed`, `failed_final` y cuándo un retry es seguro.
 6. Si el CUF necesita dedupe persistente, efectos posteriores al commit o reprocesamiento seguro, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` antes de adoptar el schema P0-06.
 7. Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md` con inventario de recursos, subdominios, proxy/TLS, reportes y rollback.
-8. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+8. Si hay sesiones, completar `templates/SESSION-SECURITY.md`, migrar asignaciones directas de `$_SESSION['user']` a `Auth::login()`/`Auth::elevate()` y probar cookies/login/expiry/logout/proxy reales.
+9. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
 ### Errores y request ID
 
-`security/api-response.php` conserva `json()`, `success()` y `error()` y añade:
-
-- códigos canónicos para 400/401/403/404/409/422/429/500/503;
-- `errorForStatus()` para errores de plataforma;
-- `request_id` en el envelope y headers `X-Request-Id`/`X-Correlation-Id`;
-- helpers de payload que permiten pruebas sin enviar/terminar el proceso.
-
-Los códigos de dominio propios siguen siendo responsabilidad del proyecto y deben permanecer estables una vez publicados.
+`security/api-response.php` conserva `json()`, `success()` y `error()` y añade códigos canónicos, `request_id`, headers de correlación y helpers de payload para pruebas.
 
 ### Correlación y logs
 
-- `src/common/RequestContext.php` genera o normaliza `request_id` y `correlation_id`, limitando identificadores externos antes de propagarlos.
-- `src/common/StructuredLogger.php` emite una línea JSON con timestamp UTC, severity, environment, service/version, event, request/correlation IDs y contexto redactado.
+- `src/common/RequestContext.php` genera o normaliza `request_id`/`correlation_id`.
+- `src/common/StructuredLogger.php` emite JSON mínimo con redacción de secretos.
 
-El logger es una primitive, no una plataforma APM. OpenTelemetry, error trackers y alerting avanzado siguen siendo Extensions.
+El logger es una primitive, no una plataforma APM.
 
 ### Estados asíncronos y reconciliación
 
-`src/common/AsyncOperationState.php` define estados neutrales para distinguir intención local, aceptación externa, resultado ambiguo, retry seguro, reconciliación y resultado autoritativo. `confirmed` es el único éxito autoritativo del contrato base; `accepted` nunca se interpreta automáticamente como éxito final.
-
-El ledger de `templates/ASYNC-OPERATION-LEDGER.md` sigue siendo conceptual. La persistencia P0-06 es opt-in y no sustituye audit logs ni historial financiero.
+`src/common/AsyncOperationState.php` distingue intención local, aceptación externa, resultado ambiguo, retry seguro, reconciliación y resultado autoritativo. `accepted` nunca se interpreta automáticamente como éxito final.
 
 ### Inbox/outbox/idempotency Extension
 
-P0-06 conserva dos niveles separados:
-
-- Core: semántica de estado de P0-05;
-- Extension: persistencia/claims solo cuando un proyecto los necesita.
-
-La inbox deduplica una recepción lógica; la outbox conserva una operación saliente e `idempotency_key` estable; el claim ligero cubre efectos que necesitan exclusión persistente sin una outbox completa.
-
-Si `dispatch_started_at`/`effect_started_at` demuestra que la frontera externa pudo haberse cruzado y el resultado se perdió, no se permite retry ciego. La operación debe reconciliarse primero.
+P0-06 conserva Core de estado separado de persistencia/claims opt-in. Si la frontera externa pudo cruzarse y el resultado se perdió, no se permite retry ciego.
 
 ### Security headers
 
-P0-07 separa tres capas:
+P0-07 separa baseline Core no persistente, políticas HSTS/CSP configurables y evidencia Project. `Headers::build()` facilita pruebas sin emitir headers.
 
-- baseline Core no persistente: nosniff/referrer/permissions/anti-framing;
-- políticas persistentes/restrictivas configurables: HSTS y CSP;
-- evidencia Project: TLS real, proxy real, inventario de subdominios, recursos y CUF.
+### Sesiones y trusted HTTPS
 
-`Headers::build()` facilita pruebas sin enviar headers. El helper no confía en forwarded headers aportados por un cliente y no promueve report-only a enforcement automáticamente.
+P0-08 comparte `RequestSecurity` entre P0-07 y P0-08 para evitar dos interpretaciones de HTTPS. `SessionSecurity` aplica cookie `HttpOnly`, `Secure` sobre HTTPS efectivo, SameSite/scope configurables, strict mode, expiración y rotación. `Auth::login()` y `Auth::elevate()` son las fronteras que evitan reutilizar IDs a través de cambios de confianza.
+
+La primitive no demuestra SEC-007 por sí sola: el proyecto debe probar cookies reales, su proxy, el login, la elevación, el timeout y el logout.
 
 ### Liveness, readiness y smoke
 
 - `deployment/liveness-check.sh` confirma que el proceso/endpoint responde con el status esperado.
-- `deployment/health-check.sh` actúa como gate de **readiness** compatible con el nombre histórico; valida status y, cuando se configura, body exacto y/o `version` JSON.
-- `tests/smoke/http-smoke.sh` comprueba una ruta desplegada configurable; un proyecto B/C debe apuntarlo a un CUF/control funcional representativo, no confundirlo con liveness.
-
-Para nuevos proyectos se recomienda configurar `EXPECTED_HEALTH_BODY` o `EXPECTED_HEALTH_VERSION`. `HEALTHCHECK_ALLOW_STATUS_ONLY=1` existe únicamente como compatibilidad gradual para consumidores antiguos; puede fijarse a `0` para exigir contrato de contenido.
+- `deployment/health-check.sh` actúa como gate de readiness y puede validar body/version.
+- `tests/smoke/http-smoke.sh` comprueba una ruta funcional configurable.
 
 ## Regla de promoción
 
