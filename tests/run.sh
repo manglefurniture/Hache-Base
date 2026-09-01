@@ -14,6 +14,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/audit/AuditSanitizer
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/CommonTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/DateRangeStateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/AsyncOperationStateTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/AsyncPersistenceContractTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/ResendMailerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/WebhookHmacTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/CredentialCipherTest.php"
