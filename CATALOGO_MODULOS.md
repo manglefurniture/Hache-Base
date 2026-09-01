@@ -19,8 +19,9 @@
 | Auditoría de mutaciones | Listo | Registra quién cambió qué, cuándo y en qué contexto; preserva evidencia de snapshots históricos | Pagos, inventario, citas, usuarios, configuración, cierres y conciliaciones | `docs/AUDITORIA.md` |
 | Review y cierre de PR | Listo como proceso | Separa CI de revisión, clasifica deuda de review y limita fixes al alcance acordado | Repositorios con PR, CI y revisión automática/humana | `docs/REVIEW-Y-CIERRE-DE-PR.md` |
 | Design System 2026 | Listo como infraestructura configurable | Core → Theme → Extensions; tokens Foundation → Semantic → Component; presets, temas, responsive, estados, accesibilidad y guardrails | Toda interfaz pública o administrativa | `DESIGN-SYSTEM-2026-FINAL.md` + `docs/design-system/README.md` + `src/ui/` |
-| Production Readiness v1.1 | Norma aprobada + Core P0 fase 1 + P0-05 + P0-06 opt-in + P0-07 + P0-08 | Clasifica riesgo A/B/C, define CUF, Definition of Done, evidencia y checklist; implementa errores/correlación/logging/health, estados asíncronos, persistencia idempotente opcional, headers y sesión | Todo proyecto que vaya a producción; especialmente B/C | `docs/production-readiness/README.md` + `docs/production-readiness/PRODUCTION-READINESS-STANDARD.md` |
+| Production Readiness v1.1 | Norma aprobada + Core P0 fase 1 + P0-05 + P0-06 opt-in + P0-07 + P0-08 + P0-10 | Clasifica riesgo A/B/C, define CUF, Definition of Done, evidencia y checklist; implementa errores/correlación/logging/health, estados asíncronos, persistencia idempotente opcional, headers, sesión y deploy/recovery por fases | Todo proyecto que vaya a producción; especialmente B/C | `docs/production-readiness/README.md` + `docs/production-readiness/PRODUCTION-READINESS-STANDARD.md` |
 | Critical User Flows | Plantilla lista | Hace explícitos resultado autoritativo, fallos, idempotencia, pruebas, smoke, señales y recovery por flujo | Antes de declarar Production Ready y desde que exista un CUF significativo | `templates/CRITICAL-USER-FLOWS.md` |
+| Deploy + Recovery Matrix | Core P0-10 + plantilla | Matriz código/DB/assets/config, punto de no retorno, smoke, ventana, criterio de rollback y drill de staging | Todo proyecto antes de habilitar deploy de producción | `templates/DEPLOY-RECOVERY.md` + `deployment/DEPLOY-FAILURE-RUNBOOK.md` |
 | UI de backend con relieve | Listo como patrón opt-in | Unifica bordes, sombras y estados de controles claros/oscuros con borde superior visible, foco accesible y comportamiento móvil | Paneles administrativos que necesiten una jerarquía visual ligera sin alterar lógica ni layout | `docs/UI-BACKEND-RELIEF.md` + `src/ui/backend-relief.css` |
 | Migraciones e integridad | Listo | Cambios de esquema pequeños, probables e idempotentes | Proyectos con MariaDB | `database/MIGRATIONS.md` |
 | Modelo de servicios | Plantilla lista | Organizaciones, sedes, usuarios, clientes, servicios, planes, horarios, pagos y sesiones | Academias, spas, gimnasios, clínicas y servicios recurrentes | `database/modules/README.md` |
@@ -34,8 +35,8 @@
 | SEO local | Incluido en módulo SEO | Reglas para ubicaciones reales, NAP, GBP, LocalBusiness y páginas locales | Restaurantes, spas, clínicas, escuelas y otros negocios físicos | `seo/checklists/SEO-AUDIT-CHECKLIST.md` |
 | Pruebas | Listo como base | Sintaxis, unitarias, smoke, integración y regresiones de Production Readiness Core/Extensions | Todos los proyectos con lógica crítica | `tests/README.md` |
 | Liveness / readiness / smoke | Core P0 fase 1 | Separa proceso vivo, servicio listo y smoke funcional; readiness valida body/version cuando se configura | Despliegues y proyectos con runtime dinámico | `deployment/liveness-check.sh` + `deployment/health-check.sh` + `tests/smoke/http-smoke.sh` |
-| Backup / rollback | Listo como plantilla | Respaldo MariaDB, commit y reversión de código | Sistemas desplegados en servidor | `deployment/BACKUP-ROLLBACK.md` |
-| Runner de despliegue | Listo como plantilla | Preflight → backup → commit → migraciones → tests → readiness | VPS/producción | `deployment/README.md` |
+| Backup / rollback | Listo como plantilla | Respaldo MariaDB, commit y reversión de código; separa restore de rollback | Sistemas desplegados en servidor | `deployment/BACKUP-ROLLBACK.md` |
+| Runner de despliegue | Core P0-10 configurable | Preflight → backup → commit → migraciones → tests → readiness/smoke → observación; registra fases/fallos y no hace rollback ciego | VPS/producción | `deployment/deploy.sh` + `deployment/README.md` |
 | Configuración / secretos | Listo | Separa código de credenciales, entorno, egress y zona horaria operativa | Todos los despliegues | `docs/CONFIGURATION.md` |
 | Development / staging / production | Listo | Separa prueba de producción | Proyectos con datos/operaciones críticas | `docs/ENVIRONMENTS.md` |
 | CI | Listo | PHP, shell, pruebas, MariaDB y regresiones SEO automáticas | Repositorios derivados | `.github/workflows/ci.yml` |
@@ -56,6 +57,7 @@ No hace falta mencionar archivos. Ejemplos:
 - "Este webhook puede llegar repetido y fuera de orden; adopta inbox/outbox con idempotency claim."
 - "Quiero CSP en report-only y HSTS seguro detrás de proxy; usa el patrón P0-07 sin includeSubDomains por defecto."
 - "Necesito sesión segura detrás de proxy, regeneración en login/elevación y expiración/logout verificables; usa P0-08."
+- "Quiero deploy por fases con smoke, ventana y recuperación explícita; usa P0-10."
 - "Aplica también el proceso de review y cierre de PR de Hache-Base."
 - "Usa el patrón de relieve del backend para botones claros, primarios oscuros y controles planos."
 - "Aplica el Design System 2026 con Theme propio, nivel Dimensional y soporte light/dark."
