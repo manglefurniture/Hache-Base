@@ -24,7 +24,7 @@ assert($cookie['secure'] === true);
 assert($cookie['httponly'] === true);
 assert($cookie['samesite'] === 'Lax');
 assert($cookie['path'] === '/');
-assert(!array_key_exists('domain', $cookie));
+assert($cookie['domain'] === '');
 
 $httpCookie = SessionSecurity::buildCookieParams([], $http);
 assert($httpCookie['secure'] === false);
@@ -126,6 +126,7 @@ $params = session_get_cookie_params();
 assert($params['secure'] === true);
 assert($params['httponly'] === true);
 assert($params['samesite'] === 'Lax');
+assert($params['domain'] === '');
 assert((string)ini_get('session.use_strict_mode') === '1');
 assert((string)ini_get('session.use_only_cookies') === '1');
 assert((string)ini_get('session.use_trans_sid') === '0');
@@ -165,9 +166,11 @@ $elevatedId = session_id();
 assert($elevatedId !== '' && $elevatedId !== $beforeElevation);
 assert(Auth::user($config, $https, 1011)['role'] === 'admin');
 
-// Do not refresh again before the boundary: idle timeout is exact and clears auth.
+// A helper that starts the active session with no config must inherit the stored
+// 60-second idle policy instead of refreshing under the 1800-second default.
 $sessionBeforeIdleExpiry = session_id();
-assert(Auth::user($config, $https, 1071) === null);
+Auth::startSecureSession([], $https, 1071);
+assert(!array_key_exists('user', $_SESSION));
 assert(session_id() !== '' && session_id() !== $sessionBeforeIdleExpiry);
 
 $absoluteConfig = [
@@ -184,6 +187,48 @@ assert(session_id() !== '' && session_id() !== $sessionBeforeAbsoluteExpiry);
 Auth::login(['id' => 9, 'role' => 'user'], $config, $https, 3000);
 assert(Auth::user($config, $https, 3001)['id'] === 9);
 Auth::logout($config, $https, 3002);
+assert(session_status() === PHP_SESSION_NONE);
+assert($_SESSION === []);
+assert(session_id() === '');
+
+// Reproduce the second P1: a helper opens a default anonymous HTTP session before
+// login. The explicit project policy must be able to upgrade that anonymous session
+// to the trusted-proxy HTTPS/cookie contract before authentication and regeneration.
+Auth::startSecureSession([], $http, 4000);
+$preLoginParams = session_get_cookie_params();
+assert($preLoginParams['secure'] === false);
+assert($preLoginParams['path'] === '/');
+assert($preLoginParams['samesite'] === 'Lax');
+
+$proxySessionConfig = [
+    'idle_timeout' => 60,
+    'absolute_timeout' => 180,
+    'same_site' => 'Strict',
+    'cookie_path' => '/admin',
+    'proxy' => $proxyConfig,
+];
+$beforeProxyLogin = session_id();
+Auth::login(['id' => 10, 'role' => 'user'], $proxySessionConfig, $trustedProxyRequest, 4001);
+$afterProxyLogin = session_id();
+$proxyParams = session_get_cookie_params();
+assert($afterProxyLogin !== '' && $afterProxyLogin !== $beforeProxyLogin);
+assert($proxyParams['secure'] === true);
+assert($proxyParams['httponly'] === true);
+assert($proxyParams['samesite'] === 'Strict');
+assert($proxyParams['path'] === '/admin');
+assert($proxyParams['domain'] === '');
+assert(Auth::user([], $trustedProxyRequest, 4002)['id'] === 10);
+
+// Once authenticated, a conflicting explicit policy is rejected instead of silently
+// changing timeout or cookie scope; a no-argument helper continues to inherit stored policy.
+assert($throwsLogic(static fn () => Auth::startSecureSession([
+    'idle_timeout' => 90,
+    'absolute_timeout' => 180,
+    'proxy' => $proxyConfig,
+], $trustedProxyRequest, 4003)));
+assert(Auth::user([], $trustedProxyRequest, 4004)['id'] === 10);
+
+Auth::logout($proxySessionConfig, $trustedProxyRequest, 4005);
 assert(session_status() === PHP_SESSION_NONE);
 assert($_SESSION === []);
 assert(session_id() === '');
