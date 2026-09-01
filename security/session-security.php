@@ -503,8 +503,8 @@ final class SessionSecurity
         }
 
         // Reopen with the exact tuple that produced the validated browser cookie.
-        // Cookie output is intentionally still disabled during this second read.
-        session_set_cookie_params($storedCookie);
+        // Cookie output is intentionally disabled again before the second start.
+        self::configureCookieParamsWithoutEmission($storedCookie);
         session_id($incomingId);
         $reopenedId = '';
         $reopenedPolicy = null;
@@ -586,6 +586,35 @@ final class SessionSecurity
     }
 
     /**
+     * Configure an exact cookie tuple while no session is active, then disable
+     * automatic cookie emission again before the next session_start(). PHP refuses
+     * session_set_cookie_params() while session.use_cookies=0, so the enable window
+     * deliberately contains no session start and therefore cannot emit a cookie.
+     *
+     * @param array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string} $params
+     */
+    private static function configureCookieParamsWithoutEmission(array $params): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            throw new LogicException('Cannot configure manual cookie params while a session is active.');
+        }
+
+        if (ini_set('session.use_cookies', '1') === false) {
+            throw new LogicException('Unable to enable session cookies while configuring the validated tuple.');
+        }
+
+        $configured = session_set_cookie_params($params);
+        $disabled = ini_set('session.use_cookies', '0') !== false;
+
+        if (!$configured) {
+            throw new LogicException('Unable to configure the validated session cookie tuple.');
+        }
+        if (!$disabled) {
+            throw new LogicException('Unable to disable session cookie emission after configuring the validated tuple.');
+        }
+    }
+
+    /**
      * @param array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $config
      * @param array<string, mixed> $server
      * @return array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}
@@ -655,7 +684,11 @@ final class SessionSecurity
                 throw new LogicException('Unable to persist session before re-binding cookie policy.');
             }
 
-            session_set_cookie_params($desired);
+            if ($manualMode) {
+                self::configureCookieParamsWithoutEmission($desired);
+            } else {
+                session_set_cookie_params($desired);
+            }
             session_id($sessionId);
 
             if (!session_start()) {
@@ -669,6 +702,8 @@ final class SessionSecurity
                 if (session_id() !== $sessionId || self::readStoredPolicy() === null) {
                     $resolvedId = session_id();
                     self::closeIncomingSessionPreflight($sessionId, $resolvedId);
+                    self::$manualCookieParams = null;
+                    self::restoreCookieRuntimeAfterPreflight();
                     throw new LogicException('Session changed while re-binding cookie policy.');
                 }
                 self::$manualCookieParams = $desired;
