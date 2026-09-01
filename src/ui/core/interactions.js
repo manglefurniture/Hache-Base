@@ -50,19 +50,63 @@ export function initThemePreference({
     });
   };
 
+  const emitChange = () => {
+    root.dispatchEvent(new CustomEvent("hache:theme-change", { detail: { preference: current } }));
+  };
+
+  const applyIncoming = (value) => {
+    const next = THEME_PREFERENCES.has(value) ? value : "system";
+    if (next === current) return current;
+    current = applyThemePreference(root, next);
+    updateControls();
+    emitChange();
+    return current;
+  };
+
   const set = (value) => {
     current = applyThemePreference(root, value);
     try { resolvedStorage?.setItem(storageKey, current); } catch { /* preference remains valid for this page */ }
     updateControls();
-    root.dispatchEvent(new CustomEvent("hache:theme-change", { detail: { preference: current } }));
+    emitChange();
     return current;
   };
 
+  const controlBindings = [];
   scope.querySelectorAll("[data-hache-theme-value]").forEach((control) => {
-    control.addEventListener("click", () => set(control.dataset.hacheThemeValue));
+    const onClick = () => set(control.dataset.hacheThemeValue);
+    control.addEventListener("click", onClick);
+    controlBindings.push([control, onClick]);
   });
+
+  const eventTarget = scope?.defaultView?.addEventListener
+    ? scope.defaultView
+    : scope?.ownerDocument?.defaultView?.addEventListener
+      ? scope.ownerDocument.defaultView
+      : typeof globalThis.addEventListener === "function"
+        ? globalThis
+        : null;
+
+  const onStorage = (event) => {
+    if (event.key !== storageKey && event.key !== null) return;
+    if (event.storageArea && event.storageArea !== resolvedStorage) return;
+
+    let value = event.newValue;
+    if (event.key === null) {
+      try { value = resolvedStorage?.getItem(storageKey) || "system"; } catch { value = "system"; }
+    }
+    applyIncoming(value || "system");
+  };
+
+  if (resolvedStorage) eventTarget?.addEventListener("storage", onStorage);
   updateControls();
-  return { get: () => current, set };
+  return {
+    get: () => current,
+    set,
+    destroy: () => {
+      if (resolvedStorage) eventTarget?.removeEventListener?.("storage", onStorage);
+      controlBindings.forEach(([control, onClick]) => control.removeEventListener?.("click", onClick));
+    }
+  };
 }
 
 export function initDisabledControls(scope = document) {
