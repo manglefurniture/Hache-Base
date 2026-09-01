@@ -22,8 +22,8 @@ final class SessionSecurity
 
     /**
      * Exact old cookie tuple that must survive any session-module Set-Cookie replacement
-     * later in the same request (for example session_regenerate_id() during login).
-     * Request-local static state is deliberate; it is never persisted across requests.
+     * later in the same request (for example session_regenerate_id() during login), or
+     * the exact persisted tuple that logout must expire without re-evaluating proxy state.
      *
      * @var array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}|null
      */
@@ -116,9 +116,10 @@ final class SessionSecurity
     /**
      * Open a session only for destruction/logout.
      *
-     * A valid stored policy always wins over a newly supplied fallback policy so a
-     * deployment-time policy change can never make logout impossible. Invalid or
-     * missing legacy metadata also must not prevent server-side session destruction.
+     * A persisted effective cookie tuple wins over any policy reconstruction so a
+     * deployment-time timeout, cookie, or trusted-proxy change can never make logout
+     * impossible. Invalid or missing legacy metadata also must not prevent server-side
+     * session destruction.
      *
      * @param array<string, mixed> $fallbackConfig
      * @param array<string, mixed>|null $server
@@ -131,6 +132,19 @@ final class SessionSecurity
         self::openOrAdoptSession(null, $server);
 
         try {
+            $storedCookie = self::readStoredCookieParams();
+        } catch (LogicException) {
+            $storedCookie = null;
+        }
+
+        if ($storedCookie !== null) {
+            // Cookie identity is the tuple that was actually emitted, not a fresh
+            // interpretation of the old proxy policy under today's infrastructure.
+            self::$pendingCookieExpiry = $storedCookie;
+            return;
+        }
+
+        try {
             $storedPolicy = self::readStoredPolicy();
         } catch (LogicException) {
             // Corrupt legacy metadata must never make logout unavailable. destroy()
@@ -139,7 +153,13 @@ final class SessionSecurity
         }
 
         if ($storedPolicy !== null) {
-            self::ensureCookiePolicy($storedPolicy, $server);
+            try {
+                self::ensureCookiePolicy($storedPolicy, $server);
+            } catch (InvalidArgumentException) {
+                // Legacy P0-08 metadata may predate persisted cookie tuples. If its
+                // proxy interpretation no longer permits reconstructing the cookie,
+                // destruction still takes precedence over exact browser cleanup.
+            }
             return;
         }
 
@@ -210,7 +230,7 @@ final class SessionSecurity
         $cookieDeleted = true;
 
         if ((bool)ini_get('session.use_cookies')) {
-            $cookieDeleted = self::expireCookie(self::currentCookieParams());
+            $cookieDeleted = self::expireCookie(self::$pendingCookieExpiry ?? self::currentCookieParams());
         }
 
         $destroyed = session_destroy();
@@ -496,7 +516,7 @@ final class SessionSecurity
     }
 
     /**
-     * @return array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>}|null
+     * @return array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>,cookie?:array<string,mixed>}|null
      */
     private static function readMeta(): ?array
     {
@@ -508,8 +528,52 @@ final class SessionSecurity
             return null;
         }
 
-        /** @var array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>} $meta */
+        /** @var array{created_at:int,last_seen_at:int,authenticated_at?:int,privilege_changed_at?:int,policy?:array<string,mixed>,cookie?:array<string,mixed>} $meta */
         return $meta;
+    }
+
+    /**
+     * @return array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string}|null
+     */
+    private static function readStoredCookieParams(): ?array
+    {
+        $meta = $_SESSION[self::META_KEY] ?? null;
+        if (!is_array($meta) || !array_key_exists('cookie', $meta)) {
+            return null;
+        }
+
+        $cookie = $meta['cookie'];
+        if (!is_array($cookie)
+            || !array_key_exists('lifetime', $cookie)
+            || !array_key_exists('path', $cookie)
+            || !array_key_exists('domain', $cookie)
+            || !array_key_exists('secure', $cookie)
+            || !array_key_exists('httponly', $cookie)
+            || !array_key_exists('samesite', $cookie)
+            || $cookie['lifetime'] !== 0
+            || !is_string($cookie['path'])
+            || !str_starts_with($cookie['path'], '/')
+            || preg_match('/[\x00-\x20\x7F,;]/', $cookie['path']) === 1
+            || !is_string($cookie['domain'])
+            || !is_bool($cookie['secure'])
+            || $cookie['httponly'] !== true
+            || !is_string($cookie['samesite'])
+            || !in_array($cookie['samesite'], ['Lax', 'Strict', 'None'], true)) {
+            throw new LogicException('Stored session cookie tuple is invalid.');
+        }
+
+        if ($cookie['domain'] !== '') {
+            try {
+                if (self::normalizeCookieDomain($cookie['domain']) !== $cookie['domain']) {
+                    throw new LogicException('Stored session cookie tuple is invalid.');
+                }
+            } catch (InvalidArgumentException $exception) {
+                throw new LogicException('Stored session cookie tuple is invalid.', 0, $exception);
+            }
+        }
+
+        /** @var array{lifetime:int,path:string,domain:string,secure:bool,httponly:bool,samesite:string} $cookie */
+        return $cookie;
     }
 
     /**
@@ -551,6 +615,12 @@ final class SessionSecurity
      */
     private static function writeMeta(array $meta): void
     {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            // Persist what PHP is actually configured to emit. Logout must not need
+            // to re-run trusted-proxy detection after infrastructure has changed.
+            $meta['cookie'] = self::currentCookieParams();
+        }
+
         $_SESSION[self::META_KEY] = $meta;
     }
 
