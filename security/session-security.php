@@ -317,7 +317,7 @@ final class SessionSecurity
     private static function openOrAdoptSession(?array $initialPolicy, array $server): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
-            self::adoptPreActiveSessionRuntime();
+            self::assertPreActiveSessionRuntimeCompliant();
             return;
         }
 
@@ -333,44 +333,15 @@ final class SessionSecurity
         }
     }
 
-    private static function adoptPreActiveSessionRuntime(): void
+    private static function assertPreActiveSessionRuntimeCompliant(): void
     {
         if (self::phpSessionRuntimeCompliant()) {
             return;
         }
 
-        self::assertHeadersAvailable('adopt pre-active session');
-
-        $sessionName = session_name();
-        $preActiveId = session_id();
-        $snapshot = $_SESSION;
-        $requestCookie = $_COOKIE[$sessionName] ?? null;
-        $preserveSnapshot = !is_string($requestCookie)
-            || $requestCookie === ''
-            || ($preActiveId !== '' && hash_equals($preActiveId, $requestCookie));
-
-        // Abort the potentially URL-backed or cookie-disabled session instead of
-        // persisting it. After enforcing cookie-only + strict mode, session_start()
-        // re-resolves the authoritative request cookie (if any) under the safe rules.
-        if (!session_abort()) {
-            throw new LogicException('Unable to close pre-active session before applying the secure runtime contract.');
-        }
-        session_id('');
-
-        self::configurePhpSessionRuntime();
-
-        if (!session_start()) {
-            throw new LogicException('Unable to reopen pre-active session under the secure runtime contract.');
-        }
-
-        if ($preserveSnapshot) {
-            $_SESSION = $snapshot;
-        }
-
-        // Crossing from an unconstrained runtime into SEC-007 is itself a trust
-        // boundary. Rotate even when the request cookie was valid to eliminate any
-        // identifier accepted before strict/cookie-only enforcement.
-        self::regenerateIdOrFail('Unable to rotate session ID after adopting a pre-active session.');
+        throw new LogicException(
+            'A pre-active PHP session does not satisfy SEC-007. Start Hache Base before session_start() or configure strict, cookie-backed, cookie-only sessions first.',
+        );
     }
 
     private static function phpSessionRuntimeCompliant(): bool
