@@ -5,10 +5,13 @@ Suite base para proyectos construidos sobre Hache-Base.
 ## Incluido
 
 - `static/php-syntax.sh`: sintaxis PHP.
+- `static/ProductionReadinessDocsTest.php`: paridad 126/126 entre el registro canónico del Standard y la Checklist.
 - `audit/`: pruebas del módulo de auditoría.
 - `common/`: utilidades reutilizables, incluyendo estados temporales y zona horaria.
 - `ui/`: regresiones de tokens, temas, contraste de fallbacks, presets, estados, responsive/container queries, reduced motion, peso y comportamiento JS; incluye compatibilidad del relieve de backend.
-- `smoke/http-smoke.sh`: health/smoke HTTP configurable.
+- `security/ProductionReadinessCoreTest.php`: contrato de errores HTTP, request/correlation IDs y redacción/log schema mínimo.
+- `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
+- `smoke/http-smoke.sh`: smoke HTTP configurable y separado de liveness/readiness.
 - `integration/`: contratos e integraciones reutilizables; incluye validación offline del mailer HTTPS, HMAC de webhooks y cifrado/versionado de credenciales de pago.
 - `run.sh`: punto de entrada común.
 
@@ -18,15 +21,34 @@ Suite base para proyectos construidos sobre Hache-Base.
 bash tests/run.sh
 ```
 
-Si se define `SMOKE_BASE_URL`, el runner ejecuta también el smoke HTTP.
+Si se define `SMOKE_BASE_URL`, el runner ejecuta también el smoke HTTP contra el entorno indicado.
 
 ## Regla
 
-Los flujos críticos deben tener comprobación automatizada antes de producción. Las pruebas con escritura no deben contaminar datos históricos reales. Cada proyecto añade casos específicos de permisos, sedes, pagos y reglas de negocio sobre fixtures/staging.
+Los Critical User Flows deben documentarse con `templates/CRITICAL-USER-FLOWS.md` y tener comprobación automatizada o smoke reproducible antes de producción según el nivel aplicable. Las pruebas con escritura no deben contaminar datos históricos reales.
+
+Cada proyecto añade casos específicos de permisos, sedes, pagos y reglas de negocio sobre fixtures/staging.
 
 Las pruebas base de integraciones no hacen llamadas reales a proveedores ni necesitan secretos. Cada proyecto debe añadir smoke/integration tests contra sandbox/staging cuando el proveedor lo permita y una prueba operativa controlada desde el host real antes de producción.
 
 Los patrones UI reutilizables deben probar sus tokens y estados críticos, pero cada proyecto derivado debe añadir regresiones para controles dinámicos, excepciones planas y clases locales que adopte.
+
+## Errores, logs y correlación
+
+El Core prueba offline:
+
+- códigos canónicos 400/401/403/404/409/422/429/500/503;
+- `request_id` y `correlation_id` normalizados;
+- payloads de error/éxito con `request_id`;
+- schema mínimo de logging y redacción de claves sensibles.
+
+Los proyectos siguen siendo responsables de probar sus códigos de dominio, rutas reales y eventos operativos.
+
+## Liveness, readiness y smoke
+
+`tests/deployment/HealthCheckTest.sh` no necesita red: reemplaza `curl` por un fixture controlado y demuestra que readiness falla ante body/version incorrectos.
+
+El smoke real solo se ejecuta cuando se configura `SMOKE_BASE_URL`; debe apuntar a una URL/entorno controlado.
 
 ## Reglas temporales
 

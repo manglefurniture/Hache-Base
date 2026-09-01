@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, Design System 2026 Core → Theme → Extensions, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -21,9 +21,10 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 1. Leer `docs/START-NEW-PROJECT.md`.
 2. Completar `templates/PROJECT-PROFILE.md` y `docs/CHECKLIST-NUEVO-PROYECTO.md`.
 3. Consultar `CATALOGO_MODULOS.md`.
-4. Seleccionar únicamente los módulos que aplican.
-5. Convertir las plantillas elegidas en la implementación específica del nuevo proyecto.
-6. Añadir reglas y pruebas propias antes de producción.
+4. Para proyectos que avanzan hacia producción, leer `docs/production-readiness/README.md`, declarar nivel A/B/C y completar `templates/CRITICAL-USER-FLOWS.md`.
+5. Seleccionar únicamente los módulos que aplican.
+6. Convertir las plantillas elegidas en la implementación específica del nuevo proyecto.
+7. Añadir reglas, pruebas y evidencia propia antes de producción.
 
 ## Principios
 
@@ -42,18 +43,27 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 13. Nunca almacenar secretos, credenciales o datos reales de clientes en esta base.
 14. Design System Foundation → Semantic → Component: calidad reusable sin imponer apariencia.
 15. Dimensional es el preset visual recomendado; Immersive siempre es opt-in y justificado.
+16. Production Ready es un estado demostrable: Standard → Checklist → evidencia por CUF; un build, un 200 o un backup sin restore no bastan.
 
 ## Estructura
 
-- `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI y bootstrap.
-- `templates/` — perfiles y archivos de referencia.
+- `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI, Production Readiness y bootstrap.
+- `templates/` — perfiles, Critical User Flows y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales.
-- `security/` — patrones reutilizables de seguridad.
-- `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes y contrato de Extensions UI.
+- `security/` — patrones reutilizables de seguridad y contrato de respuesta API.
+- `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context y logging mínimo.
 - `integrations/` — correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
-- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, integración y smoke.
-- `deployment/` — preflight, backup, despliegue, health y rollback.
+- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, integración, readiness y smoke.
+- `deployment/` — preflight, backup, despliegue, liveness/readiness y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
+
+## Production Readiness
+
+La norma oficial vive en `docs/production-readiness/PRODUCTION-READINESS-STANDARD.md` v1.1. El registro canónico de su sección 24 define IDs, severidad, aplicabilidad y evidencia. La Checklist es una proyección y no puede reinterpretarlo.
+
+La primera fase Core implementada se limita a P0-01, P0-02, P0-03, P0-04 y P0-09: documentación, plantilla CUF, error contract/request ID, logging estructurado mínimo y separación liveness/readiness/smoke.
+
+Esto **no** significa que cualquier proyecto derivado sea automáticamente Production Ready; debe evaluar sus controles aplicables con evidencia real.
 
 ## Regla de oro
 
