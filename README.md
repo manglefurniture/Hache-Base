@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -45,16 +45,17 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 15. Dimensional es el preset visual recomendado; Immersive siempre es opt-in y justificado.
 16. Production Ready es un estado demostrable: Standard → Checklist → evidencia por CUF; un build, un 200 o un backup sin restore no bastan.
 17. En operaciones asíncronas, `accepted` no equivale a `confirmed`; los resultados ambiguos deben reconciliarse antes de reintentar a ciegas.
+18. Inbox/outbox/claims son Extensions opt-in: dedupe, concurrencia y reprocess deben demostrarse en servidor sin obligar a todos los proyectos a operar una cola.
 
 ## Estructura
 
 - `docs/` — arquitectura, reglas, configuración, entornos, integridad temporal, UI, Production Readiness y bootstrap.
-- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas y archivos de referencia.
-- `database/` — migraciones, integridad y modelos opcionales.
+- `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox y archivos de referencia.
+- `database/` — migraciones, integridad y modelos opcionales, incluida la plantilla P0-06 no automática.
 - `security/` — patrones reutilizables de seguridad y contrato de respuesta API.
 - `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context, logging mínimo y estados asíncronos.
-- `integrations/` — correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
-- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, integración, readiness y smoke.
+- `integrations/` — async delivery opt-in, correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
+- `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, integración, readiness y smoke.
 - `deployment/` — preflight, backup, despliegue, liveness/readiness y rollback.
 - `.github/workflows/` — CI y plantilla gated de despliegue a producción.
 
@@ -64,7 +65,9 @@ La norma oficial vive en `docs/production-readiness/PRODUCTION-READINESS-STANDAR
 
 La primera fase Core implementada se limitó a P0-01, P0-02, P0-03, P0-04 y P0-09: documentación, plantilla CUF, error contract/request ID, logging estructurado mínimo y separación liveness/readiness/smoke.
 
-P0-05 está implementado como segunda fase incremental mediante `AsyncOperationState`, documentación, plantilla de operation/event ledger y fixtures offline. No modifica todavía proveedores ni persistencia real y no adelanta P0-06.
+P0-05 está implementado mediante `AsyncOperationState`, documentación, plantilla de operation/event ledger y fixtures offline.
+
+P0-06 está implementado como **Extension opt-in** mediante contrato de inbox/outbox/idempotency claim, schema plantilla MariaDB y regresiones de duplicado, concurrencia, out-of-order y reprocess. No activa proveedores, workers, Redis ni colas globales.
 
 Esto **no** significa que cualquier proyecto derivado sea automáticamente Production Ready; debe evaluar sus controles aplicables con evidencia real.
 
