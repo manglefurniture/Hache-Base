@@ -1,24 +1,61 @@
 # Deployment
 
-Hache-Base adopta un despliegue verificable y reversible.
+Hache-Base adopta un despliegue verificable, observable y recuperable. El runner es una plantilla Core: no convierte por sí solo a un proyecto en Production Ready ni decide automáticamente un rollback de DB.
 
 ## Scripts
 
 - `preflight.sh`: requisitos, repo limpio y capacidad de backup.
 - `backup.sh`: commit + dump MariaDB + snapshot local de entorno protegido.
-- `deploy.sh`: commit fijado, rollback ref, backup, migraciones configurables, pruebas y readiness gate.
+- `deploy.sh`: commit fijado, rollback ref, backup, migraciones configurables, pruebas, readiness, smoke y ventana de observación P0-10.
 - `liveness-check.sh`: confirma que el proceso/endpoint responde; no afirma que el servicio esté listo para tráfico.
 - `health-check.sh`: nombre compatible del gate de **readiness**; valida status y puede exigir body/version.
-- `rollback.sh`: reversión de código explícita.
+- `rollback.sh`: reversión explícita de código; puede anexar `rolled_back` al record del deploy.
+- `mark-deploy-recovery.sh`: registra explícitamente `manual_recovery` o `rolled_back` cuando la recuperación ocurrió fuera del runner.
+- `DEPLOY-FAILURE-RUNBOOK.md`: respuesta mínima ante fallo parcial.
 - `BACKUP-ROLLBACK.md`: política y límites de recuperación.
 
 El smoke funcional vive en `tests/smoke/http-smoke.sh` para mantener separado el recorrido desplegado de liveness/readiness.
 
-## Flujo
+## Flujo P0-10
 
-`PREFLIGHT -> ROLLBACK_REF -> BACKUP -> TARGET_COMMIT -> MIGRATIONS -> TESTS -> READINESS -> DEPLOY_OK`
+Flujo operativo base:
 
-El runner se detiene ante errores. No ejecuta automáticamente un rollback de base de datos: después de migraciones, una reversión automática podría dejar esquema y código incompatibles.
+`PREFLIGHT -> ROLLBACK_REF -> BACKUP -> TARGET_COMMIT -> MIGRATIONS -> TESTS -> READINESS -> SMOKE -> OBSERVATION -> HEALTHY`
+
+El registro persistente usa estados canónicos según aplicabilidad:
+
+- `started`
+- `code_changed`
+- `migrations_applied` (`status=not_applicable` cuando no existe migración en esa ejecución)
+- `tests_passed`
+- `healthy`
+- `failed`
+- `rolled_back` o `manual_recovery` después de una recuperación explícita
+
+Cada línea empieza por `DEPLOY_STATE`. `deploy.sh` crea `DEPLOY_RECORD_FILE` bajo `DEPLOY_RECORD_ROOT` (por default `$BACKUP_ROOT/deploy-records`) con permisos restrictivos y lo imprime al comenzar la ejecución verificable.
+
+El runner se detiene ante errores. El trap emite `DEPLOY_RECOVERY_REQUIRED` con `failed_phase`, exit code, runbook, record y rollback ref disponibles. **No ejecuta automáticamente un rollback de base de datos ni un rollback ciego de código**: después de migraciones una reversión automática puede dejar esquema/código incompatibles.
+
+Completar `templates/DEPLOY-RECOVERY.md` por proyecto para declarar la matriz código/DB/assets/config, punto de no retorno, smoke, ventana, señales y criterio exacto de rollback.
+
+## Smoke post-release
+
+El runner admite dos formas:
+
+- `SMOKE_BASE_URL`: ejecuta `tests/smoke/http-smoke.sh` contra esa base.
+- `SMOKE_COMMAND`: comando específico del proyecto cuando el CUF requiere otra comprobación.
+
+`REQUIRE_SMOKE=1` hace que ausencia de ambos sea un error de configuración **antes de cambiar código**.
+
+Por compatibilidad, el default es `REQUIRE_SMOKE=0`. Si no existe smoke configurado, el runner imprime `DEPLOY_SMOKE status=not_configured evidence=NOT_EVALUATED`; no lo transforma en PASS. Un proyecto solo puede marcar DPL-005 según la evidencia real y aplicabilidad del Standard.
+
+## Ventana de observación
+
+`OBSERVATION_SECONDS` controla una ventana mínima después del primer readiness/smoke. Si es mayor que cero, al finalizar la espera el runner vuelve a ejecutar readiness y smoke antes de registrar `healthy`.
+
+`REQUIRE_OBSERVATION=1` exige una ventana mayor que cero antes de cambiar código. Por compatibilidad ambos defaults son `OBSERVATION_SECONDS=0` y `REQUIRE_OBSERVATION=0`; en ese caso se imprime `DEPLOY_OBSERVATION status=not_configured evidence=NOT_EVALUATED`.
+
+La segunda comprobación es un gate mínimo. Error rate, logs, métricas de negocio e integridad continúan siendo responsabilidad del proyecto cuando su riesgo los requiera.
 
 ## Liveness, readiness y smoke
 
@@ -59,20 +96,38 @@ El script usa un temporal único por ejecución y lo elimina al terminar. Un sta
 
 Para B/C debe apuntar a una comprobación controlada del CUF principal o a una señal funcional equivalente; no usar un simple liveness como sustituto.
 
-## HTTPS detrás de proxy — P0-07
+## HTTPS detrás de proxy — P0-07/P0-08
 
-`security/headers.php` no acepta automáticamente `X-Forwarded-Proto` como prueba de HTTPS. Si TLS termina en un proxy/load balancer antes de PHP, el proyecto debe declarar IPs exactas de proxy confiable en la configuración de `Headers` y demostrar que ese proxy sobrescribe/normaliza el esquema a un único `https` o `http`.
+`security/request-security.php` centraliza la decisión de HTTPS usada por headers P0-07 y sesión P0-08. No acepta automáticamente `X-Forwarded-Proto`: si TLS termina en un proxy/load balancer antes de PHP, el proyecto debe declarar IPs exactas de proxy confiable y demostrar que ese proxy sobrescribe/normaliza el esquema a un único `https` o `http`.
 
-Un valor multi-hop separado por comas se rechaza por ambigüedad. La IP se compara contra `REMOTE_ADDR`; este helper mínimo no interpreta CIDR.
+Un valor multi-hop separado por comas se rechaza por ambigüedad. La IP se compara contra `REMOTE_ADDR`; este helper mínimo no interpreta CIDR ni deriva la IP real del cliente.
 
-La decisión de confianza documentada aquí **solo** habilita detección HTTPS para HSTS P0-07. No se usa como autoridad para IP de cliente, sesión, cookies, auth o auditoría. Esos aspectos quedan fuera de P0-07 y pertenecen a P0-08.
+Antes de activar HSTS, promover CSP a enforcement o adoptar cookies `Secure` detrás de proxy, completar las plantillas P0-07/P0-08 y probar el entorno real.
 
-Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md` y probar headers/CUF en staging y en el entorno real.
+## Recuperación explícita
+
+`rollback.sh <commit-o-rama>` revierte solo código. Si se conoce el `DEPLOY_RECORD_FILE`, pasarlo en el entorno para anexar `state=rolled_back` al mismo record.
+
+Cuando la recuperación fue manual:
+
+```bash
+DEPLOY_RECORD_FILE=/ruta/record \
+APP_ROOT=/ruta/app \
+bash deployment/mark-deploy-recovery.sh manual_recovery motivo_corto
+```
+
+El helper registra evidencia; no ejecuta la recuperación.
 
 ## Requisitos por proyecto
 
 Configurar en el entorno real `APP_ROOT`, `BACKUP_ROOT`, conexión de base, `HEALTHCHECK_URL`, `TARGET_COMMIT` y, cuando aplique, `MIGRATION_COMMAND`/`TEST_COMMAND`.
 
-Para nuevos proyectos configurar además un marcador de readiness mediante `EXPECTED_HEALTH_BODY` o `EXPECTED_HEALTH_VERSION` y documentarlo en `templates/CRITICAL-USER-FLOWS.md`.
+Antes de declarar Production Ready, definir además:
+
+- marcador de readiness (`EXPECTED_HEALTH_BODY` o `EXPECTED_HEALTH_VERSION`) cuando el stack lo permita;
+- smoke aplicable y si debe exigirse con `REQUIRE_SMOKE=1`;
+- `OBSERVATION_SECONDS` y `REQUIRE_OBSERVATION=1` cuando la ventana sea obligatoria;
+- matriz y criterios en `templates/DEPLOY-RECOVERY.md`;
+- staging drill de fallo y recuperación.
 
 Probar el runner primero en staging antes de habilitar CI/CD hacia producción.
