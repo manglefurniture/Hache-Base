@@ -12,6 +12,14 @@ require_once __DIR__ . '/session-security.php';
 final class Auth
 {
     /**
+     * Request-local provenance marker. A session first opened through Hache Base may
+     * later perform the controlled anonymous-policy migration in the same request.
+     * A session that was already active before Hache Base touched it has unknown
+     * browser-cookie provenance and must match the requested tuple exactly.
+     */
+    private static bool $sessionManagedInRequest = false;
+
+    /**
      * Source-compatible wrapper around the SEC-007 session contract.
      *
      * @param array<string, mixed> $sessionConfig
@@ -22,7 +30,14 @@ final class Auth
         ?array $server = null,
         ?int $now = null,
     ): void {
-        SessionSecurity::start($sessionConfig, $server, $now);
+        $effectiveServer = $server ?? $_SERVER;
+
+        if (session_status() === PHP_SESSION_ACTIVE && !self::$sessionManagedInRequest) {
+            self::assertPreActiveCookieTupleMatches($sessionConfig, $effectiveServer);
+        }
+
+        SessionSecurity::start($sessionConfig, $effectiveServer, $now);
+        self::$sessionManagedInRequest = true;
     }
 
     /**
@@ -135,6 +150,36 @@ final class Auth
     ): void {
         SessionSecurity::startForDestruction($sessionConfig, $server);
         SessionSecurity::destroy();
+        self::$sessionManagedInRequest = false;
+    }
+
+    /**
+     * A pre-active session was opened outside Hache Base, so there is no trustworthy
+     * evidence that its browser cookie used the candidate scope. PHP exposes the
+     * runtime tuple, but cannot recover Path/Domain from the incoming Cookie header.
+     * Accept only an exact match; otherwise fail before attaching authentication.
+     *
+     * @param array<string, mixed> $sessionConfig
+     * @param array<string, mixed> $server
+     */
+    private static function assertPreActiveCookieTupleMatches(array $sessionConfig, array $server): void
+    {
+        $expected = SessionSecurity::buildCookieParams($sessionConfig, $server);
+        $params = session_get_cookie_params();
+        $current = [
+            'lifetime' => (int)$params['lifetime'],
+            'path' => (string)$params['path'],
+            'domain' => (string)$params['domain'],
+            'secure' => (bool)$params['secure'],
+            'httponly' => (bool)$params['httponly'],
+            'samesite' => (string)($params['samesite'] ?? ''),
+        ];
+
+        if ($current !== $expected) {
+            throw new LogicException(
+                'A pre-active PHP session has a cookie tuple that does not match the requested SEC-007 policy. Start Hache Base before session_start() or align the cookie scope first.',
+            );
+        }
     }
 
     /**
