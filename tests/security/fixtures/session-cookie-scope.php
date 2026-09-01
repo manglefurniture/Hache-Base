@@ -70,6 +70,8 @@ if ($path === '/admin/check-root') {
 
 // Simulate a framework or historical bootstrap that starts PHP sessions before
 // Hache Base while the process-level runtime still has session.use_cookies=0.
+// This state is ambiguous when same-name cookies exist at multiple paths, so SEC-007
+// deliberately rejects it instead of guessing which browser tuple is authoritative.
 if ($path === '/preactive/login') {
     if (!session_start()) {
         http_response_code(500);
@@ -77,39 +79,28 @@ if ($path === '/preactive/login') {
         return;
     }
 
-    $_SESSION['framework_marker'] = 'preserve-me';
-    Auth::login(
-        ['id' => 44, 'role' => 'user'],
-        ['cookie_path' => '/preactive'],
-        $_SERVER,
-        3000,
-    );
+    $_SESSION['framework_marker'] = 'must-not-authenticate';
 
-    if (($_SESSION['framework_marker'] ?? null) !== 'preserve-me') {
-        http_response_code(500);
-        echo "PREACTIVE_SNAPSHOT_LOST\n";
+    try {
+        Auth::login(
+            ['id' => 44, 'role' => 'user'],
+            ['cookie_path' => '/preactive'],
+            $_SERVER,
+            3000,
+        );
+    } catch (LogicException) {
+        if (array_key_exists('user', $_SESSION)) {
+            http_response_code(500);
+            echo "PREACTIVE_AUTH_ATTACHED\n";
+            return;
+        }
+
+        echo "PREACTIVE_REJECTED\n";
         return;
     }
 
-    echo "PREACTIVE_LOGIN_OK\n";
-    return;
-}
-
-if ($path === '/preactive/check') {
-    if (!session_start()) {
-        http_response_code(500);
-        echo "PREACTIVE_START_FAILED\n";
-        return;
-    }
-
-    $user = Auth::user([], $_SERVER, 3001);
-    if (!is_array($user) || ($user['id'] ?? null) !== 44) {
-        http_response_code(401);
-        echo "PREACTIVE_AUTH_MISSING\n";
-        return;
-    }
-
-    echo "PREACTIVE_AUTH_OK\n";
+    http_response_code(500);
+    echo "PREACTIVE_NOT_REJECTED\n";
     return;
 }
 
