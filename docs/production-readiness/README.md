@@ -50,7 +50,23 @@ P0-06 añade una Extension **opt-in** de persistencia y claims; no la activa glo
 
 P0-06 **no** introduce Redis, broker, queue manager, worker universal, cron global ni integración automática con Resend/pagos/n8n. El proyecto que adopte la Extension debe crear su migración, worker/scheduler, retención, observabilidad y runbook según su riesgo.
 
-No se implementan todavía P0-07/P0-08/P0-10/P0-11/P0-12 ni P1+.
+## Cuarta fase incremental implementada — P0-07
+
+P0-07 endurece exclusivamente el baseline de headers asociado a **SEC-001 / SEC-002 / SEC-003**:
+
+- `security/headers.php` conserva `Headers::apply()` y añade `Headers::build()` para probar el contrato sin emitir headers;
+- `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` y `Permissions-Policy` forman el baseline no persistente;
+- HSTS queda desactivado por defecto hasta que el proyecto demuestre HTTPS estable;
+- al habilitar HSTS, `includeSubDomains` y `preload` siguen desactivados salvo opt-in explícito;
+- CSP queda `off` por default y puede pasar por `report-only` antes de una promoción explícita a `enforce`;
+- el helper CSP rechaza composición insegura de directivas/valores;
+- `X-Forwarded-Proto` solo se acepta desde IPs exactas de proxy confiable y con un único valor normalizado `https`/`http`;
+- `templates/SECURITY-HEADERS.md` obliga a inventariar recursos CSP, subdominios, topología TLS/proxy, evidencia y rollback;
+- `tests/security/HeadersTest.php` cubre defaults, HSTS opt-in, `includeSubDomains`/preload, CSP report-only/enforce, header injection y proxy spoofing/ambigüedad.
+
+P0-07 **no** cambia sesiones, cookies, identidad de cliente, IP de auditoría ni auth detrás de proxy; ese contrato pertenece a P0-08. Tampoco activa una CSP o HSTS reales en ningún proyecto derivado.
+
+No se implementan todavía P0-08/P0-10/P0-11/P0-12 ni P1+.
 
 ## Uso en un proyecto derivado
 
@@ -60,7 +76,8 @@ No se implementan todavía P0-07/P0-08/P0-10/P0-11/P0-12 ni P1+.
 4. Adoptar las primitives Core que apliquen; no copiar Extensions innecesarias.
 5. Si existe una operación asíncrona/externa crítica, definir qué evidencia significa `accepted`, `confirmed`, `failed_final` y cuándo un retry es seguro.
 6. Si el CUF necesita dedupe persistente, efectos posteriores al commit o reprocesamiento seguro, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` antes de adoptar el schema P0-06.
-7. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+7. Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md` con inventario de recursos, subdominios, proxy/TLS, reportes y rollback.
+8. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
@@ -98,6 +115,16 @@ P0-06 conserva dos niveles separados:
 La inbox deduplica una recepción lógica; la outbox conserva una operación saliente e `idempotency_key` estable; el claim ligero cubre efectos que necesitan exclusión persistente sin una outbox completa.
 
 Si `dispatch_started_at`/`effect_started_at` demuestra que la frontera externa pudo haberse cruzado y el resultado se perdió, no se permite retry ciego. La operación debe reconciliarse primero.
+
+### Security headers
+
+P0-07 separa tres capas:
+
+- baseline Core no persistente: nosniff/referrer/permissions/anti-framing;
+- políticas persistentes/restrictivas configurables: HSTS y CSP;
+- evidencia Project: TLS real, proxy real, inventario de subdominios, recursos y CUF.
+
+`Headers::build()` facilita pruebas sin enviar headers. El helper no confía en forwarded headers aportados por un cliente y no promueve report-only a enforcement automáticamente.
 
 ### Liveness, readiness y smoke
 

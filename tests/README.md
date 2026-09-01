@@ -11,6 +11,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `fixtures/async-operations/scenarios.json`: escenarios offline para aceptación, confirmación, timeout ambiguo, retry seguro y reconciliación.
 - `ui/`: regresiones de tokens, temas, contraste de fallbacks, presets, estados, responsive/container queries, reduced motion, peso y comportamiento JS; incluye compatibilidad del relieve de backend.
 - `security/ProductionReadinessCoreTest.php`: contrato de errores HTTP, request/correlation IDs y redacción/log schema mínimo.
+- `security/HeadersTest.php`: contrato P0-07 de headers baseline, HSTS opt-in, CSP report-only/enforce y proxy HTTPS confiable.
 - `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
 - `smoke/http-smoke.sh`: smoke HTTP configurable y separado de liveness/readiness.
 - `integration/`: contratos e integraciones reutilizables; incluye mailer HTTPS, HMAC de webhooks, cifrado/versionado de credenciales y persistencia P0-06 inbox/outbox/idempotency.
@@ -46,6 +47,21 @@ El Core prueba offline:
 - schema mínimo de logging y redacción de claves sensibles.
 
 Los proyectos siguen siendo responsables de probar sus códigos de dominio, rutas reales y eventos operativos.
+
+## Security headers P0-07
+
+`tests/security/HeadersTest.php` prueba el helper sin enviar headers reales y demuestra que:
+
+- el baseline no inventa CSP ni activa HSTS sin aprobación del proyecto;
+- al activar HSTS, `includeSubDomains` y `preload` siguen apagados por default;
+- `preload` exige HSTS, `includeSubDomains` y `max-age` mínimo de un año;
+- `max_age=0` puede expresarse para retiro/rollback cuando corresponda;
+- CSP puede permanecer `off`, pasar a `report-only` y solo llegar a `enforce` por configuración explícita;
+- la composición CSP rechaza directivas/valores inseguros que podrían inyectar headers;
+- `X-Forwarded-Proto` de un cliente o de una IP no confiable no convierte HTTP en HTTPS;
+- un proxy confiable debe entregar un único valor de esquema; listas multi-hop se rechazan por ambigüedad.
+
+La prueba offline no sustituye evidencia SEC-001/002/003 del entorno real. Cada proyecto debe verificar TLS, headers por ruta, inventario de subdominios y reportes/CUF CSP mediante `templates/SECURITY-HEADERS.md`.
 
 ## Estados asíncronos P0-05
 
