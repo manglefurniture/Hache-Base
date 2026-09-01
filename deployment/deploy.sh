@@ -54,6 +54,35 @@ emit_state() {
   fi
 }
 
+emit_gate() {
+  local gate="$1"
+  local status="$2"
+  local detail="${3:-none}"
+  local line
+  line="DEPLOY_GATE timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ) gate=$(sanitize_field "$gate") status=$(sanitize_field "$status") target_commit=$(sanitize_field "$TARGET_COMMIT") current_commit=$(sanitize_field "$(current_commit)") detail=$(sanitize_field "$detail")"
+  printf '%s\n' "$line"
+  if [[ -n "$deploy_record" ]]; then
+    printf '%s\n' "$line" >> "$deploy_record"
+  fi
+}
+
+validate_record_root_outside_worktree() {
+  command -v realpath >/dev/null 2>&1 || return 0
+
+  local app_root_real record_root_real
+  app_root_real="$(realpath -e "$APP_ROOT")"
+  record_root_real="$(realpath -m "$DEPLOY_RECORD_ROOT")"
+
+  case "$record_root_real" in
+    "$app_root_real"|"$app_root_real"/*)
+      echo "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside APP_ROOT" >&2
+      return 1
+      ;;
+  esac
+
+  DEPLOY_RECORD_ROOT="$record_root_real"
+}
+
 on_error() {
   local exit_code=$?
   trap - ERR
@@ -92,6 +121,9 @@ if [[ "$REQUIRE_OBSERVATION" == "1" && "$OBSERVATION_SECONDS" =~ ^0+([.]0+)?$ ]]
   false
 fi
 
+# Validate before preflight can create BACKUP_ROOT when the record root inherits it.
+validate_record_root_outside_worktree
+
 current_phase="started"
 started_line="$(format_state "started" "running" "runner_started")"
 printf '%s\n' "$started_line"
@@ -100,6 +132,8 @@ current_phase="preflight"
 bash "$APP_ROOT/deployment/preflight.sh"
 
 current_phase="deploy_record"
+# Re-resolve after preflight so existing/symlinked path components are checked physically.
+validate_record_root_outside_worktree
 umask 077
 install -d -m 700 "$DEPLOY_RECORD_ROOT"
 stamp="$(date -u +%Y%m%d-%H%M%S)"
@@ -143,28 +177,28 @@ run_smoke() {
   current_phase="smoke"
   if [[ -n "${SMOKE_COMMAND:-}" ]]; then
     bash -lc "$SMOKE_COMMAND"
-    echo "DEPLOY_SMOKE status=passed source=SMOKE_COMMAND"
+    emit_gate "smoke" "passed" "source=SMOKE_COMMAND"
     return 0
   fi
 
   if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
     bash "$APP_ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"
-    echo "DEPLOY_SMOKE status=passed source=SMOKE_BASE_URL"
+    emit_gate "smoke" "passed" "source=SMOKE_BASE_URL"
     return 0
   fi
 
   if [[ "$REQUIRE_SMOKE" == "1" ]]; then
-    echo "DEPLOY_SMOKE status=failed reason=not_configured" >&2
+    emit_gate "smoke" "failed" "reason=not_configured"
     return 1
   fi
 
-  echo "DEPLOY_SMOKE status=not_configured evidence=NOT_EVALUATED"
+  emit_gate "smoke" "not_evaluated" "evidence=NOT_EVALUATED;reason=not_configured"
 }
 
 run_release_gates() {
   current_phase="readiness"
   bash "$APP_ROOT/deployment/health-check.sh"
-  echo "DEPLOY_READINESS status=passed"
+  emit_gate "readiness" "passed" "health_check_completed"
   run_smoke
 }
 
@@ -172,13 +206,13 @@ run_release_gates
 
 if [[ ! "$OBSERVATION_SECONDS" =~ ^0+([.]0+)?$ ]]; then
   current_phase="observation"
-  printf 'DEPLOY_OBSERVATION status=started seconds=%s\n' "$OBSERVATION_SECONDS"
+  emit_gate "observation" "running" "seconds=${OBSERVATION_SECONDS}"
   sleep "$OBSERVATION_SECONDS"
   run_release_gates
   current_phase="observation"
-  printf 'DEPLOY_OBSERVATION status=passed seconds=%s\n' "$OBSERVATION_SECONDS"
+  emit_gate "observation" "passed" "seconds=${OBSERVATION_SECONDS}"
 else
-  echo "DEPLOY_OBSERVATION status=not_configured evidence=NOT_EVALUATED"
+  emit_gate "observation" "not_evaluated" "evidence=NOT_EVALUATED;reason=not_configured"
 fi
 
 current_phase="healthy"
