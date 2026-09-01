@@ -42,6 +42,10 @@ SH
   cat > "$APP/deployment/backup.sh" <<'SH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ "${FAIL_BACKUP:-0}" == "1" ]]; then
+  echo "BACKUP_FAILED fixture" >&2
+  exit 7
+fi
 echo "BACKUP_OK"
 SH
 
@@ -148,6 +152,27 @@ DEPLOY_RECORD_FILE="$FAIL_RECORD" APP_ROOT="$APP" bash "$APP/deployment/mark-dep
 assert_contains "$FAIL_RECORD" "state=manual_recovery status=passed"
 assert_contains "$FAIL_RECORD" "detail=operator_verified_fix"
 
+# Backup failure is named precisely and happens before the target code is activated.
+make_fixture backup-failure
+BACKUP_FAIL_OUT="$TMP/backup-failure.out"
+set +e
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/backup-failure-backups" \
+DEPLOY_RECORD_ROOT="$TMP/backup-failure-records" \
+FAIL_BACKUP=1 \
+bash "$APP/deployment/deploy.sh" >"$BACKUP_FAIL_OUT" 2>&1
+BACKUP_FAIL_CODE=$?
+set -e
+
+[[ "$BACKUP_FAIL_CODE" == "7" ]] || fail "backup failure must preserve exit code 7, got $BACKUP_FAIL_CODE"
+assert_contains "$BACKUP_FAIL_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=backup exit_code=7"
+[[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "backup failure must happen before code change"
+BACKUP_FAIL_RECORD="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$BACKUP_FAIL_OUT" | tail -n1)"
+[[ -f "$BACKUP_FAIL_RECORD" ]] || fail "backup failure record missing"
+assert_contains "$BACKUP_FAIL_RECORD" "state=failed status=failed"
+assert_contains "$BACKUP_FAIL_RECORD" "failed_phase=backup;exit_code=7"
+
 # Required smoke must fail before code changes when no smoke contract is configured.
 make_fixture smoke-required
 SMOKE_REQUIRED_OUT="$TMP/smoke-required.out"
@@ -162,7 +187,7 @@ set -e
 
 [[ "$SMOKE_REQUIRED_CODE" != "0" ]] || fail "required smoke without configuration must fail"
 assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_CONFIG_FAILED smoke is required"
-assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=started"
+assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "configuration failure must happen before code change"
 
 echo "DEPLOY_RUNNER_OK"
