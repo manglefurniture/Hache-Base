@@ -27,7 +27,9 @@ dump_diagnostics() {
     touch.headers touch.body \
     anon.headers anon.body \
     migrate.headers migrate.body migrate-cookies.txt \
-    check-root.body; do
+    check-root.body \
+    preactive-login.headers preactive-login.body preactive-cookies.txt \
+    preactive-check.headers preactive-check.body; do
     if [[ -f "$TMP/$file" ]]; then
       echo "----- $file -----" >&2
       cat "$TMP/$file" >&2 || true
@@ -106,5 +108,20 @@ fi
 curl -fsS -b "$TMP/migrate-cookies.txt" \
   "$BASE_URL/admin/check-root" -o "$TMP/check-root.body"
 grep -qx 'MIGRATED_AUTH_OK' "$TMP/check-root.body"
+
+# A framework that calls session_start() first under the hostile runtime must not
+# bypass SEC-007. The first request adopts/rotates safely; the next request starts
+# the wrong cookie-disabled session again, then Hache Base must recover the real
+# request cookie, enforce the runtime contract and preserve authentication.
+curl -fsS -D "$TMP/preactive-login.headers" -c "$TMP/preactive-cookies.txt" \
+  "$BASE_URL/preactive/login" -o "$TMP/preactive-login.body"
+grep -qx 'PREACTIVE_LOGIN_OK' "$TMP/preactive-login.body"
+grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/preactive([;[:space:]]|$)' "$TMP/preactive-login.headers"
+
+curl -fsS -D "$TMP/preactive-check.headers" \
+  -b "$TMP/preactive-cookies.txt" -c "$TMP/preactive-cookies.txt" \
+  "$BASE_URL/preactive/check" -o "$TMP/preactive-check.body"
+grep -qx 'PREACTIVE_AUTH_OK' "$TMP/preactive-check.body"
+grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/preactive([;[:space:]]|$)' "$TMP/preactive-check.headers"
 
 echo "SESSION_COOKIE_SCOPE_HTTP_OK"
