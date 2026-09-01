@@ -157,13 +157,17 @@ debe migrarse a `Auth::login()` después de verificar credenciales. Para cambios
 
 Hache Base debe iniciar la sesión **antes de cualquier `session_start()` histórico/framework**. Una sesión que ya esté activa antes de que `Auth` la gestione en ese request se rechaza de forma controlada antes de adjuntar autenticación, incluso si los flags de `php.ini` y `session_get_cookie_params()` parecen coincidir con la política candidata. Esos valores solo describen el runtime/emisión actual y no prueban los atributos `Path`/`Domain` de la cookie que llegó desde el navegador. Sin procedencia verificable independiente, adoptar esa sesión podría dejar una cookie antigua más específica capaz de sombrear la sesión autenticada.
 
+El mismo principio aplica aunque Hache Base sea quien ejecuta `session_start()`: si el request **ya trae una cookie con el `session_name()` actual** y la sesión resultante no contiene metadata SEC-007 válida de Hache Base, esa sesión entrante se considera legacy de procedencia/scope desconocidos y se rechaza antes de autenticar. Una sesión nueva sin cookie entrante sí puede inicializar metadata; una sesión entrante Hache con metadata válida continúa normalmente. No intentar “convertir” una cookie legacy a un scope nuevo porque PHP no expone el `Path`/`Domain` con el que llegó. La destrucción/logout mantiene su ruta separada para permitir retirar sesiones históricas.
+
 Las sesiones que Hache Base abrió previamente **dentro del mismo request** sí conservan las migraciones anónimas controladas documentadas y probadas por P0-08, porque su procedencia y tuple efectivo están bajo el contrato de Hache Base.
 
 Checklist de integración:
 
 - buscar `session_start()` ejecutados antes de `Auth::startSecureSession()`/`Auth::login()`;
 - mover el bootstrap de Hache Base antes de esos puntos; no basta con alinear después `session_set_cookie_params()`;
+- identificar cookies/sesiones legacy que compartan el mismo `session_name()` y planificar su retiro/logout antes de activar P0-08;
 - probar explícitamente que cualquier sesión externa preactiva falla antes de completar login;
+- probar que una cookie entrante sin metadata Hache no puede convertirse en una sesión autenticada con scope distinto;
 - no silenciar el `LogicException` y continuar adjuntando `$_SESSION['user']` manualmente.
 
 `Auth::startSecureSession()`, `Auth::user()`, `Auth::requireUser()` y `Auth::logout()` mantienen llamadas sin argumentos compatibles, pero P0-08 introduce expiración explícita y puede cerrar sesiones antiguas al adoptar el nuevo contrato.
