@@ -95,6 +95,7 @@ assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_pa
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => '/admin panel'])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => "/admin\tpanel"])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_path' => '/admin;panel'])));
+assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_domain' => 'bad,example.com'])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig(['cookie_domain' => "bad\r\nSet-Cookie:x"])));
 assert($throwsInvalid(static fn () => SessionSecurity::resolveConfig([
     'proxy' => ['trusted_ips' => ['not-an-ip']],
