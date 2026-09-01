@@ -53,12 +53,12 @@ foreach ($constraints as $constraintName) {
     );
 }
 
-assert(str_contains($sql, 'source VARCHAR(80) COLLATE utf8mb4_bin'));
-assert(str_contains($sql, 'external_event_id VARCHAR(191) COLLATE utf8mb4_bin'));
-assert(str_contains($sql, 'idempotency_key VARCHAR(191) COLLATE utf8mb4_bin'));
-assert(str_contains($sql, 'scope_name VARCHAR(80) COLLATE utf8mb4_bin'));
-assert(str_contains($sql, 'claim_key VARCHAR(191) COLLATE utf8mb4_bin'));
-assert(substr_count($sql, 'operation_state VARCHAR(32) COLLATE utf8mb4_bin') === 2);
+assert(str_contains($sql, 'source VARCHAR(80) COLLATE utf8mb4_nopad_bin'));
+assert(str_contains($sql, 'external_event_id VARCHAR(191) COLLATE utf8mb4_nopad_bin'));
+assert(str_contains($sql, 'idempotency_key VARCHAR(191) COLLATE utf8mb4_nopad_bin'));
+assert(str_contains($sql, 'scope_name VARCHAR(80) COLLATE utf8mb4_nopad_bin'));
+assert(str_contains($sql, 'claim_key VARCHAR(191) COLLATE utf8mb4_nopad_bin'));
+assert(substr_count($sql, 'operation_state VARCHAR(32) COLLATE utf8mb4_nopad_bin') === 2);
 
 assert(str_contains($sql, 'UNIQUE KEY uq_integration_inbox_source_event'));
 assert(str_contains($sql, 'UNIQUE KEY uq_integration_outbox_idempotency'));
