@@ -22,6 +22,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/ProductionR
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/StructuredLoggerStandaloneTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/HeadersTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionSecurityTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionCookieDomainValidationTest.php"
 bash "$ROOT/tests/deployment/HealthCheckTest.sh"
 
 if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
