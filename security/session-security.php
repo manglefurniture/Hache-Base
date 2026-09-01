@@ -221,13 +221,7 @@ final class SessionSecurity
             throw new InvalidArgumentException('cookie_path must be an absolute safe cookie path.');
         }
 
-        if ($resolved['cookie_domain'] !== null) {
-            if (!is_string($resolved['cookie_domain'])
-                || trim($resolved['cookie_domain']) === ''
-                || preg_match('/[\x00-\x20\x7F,;]/', $resolved['cookie_domain']) === 1) {
-                throw new InvalidArgumentException('cookie_domain must be null or a safe explicit domain.');
-            }
-        }
+        $resolved['cookie_domain'] = self::normalizeCookieDomain($resolved['cookie_domain']);
 
         /** @var array<string, mixed> $proxy */
         $proxy = $resolved['proxy'];
@@ -235,6 +229,32 @@ final class SessionSecurity
 
         /** @var array{idle_timeout:int,absolute_timeout:int,same_site:string,cookie_path:string,cookie_domain:?string,proxy:array{trusted_ips:list<string>,forwarded_proto_header:string}} $resolved */
         return $resolved;
+    }
+
+    /**
+     * @param mixed $domain
+     */
+    private static function normalizeCookieDomain(mixed $domain): ?string
+    {
+        if ($domain === null) {
+            return null;
+        }
+
+        if (!is_string($domain)) {
+            throw new InvalidArgumentException('cookie_domain must be null or a valid ASCII hostname.');
+        }
+
+        $normalized = strtolower($domain);
+        if ($normalized === ''
+            || $normalized !== trim($normalized)
+            || str_starts_with($normalized, '.')
+            || str_ends_with($normalized, '.')
+            || filter_var($normalized, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
+            || filter_var($normalized, FILTER_VALIDATE_IP) !== false) {
+            throw new InvalidArgumentException('cookie_domain must be null or a valid ASCII hostname; use punycode for IDN domains.');
+        }
+
+        return $normalized;
     }
 
     /**
