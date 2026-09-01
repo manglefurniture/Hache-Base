@@ -62,9 +62,10 @@ Antes de pasar de `report-only` a `enforce` registrar:
 - IP que la app observa en `REMOTE_ADDR`: `<...>`
 - Proxies confiables exactos: `<IP1, IP2...>`
 - Header de esquema enviado por el proxy: `<HTTP_X_FORWARDED_PROTO u otro>`
+- Evidencia de que el proxy **sobrescribe/normaliza** ese header a un único `https` o `http`: `<config/test>`
 - Evidencia de que el cliente no puede inyectar/forjar ese valor hasta la app: `<config/test>`
 
-Hache Base **no confía en `X-Forwarded-Proto` por defecto**. Solo se usa cuando `REMOTE_ADDR` pertenece a `proxy.trusted_ips` configurado explícitamente.
+Hache Base **no confía en `X-Forwarded-Proto` por defecto**. Solo se usa cuando `REMOTE_ADDR` pertenece a `proxy.trusted_ips` configurado explícitamente. Los valores separados por coma/multi-hop se rechazan: el proxy confiable debe entregar un único esquema autoritativo.
 
 Ejemplo:
 
@@ -81,7 +82,7 @@ No añadir rangos o IPs por intuición. Si la infraestructura cambia, actualizar
 
 ### 4.2 HSTS
 
-Baseline P0-07 en HTTPS: `max-age=31536000` **sin** `includeSubDomains` y sin `preload`.
+HSTS queda **desactivado por defecto** porque una primitive no puede demostrar que el HTTPS del proyecto sea estable. Después de verificarlo se activa explícitamente. El valor base al activarlo es `max-age=31536000`, **sin** `includeSubDomains` y sin `preload`.
 
 - HTTPS estable confirmado: `sí/no`
 - `max_age` elegido: `<segundos>`
@@ -91,11 +92,22 @@ Baseline P0-07 en HTTPS: `max-age=31536000` **sin** `includeSubDomains` y sin `p
 - `preload` evaluado/aprobado explícitamente: `sí/no`
 - Procedimiento de recuperación/impacto si un subdominio pierde HTTPS: `<...>`
 
+Activación mínima después de confirmar HTTPS estable:
+
+```php
+Headers::apply([
+    'hsts' => [
+        'enabled' => true,
+    ],
+]);
+```
+
 Solo después de comprobar todos los subdominios:
 
 ```php
 Headers::apply([
     'hsts' => [
+        'enabled' => true,
         'include_subdomains' => true,
         // 'preload' => true, // decisión separada y explícita.
     ],
@@ -112,7 +124,7 @@ Verificar en rutas representativas:
 - `Referrer-Policy`
 - `Permissions-Policy`
 - anti-framing mediante `X-Frame-Options: SAMEORIGIN|DENY` y/o `frame-ancestors` compatible cuando CSP esté en enforcement
-- HSTS solo sobre HTTPS efectivo
+- HSTS solo sobre HTTPS efectivo y solo después de activación explícita
 - CSP report-only/enforced según el estado declarado
 
 Si un proyecto necesita ser embebido cross-origin, no debilitar anti-framing sin threat model y evidencia específica.
