@@ -28,6 +28,8 @@ dump_diagnostics() {
     anon.headers anon.body \
     migrate.headers migrate.body migrate-cookies.txt \
     check-root.body \
+    legacy-anon.headers legacy-anon.body legacy-cookies.txt \
+    legacy-login.headers legacy-login.body \
     preactive-login.headers preactive-login.body; do
     if [[ -f "$TMP/$file" ]]; then
       echo "----- $file -----" >&2
@@ -108,6 +110,37 @@ fi
 curl -fsS -b "$TMP/migrate-cookies.txt" \
   "$BASE_URL/admin/check-root" -o "$TMP/check-root.body"
 grep -qx 'MIGRATED_AUTH_OK' "$TMP/check-root.body"
+
+# A legacy anonymous session can exist server-side without Hache metadata. Even when
+# Hache Base itself later calls session_start(), an incoming /admin cookie does not
+# reveal its historical Path/Domain to PHP. Login must fail closed rather than attach
+# auth and emit a second root-scoped cookie that the legacy cookie can shadow.
+curl -fsS -D "$TMP/legacy-anon.headers" -c "$TMP/legacy-cookies.txt" \
+  "$BASE_URL/admin/legacy-anonymous" -o "$TMP/legacy-anon.body"
+grep -qx 'LEGACY_ANON_OK' "$TMP/legacy-anon.body"
+grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/admin([;[:space:]]|$)' "$TMP/legacy-anon.headers"
+
+curl -fsS -D "$TMP/legacy-login.headers" -b "$TMP/legacy-cookies.txt" -c "$TMP/legacy-cookies.txt" \
+  "$BASE_URL/admin/legacy-login-root" -o "$TMP/legacy-login.body"
+grep -qx 'LEGACY_INCOMING_REJECTED' "$TMP/legacy-login.body"
+
+if grep -Eiq '^Set-Cookie: HACHEBASESCOPE=.*path=/([;[:space:]]|$)' "$TMP/legacy-login.headers"; then
+  echo "A rejected legacy incoming session emitted a root session cookie" >&2
+  cat "$TMP/legacy-login.headers" >&2
+  exit 1
+fi
+
+if ! awk '$6 == "HACHEBASESCOPE" && $3 == "/admin" { found=1 } END { exit found ? 0 : 1 }' "$TMP/legacy-cookies.txt"; then
+  echo "The legacy /admin cookie unexpectedly disappeared during rejection" >&2
+  cat "$TMP/legacy-cookies.txt" >&2
+  exit 1
+fi
+
+if awk '$6 == "HACHEBASESCOPE" && $3 == "/" { found=1 } END { exit found ? 0 : 1 }' "$TMP/legacy-cookies.txt"; then
+  echo "The rejected legacy session created a root cookie in the browser jar" >&2
+  cat "$TMP/legacy-cookies.txt" >&2
+  exit 1
+fi
 
 # A framework that has already started a session under a non-compliant runtime is
 # not safely recoverable: PHP collapses same-name cookies from different Path scopes
