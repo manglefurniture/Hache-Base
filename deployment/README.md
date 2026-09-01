@@ -59,6 +59,16 @@ El script usa un temporal único por ejecución y lo elimina al terminar. Un sta
 
 Para B/C debe apuntar a una comprobación controlada del CUF principal o a una señal funcional equivalente; no usar un simple liveness como sustituto.
 
+## HTTPS detrás de proxy — P0-07
+
+`security/headers.php` no acepta automáticamente `X-Forwarded-Proto` como prueba de HTTPS. Si TLS termina en un proxy/load balancer antes de PHP, el proyecto debe declarar IPs exactas de proxy confiable en la configuración de `Headers` y demostrar que ese proxy sobrescribe/normaliza el esquema a un único `https` o `http`.
+
+Un valor multi-hop separado por comas se rechaza por ambigüedad. La IP se compara contra `REMOTE_ADDR`; este helper mínimo no interpreta CIDR.
+
+La decisión de confianza documentada aquí **solo** habilita detección HTTPS para HSTS P0-07. No se usa como autoridad para IP de cliente, sesión, cookies, auth o auditoría. Esos aspectos quedan fuera de P0-07 y pertenecen a P0-08.
+
+Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md` y probar headers/CUF en staging y en el entorno real.
+
 ## Requisitos por proyecto
 
 Configurar en el entorno real `APP_ROOT`, `BACKUP_ROOT`, conexión de base, `HEALTHCHECK_URL`, `TARGET_COMMIT` y, cuando aplique, `MIGRATION_COMMAND`/`TEST_COMMAND`.
