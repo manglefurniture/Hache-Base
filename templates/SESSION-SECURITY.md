@@ -120,7 +120,7 @@ Usar:
 Auth::logout($sessionConfig);
 ```
 
-Si la configuración del proyecto cambió después de crear una sesión —por ejemplo un timeout o scope nuevo durante un deploy— el logout **no debe quedar bloqueado por ese conflicto**. Cuando existe metadata válida, Hache Base usa la política almacenada de la sesión para localizar/expirar su tuple de cookie y destruirla; la configuración recibida por `logout()` queda como fallback para sesiones históricas sin metadata.
+Si la configuración del proyecto cambió después de crear una sesión —por ejemplo un timeout, scope o IP de proxy nuevo durante un deploy— el logout **no debe quedar bloqueado por ese conflicto**. Hache Base persiste en la metadata de sesión el tuple efectivo de cookie que PHP quedó configurado para emitir (`path`, `domain`, `Secure`, `HttpOnly`, `SameSite`) y lo usa directamente para expirar la cookie durante logout, sin volver a deducirlo desde la topología de proxy actual. La configuración recibida por `logout()` queda como fallback para sesiones históricas sin ese snapshot.
 
 El logout debe demostrar:
 
