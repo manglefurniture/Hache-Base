@@ -120,6 +120,8 @@ Usar:
 Auth::logout($sessionConfig);
 ```
 
+Si la configuración del proyecto cambió después de crear una sesión —por ejemplo un timeout o scope nuevo durante un deploy— el logout **no debe quedar bloqueado por ese conflicto**. Cuando existe metadata válida, Hache Base usa la política almacenada de la sesión para localizar/expirar su tuple de cookie y destruirla; la configuración recibida por `logout()` queda como fallback para sesiones históricas sin metadata.
+
 El logout debe demostrar:
 
 - `$_SESSION` vacía;
@@ -152,6 +154,15 @@ $_SESSION['user'] = $user;
 ```
 
 debe migrarse a `Auth::login()` después de verificar credenciales. Para cambios de privilegio usar `Auth::elevate()`.
+
+Hache Base debe iniciar la sesión **antes de cualquier `session_start()` histórico/framework**, para poder imponer `session.use_strict_mode=1`, `session.use_cookies=1`, `session.use_only_cookies=1` y `session.use_trans_sid=0`. Si una sesión ya está activa, solo se acepta cuando esos cuatro requisitos ya se cumplen. Una sesión preactiva no conforme se rechaza con error controlado **antes de adjuntar autenticación**; no se intenta adivinar/reconciliar cookies del mismo nombre en scopes distintos porque `$_COOKIE` no conserva el atributo `Path` que permitiría distinguirlas de forma segura.
+
+Checklist de integración:
+
+- buscar `session_start()` ejecutados antes de `Auth::startSecureSession()`/`Auth::login()`;
+- mover el bootstrap de Hache Base antes de esos puntos, o configurar el runtime PHP equivalente antes de iniciar sesión;
+- probar explícitamente que una sesión preactiva no conforme no puede completar login;
+- no silenciar el `LogicException` y continuar adjuntando `$_SESSION['user']` manualmente.
 
 `Auth::startSecureSession()`, `Auth::user()`, `Auth::requireUser()` y `Auth::logout()` mantienen llamadas sin argumentos compatibles, pero P0-08 introduce expiración explícita y puede cerrar sesiones antiguas al adoptar el nuevo contrato.
 
