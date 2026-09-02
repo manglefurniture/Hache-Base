@@ -209,7 +209,7 @@ function addFinding(
     $severity = normalizeSeverity($severity);
     $id = findingId($category, $rule, $location, $subject);
     $policyBlocking = policyBlocks($category, $rule, $severity, $level, $licensePolicy);
-    $accepted = acceptedRiskFor($id, $riskConfig);
+    $accepted = $category === 'sca' ? acceptedRiskFor($id, $riskConfig) : null;
     $baselineBlocks = $policy['baseline_blocks'] ?? ['secret', 'lockfile'];
     if (!is_array($baselineBlocks)) {
         configError('policy.baseline_blocks must be an array');
