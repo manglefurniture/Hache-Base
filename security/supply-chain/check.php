@@ -393,6 +393,79 @@ function validNpmLock(array $lock, array $manifest): bool
     return true;
 }
 
+function composerPlatformRequirement(string $name): bool
+{
+    return $name === 'php'
+        || $name === 'hhvm'
+        || str_starts_with($name, 'php-')
+        || str_starts_with($name, 'ext-')
+        || str_starts_with($name, 'lib-')
+        || $name === 'composer-plugin-api'
+        || $name === 'composer-runtime-api';
+}
+
+/** @param array<string,mixed> $manifest */
+function validComposerLock(array $lock, array $manifest): bool
+{
+    if (!array_key_exists('packages', $lock)
+        || !is_array($lock['packages'])
+        || !array_key_exists('packages-dev', $lock)
+        || !is_array($lock['packages-dev'])) {
+        return false;
+    }
+
+    $prodNames = [];
+    $devNames = [];
+    foreach ([['packages', &$prodNames], ['packages-dev', &$devNames]] as &$sectionConfig) {
+        [$section, &$names] = $sectionConfig;
+        foreach ($lock[$section] as $package) {
+            if (!is_array($package)
+                || !isset($package['name'], $package['version'])
+                || !is_string($package['name'])
+                || trim($package['name']) === ''
+                || !is_string($package['version'])
+                || trim($package['version']) === '') {
+                return false;
+            }
+            $names[$package['name']] = true;
+            if (isset($package['license'])) {
+                if (!is_array($package['license'])) {
+                    return false;
+                }
+                foreach ($package['license'] as $license) {
+                    if (!is_string($license) || trim($license) === '') {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    unset($sectionConfig, $names);
+
+    foreach (['require', 'require-dev'] as $section) {
+        $requirements = $manifest[$section] ?? [];
+        if (!is_array($requirements)) {
+            return false;
+        }
+        foreach ($requirements as $name => $constraint) {
+            if (!is_string($name)
+                || trim($name) === ''
+                || !is_string($constraint)
+                || trim($constraint) === '') {
+                return false;
+            }
+            if (composerPlatformRequirement($name)) {
+                continue;
+            }
+            $present = isset($prodNames[$name]) || ($section === 'require-dev' && isset($devNames[$name]));
+            if (!$present) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 /** @return array<int,array<string,mixed>> */
 function npmVulnerabilities(array $audit): array
 {
@@ -658,58 +731,88 @@ if ($stackRoots === []) {
 $stackSummaries = [];
 $deniedLicenses = array_map('strval', is_array($licensePolicy['denied'] ?? null) ? $licensePolicy['denied'] : []);
 $reportMissingLicense = (bool)($licensePolicy['report_missing'] ?? true);
+$composerStackCount = 0;
+$nodeStackCount = 0;
+foreach ($stackRoots as $stackRelative) {
+    $stackDir = withinRoot($root, $stackRelative);
+    if (is_file($stackDir . '/composer.json')) {
+        $composerStackCount++;
+    }
+    if (is_file($stackDir . '/package.json')) {
+        $nodeStackCount++;
+    }
+}
 
 foreach ($stackRoots as $stackRelative) {
     $stackDir = withinRoot($root, $stackRelative);
     $displayRoot = $stackRelative === '.' ? '.' : rtrim($stackRelative, '/');
 
     if (is_file($stackDir . '/composer.json')) {
+        $composerManifest = loadJsonFile($stackDir . '/composer.json');
         $lockPath = $stackDir . '/composer.lock';
         $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => is_file($lockPath) ? 'composer.lock' : null];
         if (!is_file($lockPath)) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', 'composer_lock_missing', 'high', $displayRoot . '/composer.json', 'composer', 'composer.json is tracked without composer.lock.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => null, 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/composer.json', 'composer:missing-lock', 'License inventory is NOT EVALUATED because composer.lock is missing.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => null, 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.json', 'composer:missing-lock', 'SCA is NOT EVALUATED because composer.lock is missing.', $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
             $lock = loadJsonFile($lockPath);
-            $licenseCount = 0;
-            foreach (composerPackagesForLicense($lock) as $package) {
-                $licenseCount++;
-                if ($package['licenses'] === [] && $reportMissingLicense) {
-                    addFinding($findings, 'license', 'license_missing', 'medium', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'], 'Dependency has no license metadata in lockfile; human/legal review required.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-                }
-                foreach ($package['licenses'] as $license) {
-                    if (in_array($license, $deniedLicenses, true)) {
-                        addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no universal legal conclusion is inferred.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            if (!validComposerLock($lock, $composerManifest)) {
+                $checks['lockfiles']['status'] = 'findings';
+                addFinding($findings, 'lockfile', 'composer_lock_invalid_format', 'high', $displayRoot . '/composer.lock', 'composer', 'composer.lock is structurally invalid or does not cover direct non-platform requirements from composer.json; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated', 'packages_checked' => null];
+                addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/composer.lock', 'composer:invalid-lock', 'License inventory is NOT EVALUATED because composer.lock is invalid or mismatched to composer.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated'];
+                addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer:invalid-lock', 'SCA is NOT EVALUATED because composer.lock is invalid or mismatched to composer.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            } else {
+                $licenseCount = 0;
+                foreach (composerPackagesForLicense($lock) as $package) {
+                    $licenseCount++;
+                    if ($package['licenses'] === [] && $reportMissingLicense) {
+                        addFinding($findings, 'license', 'license_missing', 'medium', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'], 'Dependency has no license metadata in lockfile; human/legal review required.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                    }
+                    foreach ($package['licenses'] as $license) {
+                        if (in_array($license, $deniedLicenses, true)) {
+                            addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no universal legal conclusion is inferred.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                        }
                     }
                 }
-            }
-            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
+                $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
 
-            $audit = null;
-            $scaStatus = 'not_evaluated';
-            $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
-            if ($auditFile !== null && $auditFile !== '') {
-                $candidate = loadJsonFile($auditFile);
-                if (validComposerAudit($candidate)) {
-                    $audit = $candidate;
-                    $scaStatus = 'evidence_file';
+                $audit = null;
+                $scaStatus = 'not_evaluated';
+                $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
+                if ($auditFile !== null && $auditFile !== '') {
+                    if ($composerStackCount === 1) {
+                        $candidate = loadJsonFile($auditFile);
+                        if (validComposerAudit($candidate)) {
+                            $audit = $candidate;
+                            $scaStatus = 'evidence_file';
+                        }
+                    }
+                } elseif (!$disableExternalSca && commandExists('composer')) {
+                    [$auditCode, $auditOut] = runCommand(['composer', 'audit', '--locked', '--format=json', '--no-interaction'], $stackDir);
+                    $decoded = json_decode($auditOut, true);
+                    if (is_array($decoded) && validComposerAudit($decoded)) {
+                        $audit = $decoded;
+                        $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
+                    }
                 }
-            } elseif (!$disableExternalSca && commandExists('composer')) {
-                [$auditCode, $auditOut] = runCommand(['composer', 'audit', '--locked', '--format=json', '--no-interaction'], $stackDir);
-                $decoded = json_decode($auditOut, true);
-                if (is_array($decoded) && validComposerAudit($decoded)) {
-                    $audit = $decoded;
-                    $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
+                if ($audit === null) {
+                    $scopeDetail = ($auditFile !== null && $auditFile !== '' && $composerStackCount > 1)
+                        ? 'A single pre-generated Composer audit file cannot be attributed across multiple Composer stacks; SCA is NOT EVALUATED. Split the invocation or run Composer audit per stack.'
+                        : 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.';
+                    addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', $scopeDetail, $level, $mode, $policy, $licensePolicy, $riskConfig);
+                } else {
+                    foreach (composerVulnerabilities($audit) as $vulnerability) {
+                        addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/composer.lock', (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
+                    }
                 }
+                $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => $audit === null ? 'not_evaluated' : $scaStatus];
             }
-            if ($audit === null) {
-                addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-            } else {
-                foreach (composerVulnerabilities($audit) as $vulnerability) {
-                    addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/composer.lock', (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
-                }
-            }
-            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => $audit === null ? 'not_evaluated' : $scaStatus];
         }
     }
 
@@ -719,6 +822,10 @@ foreach ($stackRoots as $stackRelative) {
         if ($resolved['error'] !== null) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', $resolved['error'], 'high', $displayRoot . '/package.json', 'node', 'Node lockfile is missing, ambiguous, unsupported, or does not match packageManager.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $resolved['lock'], 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/package.json', 'node:' . $resolved['error'], 'License inventory is NOT EVALUATED because a usable Node lockfile was not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $resolved['lock'], 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/package.json', 'node:' . $resolved['error'], 'SCA is NOT EVALUATED because a usable Node lockfile was not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             continue;
         }
 
@@ -760,10 +867,12 @@ foreach ($stackRoots as $stackRelative) {
         $scaStatus = 'not_evaluated';
         $auditFile = envValue('SUPPLY_CHAIN_NPM_AUDIT_FILE');
         if ($auditFile !== null && $auditFile !== '') {
-            $candidate = loadJsonFile($auditFile);
-            if (validNpmAudit($candidate)) {
-                $audit = $candidate;
-                $scaStatus = 'evidence_file';
+            if ($nodeStackCount === 1) {
+                $candidate = loadJsonFile($auditFile);
+                if (validNpmAudit($candidate)) {
+                    $audit = $candidate;
+                    $scaStatus = 'evidence_file';
+                }
             }
         } elseif (!$disableExternalSca && commandExists('npm')) {
             [$auditCode, $auditOut] = runCommand(['npm', 'audit', '--package-lock-only', '--json'], $stackDir);
@@ -774,7 +883,10 @@ foreach ($stackRoots as $stackRelative) {
             }
         }
         if ($audit === null) {
-            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $scopeDetail = ($auditFile !== null && $auditFile !== '' && $nodeStackCount > 1)
+                ? 'A single pre-generated npm audit file cannot be attributed across multiple Node stacks; SCA is NOT EVALUATED. Split the invocation or run npm audit per stack.'
+                : 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.';
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', $scopeDetail, $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
             foreach (npmVulnerabilities($audit) as $vulnerability) {
                 addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/' . $nodeLockName, (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
