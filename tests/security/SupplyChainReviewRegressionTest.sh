@@ -62,6 +62,15 @@ grep -q 'rule=sca_unavailable' "$invalid_npm/out.txt"
 grep -q 'not_evaluated=1' "$invalid_npm/out.txt"
 grep -q 'evidence_complete=0' "$invalid_npm/out.txt"
 
+invalid_npm_inner="$(new_repo invalid-npm-inner)"
+make_node_lock "$invalid_npm_inner"
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"vuln-pkg":"invalid"}}' > "$invalid_npm_inner/npm-audit.json"
+commit_all "$invalid_npm_inner"
+run_check "$invalid_npm_inner" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$invalid_npm_inner/npm-audit.json" > "$invalid_npm_inner/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_npm_inner/out.txt"
+grep -q 'not_evaluated=1' "$invalid_npm_inner/out.txt"
+grep -q 'evidence_complete=0' "$invalid_npm_inner/out.txt"
+
 invalid_composer="$(new_repo invalid-composer)"
 printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer/composer.json"
 printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer/composer.lock"
@@ -71,6 +80,16 @@ run_check "$invalid_composer" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPL
 grep -q 'rule=sca_unavailable' "$invalid_composer/out.txt"
 grep -q 'not_evaluated=1' "$invalid_composer/out.txt"
 grep -q 'evidence_complete=0' "$invalid_composer/out.txt"
+
+invalid_composer_inner="$(new_repo invalid-composer-inner)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer_inner/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer_inner/composer.lock"
+printf '%s\n' '{"advisories":{"vendor/pkg":["invalid"]}}' > "$invalid_composer_inner/composer-audit.json"
+commit_all "$invalid_composer_inner"
+run_check "$invalid_composer_inner" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$invalid_composer_inner/composer-audit.json" > "$invalid_composer_inner/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_composer_inner/out.txt"
+grep -q 'not_evaluated=1' "$invalid_composer_inner/out.txt"
+grep -q 'evidence_complete=0' "$invalid_composer_inner/out.txt"
 
 multi="$(new_repo multi-advisory)"
 make_node_lock "$multi"
@@ -154,5 +173,40 @@ JSON
   [[ "$date_rc" -eq 1 ]]
   grep -q 'accepted_risks=0' "$bad_date/date.txt"
 done
+
+cat > "$bad_date/security/supply-chain/accepted-risk.json" <<JSON
+{
+  "schema":"hache-supply-chain-accepted-risk-v1",
+  "exceptions":[{
+    "finding_id":"$date_id",
+    "owner":["not-a-string"],
+    "approval_ref":"FIXTURE-TYPE",
+    "mitigation":"must not accept non-scalar owner",
+    "expires_at":"2099-12-31"
+  }]
+}
+JSON
+set +e
+run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" > "$bad_date/type.txt" 2>&1
+type_rc=$?
+set -e
+[[ "$type_rc" -eq 1 ]]
+grep -q 'accepted_risks=0' "$bad_date/type.txt"
+
+incomplete_secret="$(new_repo incomplete-secret)"
+printf '%s\n' 'cannot-read-this-file' > "$incomplete_secret/a-unreadable.txt"
+printf '%s\n' 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890' > "$incomplete_secret/z-secret.txt"
+commit_all "$incomplete_secret"
+chmod 000 "$incomplete_secret/a-unreadable.txt"
+set +e
+run_check "$incomplete_secret" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$incomplete_secret/out.txt" 2>&1
+incomplete_rc=$?
+set -e
+chmod 600 "$incomplete_secret/a-unreadable.txt"
+[[ "$incomplete_rc" -eq 1 ]]
+grep -q 'category=secret' "$incomplete_secret/out.txt"
+grep -q 'not_evaluated=1' "$incomplete_secret/out.txt"
+grep -q 'evidence_complete=0' "$incomplete_secret/out.txt"
+grep -q '"incomplete": true' "$incomplete_secret/report.json"
 
 echo "SUPPLY_CHAIN_REVIEW_REGRESSION_OK"
