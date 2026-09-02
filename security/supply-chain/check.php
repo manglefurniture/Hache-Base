@@ -65,6 +65,78 @@ function headFileContent(string $root, string $relativePath): ?string
     return $code === 0 ? $out : null;
 }
 
+
+function headFileMode(string $root, string $relativePath): ?string
+{
+    [$code, $out] = runCommand(['git', '-C', $root, 'ls-tree', '-z', 'HEAD', '--', $relativePath], $root);
+    if ($code !== 0 || $out === '') {
+        return null;
+    }
+    if (preg_match('/^([0-9]{6})\s+[^\s]+\s+[0-9a-f]+\t/s', $out, $matches) !== 1) {
+        return null;
+    }
+    return $matches[1];
+}
+
+function auditBoundToLock(array $audit, string $lockContent): bool
+{
+    $declared = $audit['hache_lock_sha256'] ?? null;
+    if (!is_string($declared) || preg_match('/^[0-9a-fA-F]{64}$/', $declared) !== 1) {
+        return false;
+    }
+    return hash_equals(hash('sha256', $lockContent), strtolower($declared));
+}
+
+function removeSupplyChainTempTree(string $path): void
+{
+    if (!file_exists($path) && !is_link($path)) {
+        return;
+    }
+    if (is_dir($path) && !is_link($path)) {
+        $entries = scandir($path);
+        if (is_array($entries)) {
+            foreach ($entries as $entry) {
+                if ($entry === '.' || $entry === '..') {
+                    continue;
+                }
+                removeSupplyChainTempTree($path . DIRECTORY_SEPARATOR . $entry);
+            }
+        }
+        @rmdir($path);
+        return;
+    }
+    @unlink($path);
+}
+
+/** @return array{0:int,1:string,2:string} */
+function runHeadAudit(string $root, string $stackRelative, array $files, array $command): array
+{
+    try {
+        $suffix = bin2hex(random_bytes(8));
+    } catch (Throwable) {
+        return [127, '', 'unable to allocate temporary audit directory'];
+    }
+    $tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'hache-sca-' . $suffix;
+    if (!mkdir($tmp, 0700, true) && !is_dir($tmp)) {
+        return [127, '', 'unable to create temporary audit directory'];
+    }
+    try {
+        foreach ($files as $file) {
+            if (!is_string($file) || $file === '' || str_contains($file, '/')) {
+                return [127, '', 'invalid materialized audit filename'];
+            }
+            $relative = stackFileRelative($stackRelative, $file);
+            $content = headFileContent($root, $relative);
+            if ($content === null || file_put_contents($tmp . DIRECTORY_SEPARATOR . $file, $content) === false) {
+                return [127, '', 'unable to materialize reviewed HEAD evidence'];
+            }
+        }
+        return runCommand($command, $tmp);
+    } finally {
+        removeSupplyChainTempTree($tmp);
+    }
+}
+
 /** @return array<string,mixed> */
 function loadJsonFromHead(string $root, string $relativePath): array
 {
@@ -456,10 +528,22 @@ function composerVersionSatisfies(string $version, string $constraint): bool
         if (preg_match('/^v?(\d+(?:\.\d+){0,2})\s+-\s+v?(\d+(?:\.\d+){0,2})$/', $branch, $range) === 1) {
             $lower = composerNumericVersion($range[1]);
             $upper = composerNumericVersion($range[2]);
-            if ($lower !== null && $upper !== null
-                && version_compare(composerVersionString($locked), composerVersionString($lower), '>=')
-                && version_compare(composerVersionString($locked), composerVersionString($upper), '<=')) {
-                return true;
+            if ($lower !== null && $upper !== null) {
+                $lockedString = composerVersionString($locked);
+                $lowerOk = version_compare($lockedString, composerVersionString($lower), '>=');
+                $upperParts = count(explode('.', $range[2]));
+                if ($upperParts >= 3) {
+                    $upperOk = version_compare($lockedString, composerVersionString($upper), '<=');
+                } elseif ($upperParts === 2) {
+                    $exclusiveUpper = [$upper[0], $upper[1] + 1, 0];
+                    $upperOk = version_compare($lockedString, composerVersionString($exclusiveUpper), '<');
+                } else {
+                    $exclusiveUpper = [$upper[0] + 1, 0, 0];
+                    $upperOk = version_compare($lockedString, composerVersionString($exclusiveUpper), '<');
+                }
+                if ($lowerOk && $upperOk) {
+                    return true;
+                }
             }
             continue;
         }
@@ -592,17 +676,24 @@ function validComposerLock(array $lock, array $manifest): bool
         || !array_key_exists('packages-dev', $lock) || !is_array($lock['packages-dev'])) {
         return false;
     }
+
     $prodVersions = [];
     $devVersions = [];
-    foreach (['packages' => &$prodVersions, 'packages-dev' => &$devVersions] as $section => &$versionMap) {
-        foreach ($lock[$section] as $package) {
+    $prodProviders = [];
+    $devProviders = [];
+
+    $indexPackages = static function (array $packages, array &$versions, array &$providers): bool {
+        foreach ($packages as $package) {
             if (!is_array($package)
                 || !isset($package['name'], $package['version'])
                 || !is_string($package['name']) || trim($package['name']) === ''
                 || !is_string($package['version']) || trim($package['version']) === '') {
                 return false;
             }
-            $versionMap[$package['name']] = $package['version'];
+            $name = trim($package['name']);
+            $version = trim($package['version']);
+            $versions[$name] = $version;
+
             if (isset($package['license'])) {
                 if (!is_array($package['license'])) {
                     return false;
@@ -616,10 +707,91 @@ function validComposerLock(array $lock, array $manifest): bool
             if (isset($package['require']) && !is_array($package['require'])) {
                 return false;
             }
+            foreach (['provide', 'replace'] as $relation) {
+                if (isset($package[$relation]) && !is_array($package[$relation])) {
+                    return false;
+                }
+                foreach (($package[$relation] ?? []) as $virtual => $provided) {
+                    if (!is_string($virtual) || trim($virtual) === '' || !is_string($provided) || trim($provided) === '') {
+                        return false;
+                    }
+                    $provided = trim($provided);
+                    if (strcasecmp($provided, 'self.version') === 0) {
+                        $provided = $version;
+                    }
+                    $providers[trim($virtual)][] = $provided;
+                }
+            }
+        }
+        return true;
+    };
+
+    if (!$indexPackages($lock['packages'], $prodVersions, $prodProviders)
+        || !$indexPackages($lock['packages-dev'], $devVersions, $devProviders)) {
+        return false;
+    }
+
+    $allVersions = $prodVersions + $devVersions;
+    $allProviders = $prodProviders;
+    foreach ($devProviders as $name => $items) {
+        foreach ($items as $item) {
+            $allProviders[$name][] = $item;
         }
     }
-    unset($versionMap);
-    $allVersions = $prodVersions + $devVersions;
+
+    $constraintsIntersect = static function (string $left, string $right): bool {
+        $candidates = [];
+        foreach ([$left, $right] as $expression) {
+            preg_match_all('/\d+(?:\.\d+){0,2}/', $expression, $matches);
+            foreach ($matches[0] ?? [] as $raw) {
+                $numeric = composerNumericVersion($raw);
+                if ($numeric === null) {
+                    continue;
+                }
+                $candidates[] = $numeric;
+                $candidates[] = [$numeric[0], $numeric[1], $numeric[2] + 1];
+                $candidates[] = [$numeric[0], $numeric[1] + 1, 0];
+                $candidates[] = [$numeric[0] + 1, 0, 0];
+                if ($numeric[2] > 0) {
+                    $candidates[] = [$numeric[0], $numeric[1], $numeric[2] - 1];
+                }
+            }
+        }
+        $candidates[] = [0, 0, 0];
+        foreach ($candidates as $candidate) {
+            $version = composerVersionString($candidate);
+            if (composerVersionSatisfies($version, $left) && composerVersionSatisfies($version, $right)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    $satisfies = static function (string $name, string $constraint, array $versions, array $providers) use ($constraintsIntersect): bool {
+        $lockedVersion = $versions[$name] ?? null;
+        if (is_string($lockedVersion) && composerVersionSatisfies($lockedVersion, $constraint)) {
+            return true;
+        }
+        foreach (($providers[$name] ?? []) as $provided) {
+            if (!is_string($provided) || trim($provided) === '') {
+                continue;
+            }
+            $provided = trim($provided);
+            if ($provided === '*') {
+                return true;
+            }
+            if (preg_match('/^v?\d+(?:\.\d+){0,2}$/', $provided) === 1) {
+                if (composerVersionSatisfies($provided, $constraint)) {
+                    return true;
+                }
+                continue;
+            }
+            if ($constraintsIntersect($provided, $constraint)) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     foreach (['require', 'require-dev'] as $section) {
         $requirements = $manifest[$section] ?? [];
@@ -633,10 +805,9 @@ function validComposerLock(array $lock, array $manifest): bool
             if (composerPlatformRequirement($name)) {
                 continue;
             }
-            $lockedVersion = $section === 'require'
-                ? ($prodVersions[$name] ?? null)
-                : ($devVersions[$name] ?? $prodVersions[$name] ?? null);
-            if (!is_string($lockedVersion) || !composerVersionSatisfies($lockedVersion, $constraint)) {
+            $versions = $section === 'require' ? $prodVersions : $allVersions;
+            $providers = $section === 'require' ? $prodProviders : $allProviders;
+            if (!$satisfies($name, $constraint, $versions, $providers)) {
                 return false;
             }
         }
@@ -652,8 +823,7 @@ function validComposerLock(array $lock, array $manifest): bool
                 if (composerPlatformRequirement($name)) {
                     continue;
                 }
-                $lockedVersion = $allVersions[$name] ?? null;
-                if (!is_string($lockedVersion) || !composerVersionSatisfies($lockedVersion, $constraint)) {
+                if (!$satisfies($name, $constraint, $allVersions, $allProviders)) {
                     return false;
                 }
             }
@@ -896,7 +1066,7 @@ $secretRules = [
 $allowlist = loadSecretAllowlist((string)envValue('SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE', $root . '/security/supply-chain/secret-scan.allowlist'), $secretRules);
 $findings = [];
 $checks = [
-    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_text_tree', 'binary_skipped' => 0, 'symlink_blobs_scanned' => 0, 'incomplete' => false],
+    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_head_text_tree', 'binary_skipped' => 0, 'symlink_blobs_scanned' => 0, 'incomplete' => false],
     'lockfiles' => ['status' => 'pass'],
     'sca' => [],
     'licenses' => [],
@@ -905,55 +1075,38 @@ $trackedPaths = trackedFiles($root);
 $trackedFileSet = array_fill_keys($trackedPaths, true);
 
 foreach ($trackedPaths as $relativePath) {
-    $fullPath = $root . DIRECTORY_SEPARATOR . $relativePath;
-    if (is_link($fullPath)) {
-        $blob = headFileContent($root, $relativePath);
-        if ($blob === null) {
-            $checks['secret_scan']['status'] = 'not_evaluated';
-            $checks['secret_scan']['incomplete'] = true;
-            $checks['secret_scan']['unreadable'][] = $relativePath;
-            continue;
-        }
-        $checks['secret_scan']['symlink_blobs_scanned']++;
-        $lines = preg_split('/\R/', $blob);
-        if (!is_array($lines)) {
-            $lines = [$blob];
-        }
-        foreach ($lines as $index => $line) {
-            scanSecretLine($checks, $findings, $relativePath, $index + 1, $line, $secretRules, $allowlist, $level, $mode, $policy, $licensePolicy, $riskConfig);
-        }
-        continue;
-    }
-    if (!is_file($fullPath)) {
-        continue;
-    }
-    $handle = fopen($fullPath, 'rb');
-    if ($handle === false) {
+    $modeInHead = headFileMode($root, $relativePath);
+    if ($modeInHead === null) {
         $checks['secret_scan']['status'] = 'not_evaluated';
         $checks['secret_scan']['incomplete'] = true;
         $checks['secret_scan']['unreadable'][] = $relativePath;
         continue;
     }
-    $prefix = fread($handle, 8192);
-    if ($prefix === false) {
-        fclose($handle);
-        $checks['secret_scan']['status'] = 'not_evaluated';
-        $checks['secret_scan']['incomplete'] = true;
-        $checks['secret_scan']['unreadable'][] = $relativePath;
-        continue;
-    }
-    if (str_contains($prefix, "\0")) {
-        fclose($handle);
+    if (!in_array($modeInHead, ['100644', '100755', '120000'], true)) {
         $checks['secret_scan']['binary_skipped']++;
         continue;
     }
-    rewind($handle);
-    $lineNumber = 0;
-    while (($line = fgets($handle)) !== false) {
-        $lineNumber++;
-        scanSecretLine($checks, $findings, $relativePath, $lineNumber, $line, $secretRules, $allowlist, $level, $mode, $policy, $licensePolicy, $riskConfig);
+    $blob = headFileContent($root, $relativePath);
+    if ($blob === null) {
+        $checks['secret_scan']['status'] = 'not_evaluated';
+        $checks['secret_scan']['incomplete'] = true;
+        $checks['secret_scan']['unreadable'][] = $relativePath;
+        continue;
     }
-    fclose($handle);
+    if ($modeInHead === '120000') {
+        $checks['secret_scan']['symlink_blobs_scanned']++;
+    }
+    if (str_contains(substr($blob, 0, 8192), "\0")) {
+        $checks['secret_scan']['binary_skipped']++;
+        continue;
+    }
+    $lines = preg_split('/\R/', $blob);
+    if (!is_array($lines)) {
+        $lines = [$blob];
+    }
+    foreach ($lines as $index => $line) {
+        scanSecretLine($checks, $findings, $relativePath, $index + 1, $line, $secretRules, $allowlist, $level, $mode, $policy, $licensePolicy, $riskConfig);
+    }
 }
 
 $stackRootsRaw = trim((string)envValue('SUPPLY_CHAIN_STACK_ROOTS', '.'));
@@ -1021,17 +1174,25 @@ foreach ($stackRoots as $stackRelative) {
                 $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
                 $audit = null;
                 $scaStatus = 'not_evaluated';
+                $lockContent = headFileContent($root, $lockRelative);
                 $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
                 if ($auditFile !== null && $auditFile !== '') {
                     if ($composerStackCount === 1) {
                         $candidate = loadJsonFile($auditFile);
-                        if (validComposerAudit($candidate)) {
+                        if (validComposerAudit($candidate)
+                            && is_string($lockContent)
+                            && auditBoundToLock($candidate, $lockContent)) {
                             $audit = $candidate;
                             $scaStatus = 'evidence_file';
                         }
                     }
                 } elseif (!$disableExternalSca && commandExists('composer')) {
-                    [$auditCode, $auditOut] = runCommand(['composer', 'audit', '--locked', '--format=json', '--no-interaction'], $stackDir);
+                    [$auditCode, $auditOut] = runHeadAudit(
+                        $root,
+                        $stackRelative,
+                        ['composer.json', 'composer.lock'],
+                        ['composer', 'audit', '--locked', '--format=json', '--no-interaction']
+                    );
                     $decoded = json_decode($auditOut, true);
                     if (is_array($decoded) && validComposerAudit($decoded)) {
                         $audit = $decoded;
@@ -1041,7 +1202,7 @@ foreach ($stackRoots as $stackRelative) {
                 if ($audit === null) {
                     $scopeDetail = ($auditFile !== null && $auditFile !== '' && $composerStackCount > 1)
                         ? 'A single pre-generated Composer audit file cannot be attributed across multiple Composer stacks; SCA is NOT EVALUATED.'
-                        : 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.';
+                        : 'SCA is NOT EVALUATED for this locked stack; evidence was absent, invalid, not bound to the reviewed lock, or could not be executed against the reviewed HEAD. This is not a vulnerability finding and not a PASS.';
                     addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', $scopeDetail, $level, $mode, $policy, $licensePolicy, $riskConfig);
                 } else {
                     foreach (composerVulnerabilities($audit) as $vulnerability) {
@@ -1101,17 +1262,25 @@ foreach ($stackRoots as $stackRelative) {
         $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
         $audit = null;
         $scaStatus = 'not_evaluated';
+        $lockContent = headFileContent($root, $nodeLockRelative);
         $auditFile = envValue('SUPPLY_CHAIN_NPM_AUDIT_FILE');
         if ($auditFile !== null && $auditFile !== '') {
             if ($nodeStackCount === 1) {
                 $candidate = loadJsonFile($auditFile);
-                if (validNpmAudit($candidate)) {
+                if (validNpmAudit($candidate)
+                    && is_string($lockContent)
+                    && auditBoundToLock($candidate, $lockContent)) {
                     $audit = $candidate;
                     $scaStatus = 'evidence_file';
                 }
             }
         } elseif (!$disableExternalSca && commandExists('npm')) {
-            [$auditCode, $auditOut] = runCommand(['npm', 'audit', '--package-lock-only', '--json'], $stackDir);
+            [$auditCode, $auditOut] = runHeadAudit(
+                $root,
+                $stackRelative,
+                ['package.json', $nodeLockName],
+                ['npm', 'audit', '--package-lock-only', '--json']
+            );
             $decoded = json_decode($auditOut, true);
             if (is_array($decoded) && validNpmAudit($decoded)) {
                 $audit = $decoded;
@@ -1121,7 +1290,7 @@ foreach ($stackRoots as $stackRelative) {
         if ($audit === null) {
             $scopeDetail = ($auditFile !== null && $auditFile !== '' && $nodeStackCount > 1)
                 ? 'A single pre-generated npm audit file cannot be attributed across multiple Node stacks; SCA is NOT EVALUATED.'
-                : 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.';
+                : 'SCA is NOT EVALUATED for this locked stack; evidence was absent, invalid, not bound to the reviewed lock, or could not be executed against the reviewed HEAD. This is not a vulnerability finding and not a PASS.';
             addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', $scopeDetail, $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
             foreach (npmVulnerabilities($audit) as $vulnerability) {

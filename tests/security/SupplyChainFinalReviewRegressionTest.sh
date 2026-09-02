@@ -30,6 +30,46 @@ commit_all() {
 run_check() {
   local dir="$1"
   shift
+  local stack_roots='.'
+  local npm_audit=''
+  local composer_audit=''
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      SUPPLY_CHAIN_STACK_ROOTS=*) stack_roots="${arg#*=}" ;;
+      SUPPLY_CHAIN_NPM_AUDIT_FILE=*) npm_audit="${arg#*=}" ;;
+      SUPPLY_CHAIN_COMPOSER_AUDIT_FILE=*) composer_audit="${arg#*=}" ;;
+    esac
+  done
+
+  if [[ "$stack_roots" != *,* ]]; then
+    local stack_prefix=''
+    if [[ -n "$stack_roots" && "$stack_roots" != '.' ]]; then
+      stack_prefix="${stack_roots#./}"
+      stack_prefix="${stack_prefix%/}/"
+    fi
+    if [[ -n "$npm_audit" && -f "$npm_audit" ]]; then
+      local node_lock=''
+      local candidate
+      for candidate in package-lock.json npm-shrinkwrap.json; do
+        if git -C "$dir" cat-file -e "HEAD:${stack_prefix}${candidate}" 2>/dev/null; then
+          node_lock="${stack_prefix}${candidate}"
+          break
+        fi
+      done
+      if [[ -n "$node_lock" ]]; then
+        local node_hash
+        node_hash="$(git -C "$dir" show "HEAD:$node_lock" | sha256sum | awk '{print $1}')"
+        php -r '$p=$argv[1];$j=json_decode(file_get_contents($p),true);if(is_array($j)){$j["hache_lock_sha256"]=$argv[2];file_put_contents($p,json_encode($j,JSON_UNESCAPED_SLASHES).PHP_EOL);}' "$npm_audit" "$node_hash"
+      fi
+    fi
+    if [[ -n "$composer_audit" && -f "$composer_audit" ]] && git -C "$dir" cat-file -e "HEAD:${stack_prefix}composer.lock" 2>/dev/null; then
+      local composer_hash
+      composer_hash="$(git -C "$dir" show "HEAD:${stack_prefix}composer.lock" | sha256sum | awk '{print $1}')"
+      php -r '$p=$argv[1];$j=json_decode(file_get_contents($p),true);if(is_array($j)){$j["hache_lock_sha256"]=$argv[2];file_put_contents($p,json_encode($j,JSON_UNESCAPED_SLASHES).PHP_EOL);}' "$composer_audit" "$composer_hash"
+    fi
+  fi
+
   env \
     SUPPLY_CHAIN_ROOT="$dir" \
     SUPPLY_CHAIN_REPORT_FILE="$dir/report.json" \

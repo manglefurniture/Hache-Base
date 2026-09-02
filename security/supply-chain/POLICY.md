@@ -162,3 +162,11 @@ El reloj parte de la primera detección real del proyecto. CI incluye el SLA apl
 5. `block` en B/C cuando el equipo pueda sostener triage/SLA y mitigaciones explícitas.
 
 No promover un release ocultando `sca_unavailable` o `license_not_evaluated`; ausencia de evidencia sigue siendo ausencia de evidencia aunque no sea un blocker automático del scanner.
+
+## Evidencia atribuible al HEAD revisado
+
+- El secret scan evalúa el contenido y tipo versionados en el árbol de `HEAD`; no usa archivos regulares ni destinos de symlink del working tree como evidencia del commit reportado.
+- Un audit npm/Composer pre-generado solo cuenta como evidencia si incluye `hache_lock_sha256` y ese SHA-256 coincide con el blob del lockfile revisado. Un reporte sin vínculo o con hash distinto queda `NOT EVALUATED`.
+- Cuando el checker ejecuta `npm audit` o `composer audit`, materializa temporalmente desde `HEAD` únicamente el manifest y lockfile revisados, ejecuta allí la herramienta y elimina el temporal al terminar.
+- `composer.lock` reconoce dependencias virtuales satisfechas mediante `provide`/`replace`; la validación de rangos conserva la semántica abreviada soportada por Composer, incluido `1.0 - 2.0`.
+

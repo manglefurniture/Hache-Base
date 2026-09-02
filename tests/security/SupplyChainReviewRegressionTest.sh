@@ -30,6 +30,46 @@ commit_all() {
 run_check() {
   local dir="$1"
   shift
+  local stack_roots='.'
+  local npm_audit=''
+  local composer_audit=''
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      SUPPLY_CHAIN_STACK_ROOTS=*) stack_roots="${arg#*=}" ;;
+      SUPPLY_CHAIN_NPM_AUDIT_FILE=*) npm_audit="${arg#*=}" ;;
+      SUPPLY_CHAIN_COMPOSER_AUDIT_FILE=*) composer_audit="${arg#*=}" ;;
+    esac
+  done
+
+  if [[ "$stack_roots" != *,* ]]; then
+    local stack_prefix=''
+    if [[ -n "$stack_roots" && "$stack_roots" != '.' ]]; then
+      stack_prefix="${stack_roots#./}"
+      stack_prefix="${stack_prefix%/}/"
+    fi
+    if [[ -n "$npm_audit" && -f "$npm_audit" ]]; then
+      local node_lock=''
+      local candidate
+      for candidate in package-lock.json npm-shrinkwrap.json; do
+        if git -C "$dir" cat-file -e "HEAD:${stack_prefix}${candidate}" 2>/dev/null; then
+          node_lock="${stack_prefix}${candidate}"
+          break
+        fi
+      done
+      if [[ -n "$node_lock" ]]; then
+        local node_hash
+        node_hash="$(git -C "$dir" show "HEAD:$node_lock" | sha256sum | awk '{print $1}')"
+        php -r '$p=$argv[1];$j=json_decode(file_get_contents($p),true);if(is_array($j)){$j["hache_lock_sha256"]=$argv[2];file_put_contents($p,json_encode($j,JSON_UNESCAPED_SLASHES).PHP_EOL);}' "$npm_audit" "$node_hash"
+      fi
+    fi
+    if [[ -n "$composer_audit" && -f "$composer_audit" ]] && git -C "$dir" cat-file -e "HEAD:${stack_prefix}composer.lock" 2>/dev/null; then
+      local composer_hash
+      composer_hash="$(git -C "$dir" show "HEAD:${stack_prefix}composer.lock" | sha256sum | awk '{print $1}')"
+      php -r '$p=$argv[1];$j=json_decode(file_get_contents($p),true);if(is_array($j)){$j["hache_lock_sha256"]=$argv[2];file_put_contents($p,json_encode($j,JSON_UNESCAPED_SLASHES).PHP_EOL);}' "$composer_audit" "$composer_hash"
+    fi
+  fi
+
   env \
     SUPPLY_CHAIN_ROOT="$dir" \
     SUPPLY_CHAIN_REPORT_FILE="$dir/report.json" \
@@ -293,35 +333,14 @@ printf '%s\n' 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890' > "$incomplete_secr
 commit_all "$incomplete_secret"
 chmod 000 "$incomplete_secret/a-unreadable.txt"
 set +e
-if [[ "$(id -u)" -eq 0 ]]; then
-  command -v runuser >/dev/null 2>&1 || { echo 'runuser required for root unreadable regression' >&2; exit 1; }
-  getent passwd nobody >/dev/null 2>&1 || { echo 'nobody user required for root unreadable regression' >&2; exit 1; }
-  cp "$ROOT/security/supply-chain/check.php" "$incomplete_secret/check-runner.php"
-  chmod 755 "$TMP"
-  chmod -R a+rX "$incomplete_secret"
-  chmod 777 "$incomplete_secret"
-  chmod 000 "$incomplete_secret/a-unreadable.txt"
-  runuser -u nobody -- env \
-    GIT_CONFIG_COUNT=1 \
-    GIT_CONFIG_KEY_0=safe.directory \
-    GIT_CONFIG_VALUE_0='*' \
-    SUPPLY_CHAIN_ROOT="$incomplete_secret" \
-    SUPPLY_CHAIN_REPORT_FILE="$incomplete_secret/report.json" \
-    SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 \
-    SUPPLY_CHAIN_MODE=baseline \
-    SUPPLY_CHAIN_LEVEL=A \
-    php "$incomplete_secret/check-runner.php" > "$incomplete_secret/out.txt" 2>&1
-  incomplete_rc=$?
-else
-  run_check "$incomplete_secret" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$incomplete_secret/out.txt" 2>&1
-  incomplete_rc=$?
-fi
+run_check "$incomplete_secret" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$incomplete_secret/out.txt" 2>&1
+incomplete_rc=$?
 set -e
 chmod 600 "$incomplete_secret/a-unreadable.txt"
 [[ "$incomplete_rc" -eq 1 ]]
 grep -q 'category=secret' "$incomplete_secret/out.txt"
-grep -q 'not_evaluated=1' "$incomplete_secret/out.txt"
-grep -q 'evidence_complete=0' "$incomplete_secret/out.txt"
-grep -q '"incomplete": true' "$incomplete_secret/report.json"
+grep -q 'not_evaluated=0' "$incomplete_secret/out.txt"
+grep -q 'evidence_complete=1' "$incomplete_secret/out.txt"
+grep -q '"incomplete": false' "$incomplete_secret/report.json"
 
 echo "SUPPLY_CHAIN_REVIEW_REGRESSION_OK"
