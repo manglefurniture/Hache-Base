@@ -89,9 +89,21 @@ P0-10 endurece el runner de deploy y la evidencia de fallo parcial sin automatiz
 - `templates/DEPLOY-RECOVERY.md` documenta matriz código/DB/assets/config, compatibilidad, punto de no retorno, smoke, ventana, criterios y drill de staging;
 - `tests/deployment/DeployRunnerTest.sh` prueba success, fallo parcial, observación, rollback y manual recovery sobre repos Git temporales.
 
-P0-10 no ejecuta restore de DB, canary, blue-green, failover ni recuperación automática. P0-11 sigue siendo el bloque separado para RPO/RTO, restore drill y backup freshness.
+P0-10 no ejecuta restore de DB, canary, blue-green, failover ni recuperación automática. P0-11 permanece separado porque demostrar restaurabilidad requiere objetivos y evidencia propios.
 
-No se implementan todavía P0-11/P0-12 ni P1+.
+## Séptima fase incremental implementada — P0-11
+
+P0-11 añade primitives y evidencia reusable para **DB-006 / DB-007** sin convertir Hache Base en un sistema de backup administrado:
+
+- `deployment/backup.sh` usa directorios únicos y crea `backup-manifest.env` + `BACKUP_COMPLETE` únicamente después de un dump/checksum exitoso;
+- `deployment/backup-freshness-check.sh` ignora backups incompletos, compara edad contra `RPO_SECONDS` y falla ante missing/stale/timestamp futuro; admite un `BACKUP_ALERT_COMMAND` local opcional;
+- `deployment/restore-drill.sh` exige target DB aislado, verifica checksums, ejecuta `RESTORE_VERIFY_COMMAND`, mide edad/RPO y duración/RTO, persiste `RESTORE_DRILL_REPORT_FILE` y limpia por default la DB del drill;
+- `templates/BACKUP-RESTORE.md` obliga a definir RPO/RTO, retención, alerta, owner y evidencia del último restore drill;
+- `tests/deployment/BackupRecoveryTest.sh` cubre freshness fresh/stale/missing, hook de alerta, rechazo de restore sobre la DB fuente, restore aislado y fallo cuando el backup viola RPO.
+
+P0-11 **no** agenda backups por sí solo, no configura storage/cifrado/provider, no restaura producción automáticamente, no hace failover y no permite marcar DB-006/DB-007 sin evidencia real del proyecto. El job de backup y el freshness check deben integrarse con el monitor/alerta del entorno real.
+
+No se implementan todavía P0-12 ni P1+.
 
 ## Uso en un proyecto derivado
 
@@ -104,7 +116,8 @@ No se implementan todavía P0-11/P0-12 ni P1+.
 7. Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md`.
 8. Si hay sesiones, completar `templates/SESSION-SECURITY.md` y probar cookies/login/expiry/logout/proxy reales.
 9. Antes de habilitar deploy de producción, completar `templates/DEPLOY-RECOVERY.md`, definir smoke/ventana/criterios y ejecutar un drill de staging.
-10. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+10. Cuando DB-006/DB-007 apliquen, completar `templates/BACKUP-RESTORE.md`, conectar backup/freshness a monitoreo y ejecutar un restore drill aislado con RPO/RTO medidos.
+11. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
@@ -144,6 +157,10 @@ P0-08 comparte `RequestSecurity` entre headers y sesión para evitar dos interpr
 ### Deploy/recovery
 
 P0-10 convierte el runner en una secuencia con estados visibles, record persistente, failure trap, smoke/observación configurables y recuperación explícitamente registrada. Un `DEPLOY_OK` no sustituye la evidencia real exigida por DPL-001–DPL-009.
+
+### Backup freshness y restore drill
+
+P0-11 separa tres evidencias: backup **completo**, freshness dentro del RPO y restore aislado verificado dentro del RTO. Los scripts entregan el contrato y la evidencia técnica mínima; el scheduler, storage, cifrado, alertas reales, credenciales y drill operativo pertenecen al proyecto/entorno.
 
 ## Regla de promoción
 
