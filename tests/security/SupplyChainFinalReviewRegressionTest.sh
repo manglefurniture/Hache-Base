@@ -58,6 +58,31 @@ commit_all "$composer_valid"
 run_check "$composer_valid" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_valid/out.txt"
 ! grep -q 'rule=composer_lock_invalid_format' "$composer_valid/out.txt"
 
+composer_caret_zero="$(new_repo composer-caret-zero)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"^0"}}' > "$composer_caret_zero/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"0.5.0","license":["MIT"]}],"packages-dev":[]}' > "$composer_caret_zero/composer.lock"
+commit_all "$composer_caret_zero"
+run_check "$composer_caret_zero" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_caret_zero/out.txt"
+! grep -q 'rule=composer_lock_invalid_format' "$composer_caret_zero/out.txt"
+
+composer_transitive="$(new_repo composer-truncated-transitive)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/a":"1.0.0"}}' > "$composer_transitive/composer.json"
+cat > "$composer_transitive/composer.lock" <<'JSON'
+{
+  "packages":[
+    {"name":"vendor/a","version":"1.0.0","license":["MIT"],"require":{"vendor/b":"1.0.0"}}
+  ],
+  "packages-dev":[]
+}
+JSON
+commit_all "$composer_transitive"
+set +e
+run_check "$composer_transitive" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_transitive/out.txt" 2>&1
+composer_transitive_rc=$?
+set -e
+[[ "$composer_transitive_rc" -eq 1 ]]
+grep -q 'rule=composer_lock_invalid_format' "$composer_transitive/out.txt"
+
 audit_truncated="$(new_repo npm-truncated-direct)"
 printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","dependencies":{"left-pad":"^1.3.0"}}' > "$audit_truncated/package.json"
 cat > "$audit_truncated/package-lock.json" <<'JSON'
@@ -97,6 +122,28 @@ set -e
 [[ "$transitive_rc" -eq 1 ]]
 grep -q 'rule=node_lock_invalid_format' "$audit_transitive/out.txt"
 
+npm_wrong_scope="$(new_repo npm-wrong-resolution-scope)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","dependencies":{"a":"1.0.0","b":"1.0.0"}}' > "$npm_wrong_scope/package.json"
+cat > "$npm_wrong_scope/package-lock.json" <<'JSON'
+{
+  "name":"fixture",
+  "lockfileVersion":3,
+  "packages":{
+    "":{"name":"fixture","version":"1.0.0","dependencies":{"a":"1.0.0","b":"1.0.0"}},
+    "node_modules/a":{"name":"a","version":"1.0.0","dependencies":{"x":"1.0.0"}},
+    "node_modules/b":{"name":"b","version":"1.0.0"},
+    "node_modules/b/node_modules/x":{"name":"x","version":"1.0.0"}
+  }
+}
+JSON
+commit_all "$npm_wrong_scope"
+set +e
+run_check "$npm_wrong_scope" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$npm_wrong_scope/out.txt" 2>&1
+npm_wrong_scope_rc=$?
+set -e
+[[ "$npm_wrong_scope_rc" -eq 1 ]]
+grep -q 'rule=node_lock_invalid_format' "$npm_wrong_scope/out.txt"
+
 fine_pat="$(new_repo fine-grained-github-pat)"
 fine_pat_value='github_pat_11AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 printf '%s\n' "$fine_pat_value" > "$fine_pat/fixture.txt"
@@ -124,6 +171,20 @@ grep -q 'rule=node_lock_untracked' "$untracked_node/out.txt"
 grep -q 'rule=license_not_evaluated' "$untracked_node/out.txt"
 grep -q 'rule=sca_unavailable' "$untracked_node/out.txt"
 
+staged_node="$(new_repo staged-node-lock)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0"}' > "$staged_node/package.json"
+git -C "$staged_node" add package.json
+git -C "$staged_node" commit -qm manifest
+printf '%s\n' '{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"}}}' > "$staged_node/package-lock.json"
+git -C "$staged_node" add package-lock.json
+set +e
+run_check "$staged_node" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$staged_node/out.txt" 2>&1
+staged_node_rc=$?
+set -e
+[[ "$staged_node_rc" -eq 1 ]]
+grep -q 'rule=node_lock_untracked' "$staged_node/out.txt"
+grep -q 'evidence_complete=0' "$staged_node/out.txt"
+
 untracked_composer="$(new_repo untracked-composer-lock)"
 printf '%s\n' '{"name":"fixture/app","require":{}}' > "$untracked_composer/composer.json"
 git -C "$untracked_composer" add composer.json
@@ -137,5 +198,15 @@ set -e
 grep -q 'rule=composer_lock_untracked' "$untracked_composer/out.txt"
 grep -q 'rule=license_not_evaluated' "$untracked_composer/out.txt"
 grep -q 'rule=sca_unavailable' "$untracked_composer/out.txt"
+
+symlink_repo="$(new_repo symlink-secret-target)"
+external_secret="$TMP/external-secret.txt"
+printf '%s\n' 'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' > "$external_secret"
+ln -s "$external_secret" "$symlink_repo/external-link"
+commit_all "$symlink_repo"
+run_check "$symlink_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$symlink_repo/out.txt"
+! grep -q 'category=secret' "$symlink_repo/out.txt"
+grep -q 'enforced_blockers=0' "$symlink_repo/out.txt"
+[[ "$(php -r '$r=json_decode(file_get_contents($argv[1]),true); echo (int)($r["checks"]["secret_scan"]["symlink_blobs_scanned"]??0);' "$symlink_repo/report.json")" -eq 1 ]]
 
 echo "SUPPLY_CHAIN_FINAL_REVIEW_REGRESSION_OK"
