@@ -11,6 +11,7 @@ DEPLOY_RECORD_ROOT="${DEPLOY_RECORD_ROOT:-$BACKUP_ROOT/deploy-records}"
 OBSERVATION_SECONDS="${OBSERVATION_SECONDS:-0}"
 REQUIRE_SMOKE="${REQUIRE_SMOKE:-0}"
 REQUIRE_OBSERVATION="${REQUIRE_OBSERVATION:-0}"
+SIGNAL_GRACE_SECONDS="${SIGNAL_GRACE_SECONDS:-2}"
 
 current_phase="configuration"
 previous_commit=""
@@ -18,6 +19,8 @@ rollback_branch=""
 rollback_branch_candidate=""
 deploy_record=""
 deploy_id=""
+active_phase_pid=""
+active_phase_pgid=""
 
 sanitize_field() {
   local value="$1"
@@ -114,6 +117,61 @@ report_failure() {
     "$(sanitize_field "${rollback_branch:-unavailable}")" >&2
 }
 
+run_managed_phase() {
+  local exit_code
+
+  # A dedicated session/process group lets the parent interrupt the whole phase,
+  # including grandchildren spawned by migration/test/smoke commands.
+  setsid --wait "$@" &
+  active_phase_pid=$!
+  active_phase_pgid="$active_phase_pid"
+
+  if wait "$active_phase_pid"; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
+
+  active_phase_pid=""
+  active_phase_pgid=""
+  return "$exit_code"
+}
+
+stop_active_phase() {
+  local signal_name="$1"
+  local pid="${active_phase_pid:-}"
+  local pgid="${active_phase_pgid:-}"
+  local attempts
+
+  [[ -n "$pid" ]] || return 0
+
+  if kill -0 "$pid" 2>/dev/null; then
+    if [[ -n "$pgid" ]]; then
+      kill -s "$signal_name" -- "-$pgid" 2>/dev/null || kill -s "$signal_name" "$pid" 2>/dev/null || true
+    else
+      kill -s "$signal_name" "$pid" 2>/dev/null || true
+    fi
+
+    attempts=$((SIGNAL_GRACE_SECONDS * 10))
+    while kill -0 "$pid" 2>/dev/null && (( attempts > 0 )); do
+      sleep 0.1
+      attempts=$((attempts - 1))
+    done
+
+    if kill -0 "$pid" 2>/dev/null; then
+      if [[ -n "$pgid" ]]; then
+        kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+      else
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  wait "$pid" 2>/dev/null || true
+  active_phase_pid=""
+  active_phase_pgid=""
+}
+
 on_error() {
   local exit_code=$?
   trap - ERR INT TERM
@@ -127,6 +185,7 @@ on_signal() {
   local exit_code="$2"
   trap - ERR INT TERM
   set +e
+  stop_active_phase "$signal_name"
   report_failure "$exit_code" "$signal_name"
   exit "$exit_code"
 }
@@ -145,6 +204,11 @@ done
 
 [[ "$OBSERVATION_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
   echo "DEPLOY_CONFIG_FAILED OBSERVATION_SECONDS must be a non-negative number" >&2
+  false
+}
+
+[[ "$SIGNAL_GRACE_SECONDS" =~ ^[0-9]+$ ]] || {
+  echo "DEPLOY_CONFIG_FAILED SIGNAL_GRACE_SECONDS must be a non-negative integer" >&2
   false
 }
 
@@ -167,6 +231,10 @@ printf '%s\n' "$started_line"
 
 current_phase="preflight"
 bash "$APP_ROOT/deployment/preflight.sh"
+command -v setsid >/dev/null 2>&1 || {
+  echo "PREFLIGHT_FAILED missing command: setsid" >&2
+  false
+}
 
 current_phase="deploy_record"
 # Re-resolve after preflight so existing/symlinked path components are checked physically.
@@ -191,18 +259,18 @@ rollback_branch="$rollback_branch_candidate"
 printf 'ROLLBACK_REF=%s\n' "$rollback_branch"
 
 current_phase="backup"
-bash "$APP_ROOT/deployment/backup.sh"
+run_managed_phase bash "$APP_ROOT/deployment/backup.sh"
 
 current_phase="code_change"
-git fetch origin --prune
+run_managed_phase git fetch origin --prune
 git rev-parse --verify "${TARGET_COMMIT}^{commit}" >/dev/null
-git checkout --detach "$TARGET_COMMIT"
+run_managed_phase git checkout --detach "$TARGET_COMMIT"
 emit_state "code_changed" "passed" "previous_commit=${previous_commit}"
 
 current_phase="migrations"
 if [[ -n "${MIGRATION_COMMAND:-}" ]]; then
   echo "Running configured migrations"
-  bash -lc "$MIGRATION_COMMAND"
+  run_managed_phase bash -lc "$MIGRATION_COMMAND"
   emit_state "migrations_applied" "passed" "migration_command_configured"
 else
   echo "No MIGRATION_COMMAND configured; migrations are not applicable in this runner execution"
@@ -211,7 +279,7 @@ fi
 
 current_phase="tests"
 TEST_COMMAND="${TEST_COMMAND:-bash tests/run.sh}"
-bash -lc "$TEST_COMMAND"
+run_managed_phase bash -lc "$TEST_COMMAND"
 emit_state "tests_passed" "passed" "test_command_completed"
 
 run_smoke() {
@@ -219,7 +287,7 @@ run_smoke() {
   current_phase="smoke"
 
   if [[ -n "${SMOKE_COMMAND:-}" ]]; then
-    if bash -lc "$SMOKE_COMMAND"; then
+    if run_managed_phase bash -lc "$SMOKE_COMMAND"; then
       emit_gate "smoke" "passed" "source=SMOKE_COMMAND"
       return 0
     else
@@ -230,7 +298,7 @@ run_smoke() {
   fi
 
   if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
-    if bash "$APP_ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"; then
+    if run_managed_phase bash "$APP_ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"; then
       emit_gate "smoke" "passed" "source=SMOKE_BASE_URL"
       return 0
     else
@@ -251,7 +319,7 @@ run_smoke() {
 run_release_gates() {
   local exit_code
   current_phase="readiness"
-  if bash "$APP_ROOT/deployment/health-check.sh"; then
+  if run_managed_phase bash "$APP_ROOT/deployment/health-check.sh"; then
     emit_gate "readiness" "passed" "health_check_completed"
   else
     exit_code=$?
@@ -267,7 +335,7 @@ run_release_gates
 if [[ ! "$OBSERVATION_SECONDS" =~ ^0+([.]0+)?$ ]]; then
   current_phase="observation"
   emit_gate "observation" "running" "seconds=${OBSERVATION_SECONDS}"
-  sleep "$OBSERVATION_SECONDS"
+  run_managed_phase sleep "$OBSERVATION_SECONDS"
   run_release_gates
   current_phase="observation"
   emit_gate "observation" "passed" "seconds=${OBSERVATION_SECONDS}"
