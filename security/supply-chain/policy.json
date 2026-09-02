@@ -1,0 +1,15 @@
+{
+  "schema": "hache-supply-chain-policy-v1",
+  "baseline_blocks": ["secret", "lockfile"],
+  "sla_hours": {
+    "critical": 24,
+    "high": 72,
+    "medium": 336,
+    "low": 720
+  },
+  "notes": {
+    "secret_scan_scope": "tracked_current_tree",
+    "sec_014": "critical/high vulnerabilities block levels B/C in block mode unless a valid accepted-risk mitigation exists",
+    "rollout": "report -> baseline -> block"
+  }
+}
