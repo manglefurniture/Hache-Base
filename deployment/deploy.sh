@@ -137,6 +137,11 @@ run_managed_phase() {
   return "$exit_code"
 }
 
+process_group_alive() {
+  local pgid="$1"
+  [[ -n "$pgid" ]] && kill -0 -- "-$pgid" 2>/dev/null
+}
+
 stop_active_phase() {
   local signal_name="$1"
   local pid="${active_phase_pid:-}"
@@ -145,25 +150,30 @@ stop_active_phase() {
 
   [[ -n "$pid" ]] || return 0
 
-  if kill -0 "$pid" 2>/dev/null; then
-    if [[ -n "$pgid" ]]; then
-      kill -s "$signal_name" -- "-$pgid" 2>/dev/null || kill -s "$signal_name" "$pid" 2>/dev/null || true
-    else
-      kill -s "$signal_name" "$pid" 2>/dev/null || true
-    fi
+  if [[ -n "$pgid" ]] && process_group_alive "$pgid"; then
+    kill -s "$signal_name" -- "-$pgid" 2>/dev/null || true
+  elif kill -0 "$pid" 2>/dev/null; then
+    kill -s "$signal_name" "$pid" 2>/dev/null || true
+  fi
 
-    attempts=$((SIGNAL_GRACE_SECONDS * 10))
+  attempts=$((SIGNAL_GRACE_SECONDS * 10))
+  if [[ -n "$pgid" ]]; then
+    while process_group_alive "$pgid" && (( attempts > 0 )); do
+      sleep 0.1
+      attempts=$((attempts - 1))
+    done
+
+    if process_group_alive "$pgid"; then
+      kill -KILL -- "-$pgid" 2>/dev/null || true
+    fi
+  else
     while kill -0 "$pid" 2>/dev/null && (( attempts > 0 )); do
       sleep 0.1
       attempts=$((attempts - 1))
     done
 
     if kill -0 "$pid" 2>/dev/null; then
-      if [[ -n "$pgid" ]]; then
-        kill -KILL -- "-$pgid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-      else
-        kill -KILL "$pid" 2>/dev/null || true
-      fi
+      kill -KILL "$pid" 2>/dev/null || true
     fi
   fi
 
