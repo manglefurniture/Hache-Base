@@ -154,6 +154,9 @@ function loadJsonFromHead(string $root, string $relativePath): array
 function normalizeSeverity(?string $severity): string
 {
     $value = strtolower(trim((string)$severity));
+    if ($value === 'moderate') {
+        return 'medium';
+    }
     return in_array($value, ['critical', 'high', 'medium', 'low'], true) ? $value : 'unknown';
 }
 
@@ -719,8 +722,24 @@ function npmConstraintTokenSatisfied(array $locked, string $token): bool
     }
 
     if (preg_match('/^(<=|>=|<|>|=)\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/', $token, $matches) === 1) {
+        $operator = $matches[1];
+        $specified = isset($matches[3]) && $matches[3] !== '' ? (isset($matches[4]) && $matches[4] !== '' ? 3 : 2) : 1;
         $target = [(int)$matches[2], (int)($matches[3] ?? 0), (int)($matches[4] ?? 0)];
-        return version_compare($lockedString, npmVersionString($target), $matches[1]);
+        $targetString = npmVersionString($target);
+        if ($specified === 3 || in_array($operator, ['>=', '<'], true)) {
+            return version_compare($lockedString, $targetString, $operator);
+        }
+        $nextPartial = $specified === 1
+            ? [$target[0] + 1, 0, 0]
+            : [$target[0], $target[1] + 1, 0];
+        $nextPartialString = npmVersionString($nextPartial);
+        return match ($operator) {
+            '>' => version_compare($lockedString, $nextPartialString, '>='),
+            '<=' => version_compare($lockedString, $nextPartialString, '<'),
+            '=' => version_compare($lockedString, $targetString, '>=')
+                && version_compare($lockedString, $nextPartialString, '<'),
+            default => false,
+        };
     }
 
     return false;
@@ -1057,14 +1076,36 @@ function npmVulnerabilities(array $audit): array
             continue;
         }
         $packageSeverity = normalizeSeverity((string)($data['severity'] ?? 'unknown'));
-        $objectAdvisories = 0;
+        $emitted = 0;
+        $maxEmittedRank = 0;
         $seen = [];
         foreach ((array)($data['via'] ?? []) as $entry) {
+            if (is_string($entry)) {
+                $indirect = trim($entry);
+                if ($indirect === '') {
+                    continue;
+                }
+                $advisory = 'npm:' . (string)$package . ':via:' . $indirect;
+                $key = (string)$package . '|' . $advisory;
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $result[] = [
+                    'package' => (string)$package,
+                    'severity' => $packageSeverity,
+                    'advisory' => $advisory,
+                    'title' => 'npm audit indirect dependency via ' . $indirect,
+                    'url' => '',
+                ];
+                $emitted++;
+                $maxEmittedRank = max($maxEmittedRank, severityRank($packageSeverity));
+                continue;
+            }
             if (!is_array($entry)) {
                 continue;
             }
-            $objectAdvisories++;
-            $advisory = isset($entry['source']) ? 'npm:' . (string)$entry['source'] : 'npm:' . $package . ':via:' . $objectAdvisories;
+            $advisory = isset($entry['source']) ? 'npm:' . (string)$entry['source'] : 'npm:' . $package . ':via:' . ($emitted + 1);
             $key = (string)$package . '|' . $advisory;
             if (isset($seen[$key])) {
                 continue;
@@ -1081,13 +1122,23 @@ function npmVulnerabilities(array $audit): array
                 'title' => (string)($entry['title'] ?? 'npm audit finding'),
                 'url' => (string)($entry['url'] ?? ''),
             ];
+            $emitted++;
+            $maxEmittedRank = max($maxEmittedRank, severityRank($severity));
         }
-        if ($objectAdvisories === 0) {
+        if ($emitted === 0) {
             $result[] = [
                 'package' => (string)$package,
                 'severity' => $packageSeverity,
                 'advisory' => 'npm:' . (string)$package,
                 'title' => 'npm audit package finding',
+                'url' => '',
+            ];
+        } elseif (severityRank($packageSeverity) > $maxEmittedRank) {
+            $result[] = [
+                'package' => (string)$package,
+                'severity' => $packageSeverity,
+                'advisory' => 'npm:' . (string)$package . ':aggregate',
+                'title' => 'npm audit aggregate package severity',
                 'url' => '',
             ];
         }

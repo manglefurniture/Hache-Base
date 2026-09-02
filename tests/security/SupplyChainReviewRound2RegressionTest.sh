@@ -119,4 +119,75 @@ cp "$default_allow/security/supply-chain/secret-scan.allowlist" "$TMP/explicit-a
 raw_check "$default_allow" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE="$TMP/explicit-allowlist" > "$default_allow/override.txt"
 grep -q 'enforced_blockers=0' "$default_allow/override.txt"
 
+
+moderate="$(new_repo npm-audit-moderate)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","dependencies":{"pkg":"^1.0.0"}}' > "$moderate/package.json"
+cat > "$moderate/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0","dependencies":{"pkg":"^1.0.0"}},"node_modules/pkg":{"name":"pkg","version":"1.5.0","license":"MIT"}}}
+JSON
+commit_all "$moderate"
+moderate_hash="$(git -C "$moderate" show HEAD:package-lock.json | sha256sum | awk '{print $1}')"
+cat > "$moderate/npm-audit.json" <<JSON
+{"auditReportVersion":2,"vulnerabilities":{"pkg":{"severity":"critical","via":[{"source":3101,"severity":"moderate","title":"moderate advisory","url":"https://example.test/3101"},{"source":3102,"severity":"critical","title":"critical advisory","url":"https://example.test/3102"}]}},"hache_lock_sha256":"$moderate_hash"}
+JSON
+set +e
+raw_check "$moderate" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_NPM_AUDIT_FILE="$moderate/npm-audit.json" > "$moderate/out.txt" 2>&1
+moderate_rc=$?
+set -e
+[[ "$moderate_rc" -eq 1 ]]
+! grep -q 'rule=sca_unavailable' "$moderate/out.txt"
+grep -q '"severity": "medium"' "$moderate/report.json"
+grep -q '"severity": "critical"' "$moderate/report.json"
+grep -q 'npm:3101' "$moderate/report.json"
+grep -q 'npm:3102' "$moderate/report.json"
+
+indirect="$(new_repo npm-audit-indirect-critical)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","dependencies":{"pkg":"^1.0.0"}}' > "$indirect/package.json"
+cat > "$indirect/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0","dependencies":{"pkg":"^1.0.0"}},"node_modules/pkg":{"name":"pkg","version":"1.5.0","license":"MIT"}}}
+JSON
+commit_all "$indirect"
+indirect_hash="$(git -C "$indirect" show HEAD:package-lock.json | sha256sum | awk '{print $1}')"
+cat > "$indirect/npm-audit.json" <<JSON
+{"auditReportVersion":2,"vulnerabilities":{"pkg":{"severity":"critical","via":[{"source":3201,"severity":"low","title":"low direct advisory","url":"https://example.test/3201"},"meta-pkg"]}},"hache_lock_sha256":"$indirect_hash"}
+JSON
+set +e
+raw_check "$indirect" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_NPM_AUDIT_FILE="$indirect/npm-audit.json" > "$indirect/out.txt" 2>&1
+indirect_rc=$?
+set -e
+[[ "$indirect_rc" -eq 1 ]]
+! grep -q 'rule=sca_unavailable' "$indirect/out.txt"
+grep -q 'npm:pkg:via:meta-pkg' "$indirect/report.json"
+grep -q '"severity": "critical"' "$indirect/report.json"
+
+constraint_case() {
+  local name="$1"
+  local constraint="$2"
+  local version="$3"
+  local expected="$4"
+  local dir
+  dir="$(new_repo "$name")"
+  printf '%s\n' "{\"name\":\"fixture\",\"private\":true,\"packageManager\":\"npm@11.0.0\",\"dependencies\":{\"pkg\":\"$constraint\"}}" > "$dir/package.json"
+  printf '%s\n' "{\"name\":\"fixture\",\"lockfileVersion\":3,\"packages\":{\"\":{\"name\":\"fixture\",\"version\":\"1.0.0\",\"dependencies\":{\"pkg\":\"$constraint\"}},\"node_modules/pkg\":{\"name\":\"pkg\",\"version\":\"$version\",\"license\":\"MIT\"}}}" > "$dir/package-lock.json"
+  commit_all "$dir"
+  set +e
+  raw_check "$dir" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$dir/out.txt" 2>&1
+  local rc=$?
+  set -e
+  if [[ "$expected" == valid ]]; then
+    [[ "$rc" -eq 0 ]]
+    ! grep -q 'rule=node_lock_invalid_format' "$dir/out.txt"
+  else
+    [[ "$rc" -eq 1 ]]
+    grep -q 'rule=node_lock_invalid_format' "$dir/out.txt"
+  fi
+}
+
+constraint_case npm-partial-gt-major-bad '>1' '1.5.0' invalid
+constraint_case npm-partial-gt-major-good '>1' '2.0.0' valid
+constraint_case npm-partial-gt-minor-bad '>1.2' '1.2.9' invalid
+constraint_case npm-partial-gt-minor-good '>1.2' '1.3.0' valid
+constraint_case npm-partial-le-major-good '<=1' '1.9.9' valid
+constraint_case npm-partial-le-major-bad '<=1' '2.0.0' invalid
+
 echo "SUPPLY_CHAIN_REVIEW_ROUND2_REGRESSION_OK"
