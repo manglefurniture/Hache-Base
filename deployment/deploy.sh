@@ -91,20 +91,49 @@ validate_record_root_outside_worktree() {
   DEPLOY_RECORD_ROOT="$record_root_real"
 }
 
-on_error() {
-  local exit_code=$?
-  trap - ERR
-  set +e
-  emit_state "failed" "failed" "failed_phase=${current_phase};exit_code=${exit_code}" || true
-  printf 'DEPLOY_RECOVERY_REQUIRED failed_phase=%s exit_code=%s runbook=%s record=%s rollback_ref=%s\n' \
+report_failure() {
+  local exit_code="$1"
+  local signal_name="${2:-}"
+  local detail="failed_phase=${current_phase};exit_code=${exit_code}"
+
+  if [[ -n "$signal_name" ]]; then
+    detail="${detail};signal=${signal_name}"
+  fi
+
+  emit_state "failed" "failed" "$detail" || true
+
+  printf 'DEPLOY_RECOVERY_REQUIRED failed_phase=%s exit_code=%s' \
     "$(sanitize_field "$current_phase")" \
-    "$exit_code" \
+    "$exit_code" >&2
+  if [[ -n "$signal_name" ]]; then
+    printf ' signal=%s' "$(sanitize_field "$signal_name")" >&2
+  fi
+  printf ' runbook=%s record=%s rollback_ref=%s\n' \
     "$(sanitize_field "$APP_ROOT/deployment/DEPLOY-FAILURE-RUNBOOK.md")" \
     "$(sanitize_field "${deploy_record:-unavailable}")" \
     "$(sanitize_field "${rollback_branch:-unavailable}")" >&2
+}
+
+on_error() {
+  local exit_code=$?
+  trap - ERR INT TERM
+  set +e
+  report_failure "$exit_code"
   exit "$exit_code"
 }
+
+on_signal() {
+  local signal_name="$1"
+  local exit_code="$2"
+  trap - ERR INT TERM
+  set +e
+  report_failure "$exit_code" "$signal_name"
+  exit "$exit_code"
+}
+
 trap on_error ERR
+trap 'on_signal INT 130' INT
+trap 'on_signal TERM 143' TERM
 
 for flag_name in REQUIRE_SMOKE REQUIRE_OBSERVATION; do
   flag_value="${!flag_name}"
@@ -248,6 +277,6 @@ fi
 
 current_phase="healthy"
 emit_state "healthy" "passed" "release_gates_completed"
-trap - ERR
+trap - ERR INT TERM
 
 echo "DEPLOY_OK $(git rev-parse HEAD) record=$deploy_record rollback_ref=$rollback_branch"
