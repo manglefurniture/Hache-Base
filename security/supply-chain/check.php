@@ -43,13 +43,10 @@ function commandExists(string $command): bool
 }
 
 /** @return array<string,mixed> */
-function loadJsonFile(string $path, bool $required = true): array
+function loadJsonFile(string $path): array
 {
     if (!is_file($path)) {
-        if ($required) {
-            configError("missing_json_file path={$path}");
-        }
-        return [];
+        configError("missing_json_file path={$path}");
     }
     $raw = file_get_contents($path);
     if ($raw === false) {
@@ -94,8 +91,23 @@ function withinRoot(string $root, string $relative): string
     return $candidate;
 }
 
+/** @return array<int,string> */
+function trackedFiles(string $root): array
+{
+    [$code, $out, $err] = runCommand(['git', '-C', $root, 'ls-files', '-z'], $root);
+    if ($code !== 0) {
+        configError('git_ls_files_failed ' . trim($err));
+    }
+    return array_values(array_filter(explode("\0", $out), static fn(string $value): bool => $value !== ''));
+}
+
+function findingId(string $category, string $rule, string $location, string $subject): string
+{
+    return substr(hash('sha256', implode('|', [$category, $rule, $location, $subject])), 0, 20);
+}
+
 /** @return array<int,array{path:string,rule:string}> */
-function loadSecretAllowlist(string $path): array
+function loadSecretAllowlist(string $path, array $knownRules): array
 {
     if (!is_file($path)) {
         return [];
@@ -104,7 +116,7 @@ function loadSecretAllowlist(string $path): array
     if ($rows === false) {
         configError("unreadable_secret_allowlist path={$path}");
     }
-    $result = [];
+    $entries = [];
     foreach ($rows as $row) {
         $row = trim($row);
         if ($row === '' || str_starts_with($row, '#')) {
@@ -114,28 +126,27 @@ function loadSecretAllowlist(string $path): array
         if (!is_array($parts) || count($parts) !== 2) {
             configError("invalid_secret_allowlist_row value={$row}");
         }
-        $result[] = ['path' => $parts[0], 'rule' => $parts[1]];
+        [$allowPath, $rule] = $parts;
+        if (!preg_match('~^(?:tests/|fixtures/)[A-Za-z0-9._/-]+$~', $allowPath)) {
+            configError("secret_allowlist_path_must_be_exact_fixture value={$allowPath}");
+        }
+        if (str_contains($allowPath, '..') || !array_key_exists($rule, $knownRules)) {
+            configError("invalid_secret_allowlist_entry value={$row}");
+        }
+        $entries[] = ['path' => $allowPath, 'rule' => $rule];
     }
-    return $result;
+    return $entries;
 }
 
 /** @param array<int,array{path:string,rule:string}> $allowlist */
 function secretAllowed(array $allowlist, string $path, string $rule): bool
 {
     foreach ($allowlist as $entry) {
-        if ($entry['rule'] !== $rule && $entry['rule'] !== '*') {
-            continue;
-        }
-        if (fnmatch($entry['path'], $path, FNM_PATHNAME)) {
+        if ($entry['path'] === $path && $entry['rule'] === $rule) {
             return true;
         }
     }
     return false;
-}
-
-function findingId(string $category, string $rule, string $location, string $subject): string
-{
-    return substr(hash('sha256', implode('|', [$category, $rule, $location, $subject])), 0, 20);
 }
 
 /** @param array<string,mixed> $licensePolicy */
@@ -145,10 +156,9 @@ function policyBlocks(string $category, string $rule, string $severity, string $
         return true;
     }
     if ($category === 'sca') {
-        if (!in_array($level, ['B', 'C'], true)) {
-            return false;
-        }
-        return in_array($severity, ['critical', 'high'], true) || $rule === 'sca_unavailable';
+        return $rule === 'vulnerability'
+            && in_array($level, ['B', 'C'], true)
+            && in_array($severity, ['critical', 'high'], true);
     }
     if ($category === 'license') {
         if ($rule === 'license_denied') {
@@ -177,7 +187,11 @@ function acceptedRiskFor(string $findingId, array $riskConfig): ?array
                 return null;
             }
         }
-        $expires = strtotime((string)$entry['expires_at'] . ' 23:59:59 UTC');
+        $date = (string)$entry['expires_at'];
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return null;
+        }
+        $expires = strtotime($date . ' 23:59:59 UTC');
         if ($expires === false || $expires < time()) {
             return null;
         }
@@ -185,7 +199,7 @@ function acceptedRiskFor(string $findingId, array $riskConfig): ?array
             'owner' => (string)$entry['owner'],
             'approval_ref' => (string)$entry['approval_ref'],
             'mitigation' => (string)$entry['mitigation'],
-            'expires_at' => (string)$entry['expires_at'],
+            'expires_at' => $date,
         ];
     }
     return null;
@@ -209,7 +223,7 @@ function addFinding(
     $severity = normalizeSeverity($severity);
     $id = findingId($category, $rule, $location, $subject);
     $policyBlocking = policyBlocks($category, $rule, $severity, $level, $licensePolicy);
-    $accepted = $category === 'sca' ? acceptedRiskFor($id, $riskConfig) : null;
+    $accepted = ($category === 'sca' && $rule === 'vulnerability') ? acceptedRiskFor($id, $riskConfig) : null;
     $baselineBlocks = $policy['baseline_blocks'] ?? ['secret', 'lockfile'];
     if (!is_array($baselineBlocks)) {
         configError('policy.baseline_blocks must be an array');
@@ -218,7 +232,6 @@ function addFinding(
     $effectiveBlocking = $policyBlocking && $accepted === null && $enforcedByMode;
     $slaMap = $policy['sla_hours'] ?? [];
     $slaHours = is_array($slaMap) && isset($slaMap[$severity]) ? (int)$slaMap[$severity] : null;
-
     $findings[] = [
         'id' => $id,
         'category' => $category,
@@ -235,26 +248,11 @@ function addFinding(
     ];
 }
 
-/** @return array<int,string> */
-function trackedFiles(string $root): array
-{
-    [$code, $out, $err] = runCommand(['git', '-C', $root, 'ls-files', '-z'], $root);
-    if ($code !== 0) {
-        configError('git_ls_files_failed ' . trim($err));
-    }
-    return array_values(array_filter(explode("\0", $out), static fn(string $v): bool => $v !== ''));
-}
-
-function isProbablyBinary(string $content): bool
-{
-    return str_contains(substr($content, 0, 8192), "\0");
-}
-
 /** @return array<int,array<string,mixed>> */
 function npmVulnerabilities(array $audit): array
 {
     $result = [];
-    $vulnerabilities = $audit['vulnerabilities'] ?? null;
+    $vulnerabilities = $audit['vulnerabilities'] ?? [];
     if (!is_array($vulnerabilities)) {
         return $result;
     }
@@ -266,22 +264,18 @@ function npmVulnerabilities(array $audit): array
         $advisory = 'npm:' . $package;
         $title = 'npm audit finding';
         $url = '';
-        $via = $data['via'] ?? [];
-        if (is_array($via)) {
-            foreach ($via as $entry) {
-                if (is_array($entry)) {
-                    if (isset($entry['source'])) {
-                        $advisory = 'npm:' . (string)$entry['source'];
-                    }
-                    $title = (string)($entry['title'] ?? $title);
-                    $url = (string)($entry['url'] ?? $url);
-                    $entrySeverity = normalizeSeverity((string)($entry['severity'] ?? 'unknown'));
-                    if (severityRank($entrySeverity) > severityRank($severity)) {
-                        $severity = $entrySeverity;
-                    }
-                    break;
-                }
+        foreach ((array)($data['via'] ?? []) as $entry) {
+            if (!is_array($entry)) {
+                continue;
             }
+            $advisory = isset($entry['source']) ? 'npm:' . (string)$entry['source'] : $advisory;
+            $title = (string)($entry['title'] ?? $title);
+            $url = (string)($entry['url'] ?? $url);
+            $entrySeverity = normalizeSeverity((string)($entry['severity'] ?? 'unknown'));
+            if (severityRank($entrySeverity) > severityRank($severity)) {
+                $severity = $entrySeverity;
+            }
+            break;
         }
         $result[] = ['package' => (string)$package, 'severity' => $severity, 'advisory' => $advisory, 'title' => $title, 'url' => $url];
     }
@@ -292,7 +286,7 @@ function npmVulnerabilities(array $audit): array
 function composerVulnerabilities(array $audit): array
 {
     $result = [];
-    $advisories = $audit['advisories'] ?? null;
+    $advisories = $audit['advisories'] ?? [];
     if (!is_array($advisories)) {
         return $result;
     }
@@ -320,7 +314,7 @@ function composerVulnerabilities(array $audit): array
 function npmPackagesForLicense(array $lock): array
 {
     $result = [];
-    $packages = $lock['packages'] ?? null;
+    $packages = $lock['packages'] ?? [];
     if (!is_array($packages)) {
         return $result;
     }
@@ -328,10 +322,8 @@ function npmPackagesForLicense(array $lock): array
         if ($path === '' || !is_array($data)) {
             continue;
         }
-        $name = (string)($data['name'] ?? basename((string)$path));
-        $version = (string)($data['version'] ?? 'unknown');
-        $license = $data['license'] ?? null;
         $licenses = [];
+        $license = $data['license'] ?? null;
         if (is_string($license) && trim($license) !== '') {
             $licenses[] = trim($license);
         } elseif (is_array($license)) {
@@ -341,7 +333,11 @@ function npmPackagesForLicense(array $lock): array
                 }
             }
         }
-        $result[] = ['name' => $name, 'version' => $version, 'licenses' => array_values(array_unique($licenses))];
+        $result[] = [
+            'name' => (string)($data['name'] ?? basename((string)$path)),
+            'version' => (string)($data['version'] ?? 'unknown'),
+            'licenses' => array_values(array_unique($licenses)),
+        ];
     }
     return $result;
 }
@@ -351,16 +347,12 @@ function composerPackagesForLicense(array $lock): array
 {
     $result = [];
     foreach (['packages', 'packages-dev'] as $section) {
-        $packages = $lock[$section] ?? [];
-        if (!is_array($packages)) {
-            continue;
-        }
-        foreach ($packages as $data) {
+        foreach ((array)($lock[$section] ?? []) as $data) {
             if (!is_array($data)) {
                 continue;
             }
             $licenses = [];
-            foreach (($data['license'] ?? []) as $item) {
+            foreach ((array)($data['license'] ?? []) as $item) {
                 if (is_string($item) && trim($item) !== '') {
                     $licenses[] = trim($item);
                 }
@@ -373,6 +365,43 @@ function composerPackagesForLicense(array $lock): array
         }
     }
     return $result;
+}
+
+/** @return array{manager:?string,lock:?string,error:?string,manifest:array<string,mixed>} */
+function resolveNodeLock(string $stackDir): array
+{
+    $manifest = loadJsonFile($stackDir . '/package.json');
+    $declared = trim((string)($manifest['packageManager'] ?? ''));
+    $manager = null;
+    if ($declared !== '') {
+        if (preg_match('/^(npm|yarn|pnpm)@/', $declared, $matches) !== 1) {
+            return ['manager' => null, 'lock' => null, 'error' => 'unsupported_package_manager', 'manifest' => $manifest];
+        }
+        $manager = $matches[1];
+    }
+    $allLocks = [];
+    foreach (['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml'] as $candidate) {
+        if (is_file($stackDir . '/' . $candidate)) {
+            $allLocks[] = $candidate;
+        }
+    }
+    if (count($allLocks) > 1) {
+        return ['manager' => $manager, 'lock' => null, 'error' => 'ambiguous_node_lockfiles', 'manifest' => $manifest];
+    }
+    if ($allLocks === []) {
+        return ['manager' => $manager, 'lock' => null, 'error' => 'node_lock_missing', 'manifest' => $manifest];
+    }
+    $lock = $allLocks[0];
+    $expected = match ($manager) {
+        'npm' => ['package-lock.json', 'npm-shrinkwrap.json'],
+        'yarn' => ['yarn.lock'],
+        'pnpm' => ['pnpm-lock.yaml'],
+        default => ['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml'],
+    };
+    if (!in_array($lock, $expected, true)) {
+        return ['manager' => $manager, 'lock' => $lock, 'error' => 'node_lock_manager_mismatch', 'manifest' => $manifest];
+    }
+    return ['manager' => $manager, 'lock' => $lock, 'error' => null, 'manifest' => $manifest];
 }
 
 $mode = strtolower((string)envValue('SUPPLY_CHAIN_MODE', 'report'));
@@ -388,24 +417,11 @@ $root = realpath($rootRaw);
 if ($root === false || !is_dir($root)) {
     configError("invalid_root path={$rootRaw}");
 }
-$policyPath = (string)envValue('SUPPLY_CHAIN_POLICY_FILE', $root . '/security/supply-chain/policy.json');
-$licensePolicyPath = (string)envValue('SUPPLY_CHAIN_LICENSE_POLICY_FILE', $root . '/security/supply-chain/license-policy.json');
-$riskPath = (string)envValue('SUPPLY_CHAIN_ACCEPTED_RISK_FILE', $root . '/security/supply-chain/accepted-risk.json');
-$allowlistPath = (string)envValue('SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE', $root . '/security/supply-chain/secret-scan.allowlist');
+$policy = loadJsonFile((string)envValue('SUPPLY_CHAIN_POLICY_FILE', $root . '/security/supply-chain/policy.json'));
+$licensePolicy = loadJsonFile((string)envValue('SUPPLY_CHAIN_LICENSE_POLICY_FILE', $root . '/security/supply-chain/license-policy.json'));
+$riskConfig = loadJsonFile((string)envValue('SUPPLY_CHAIN_ACCEPTED_RISK_FILE', $root . '/security/supply-chain/accepted-risk.json'));
 $reportFile = (string)envValue('SUPPLY_CHAIN_REPORT_FILE', sys_get_temp_dir() . '/hache-supply-chain-report.json');
 $disableExternalSca = envValue('SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA', '0') === '1';
-
-$policy = loadJsonFile($policyPath);
-$licensePolicy = loadJsonFile($licensePolicyPath);
-$riskConfig = loadJsonFile($riskPath);
-$allowlist = loadSecretAllowlist($allowlistPath);
-$findings = [];
-$checks = [
-    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_current_tree'],
-    'lockfiles' => ['status' => 'pass'],
-    'sca' => [],
-    'licenses' => [],
-];
 
 $secretRules = [
     'private_key' => '~-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----~',
@@ -416,20 +432,45 @@ $secretRules = [
     'stripe_live_secret' => '~\bsk_live_[A-Za-z0-9]{16,}\b~',
     'google_api_key' => '~\bAIza[0-9A-Za-z_-]{30,}\b~',
 ];
+$allowlist = loadSecretAllowlist(
+    (string)envValue('SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE', $root . '/security/supply-chain/secret-scan.allowlist'),
+    $secretRules
+);
+$findings = [];
+$checks = [
+    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_text_tree', 'binary_skipped' => 0],
+    'lockfiles' => ['status' => 'pass'],
+    'sca' => [],
+    'licenses' => [],
+];
+
 foreach (trackedFiles($root) as $relativePath) {
     $fullPath = $root . DIRECTORY_SEPARATOR . $relativePath;
-    if (!is_file($fullPath) || filesize($fullPath) > 2 * 1024 * 1024) {
+    if (!is_file($fullPath)) {
         continue;
     }
-    $content = file_get_contents($fullPath);
-    if ($content === false || isProbablyBinary($content)) {
+    $handle = fopen($fullPath, 'rb');
+    if ($handle === false) {
+        $checks['secret_scan']['status'] = 'not_evaluated';
+        $checks['secret_scan']['unreadable'][] = $relativePath;
         continue;
     }
-    $lines = preg_split('/\R/', $content);
-    if (!is_array($lines)) {
+    $prefix = fread($handle, 8192);
+    if ($prefix === false) {
+        fclose($handle);
+        $checks['secret_scan']['status'] = 'not_evaluated';
+        $checks['secret_scan']['unreadable'][] = $relativePath;
         continue;
     }
-    foreach ($lines as $index => $line) {
+    if (str_contains($prefix, "\0")) {
+        fclose($handle);
+        $checks['secret_scan']['binary_skipped']++;
+        continue;
+    }
+    rewind($handle);
+    $lineNumber = 0;
+    while (($line = fgets($handle)) !== false) {
+        $lineNumber++;
         foreach ($secretRules as $rule => $regex) {
             if (preg_match($regex, $line) !== 1 || secretAllowed($allowlist, $relativePath, $rule)) {
                 continue;
@@ -440,7 +481,7 @@ foreach (trackedFiles($root) as $relativePath) {
                 'secret',
                 $rule,
                 'critical',
-                $relativePath . ':' . ($index + 1),
+                $relativePath . ':' . $lineNumber,
                 $relativePath . '|' . $rule,
                 'High-confidence secret signature matched; value redacted. Revoke/rotate if real and remove from Git history as required.',
                 $level,
@@ -451,135 +492,125 @@ foreach (trackedFiles($root) as $relativePath) {
             );
         }
     }
+    fclose($handle);
 }
 
 $stackRootsRaw = trim((string)envValue('SUPPLY_CHAIN_STACK_ROOTS', '.'));
-$stackRoots = array_values(array_unique(array_filter(array_map('trim', explode(',', $stackRootsRaw)), static fn(string $v): bool => $v !== '')));
+$stackRoots = array_values(array_unique(array_filter(array_map('trim', explode(',', $stackRootsRaw)), static fn(string $value): bool => $value !== '')));
 if ($stackRoots === []) {
     $stackRoots = ['.'];
 }
 $stackSummaries = [];
+$deniedLicenses = array_map('strval', is_array($licensePolicy['denied'] ?? null) ? $licensePolicy['denied'] : []);
+$reportMissingLicense = (bool)($licensePolicy['report_missing'] ?? true);
+
 foreach ($stackRoots as $stackRelative) {
     $stackDir = withinRoot($root, $stackRelative);
     $displayRoot = $stackRelative === '.' ? '.' : rtrim($stackRelative, '/');
-    $composerManifest = $stackDir . '/composer.json';
-    $composerLock = $stackDir . '/composer.lock';
-    $nodeManifest = $stackDir . '/package.json';
-    $nodeLocks = ['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock'];
 
-    if (is_file($composerManifest)) {
-        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => is_file($composerLock) ? 'composer.lock' : null];
-        if (!is_file($composerLock)) {
+    if (is_file($stackDir . '/composer.json')) {
+        $lockPath = $stackDir . '/composer.lock';
+        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => is_file($lockPath) ? 'composer.lock' : null];
+        if (!is_file($lockPath)) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', 'composer_lock_missing', 'high', $displayRoot . '/composer.json', 'composer', 'composer.json is tracked without composer.lock.', $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
-            $composerLockJson = loadJsonFile($composerLock);
-            $denied = array_map('strval', is_array($licensePolicy['denied'] ?? null) ? $licensePolicy['denied'] : []);
-            $reportMissing = (bool)($licensePolicy['report_missing'] ?? true);
+            $lock = loadJsonFile($lockPath);
             $licenseCount = 0;
-            foreach (composerPackagesForLicense($composerLockJson) as $package) {
+            foreach (composerPackagesForLicense($lock) as $package) {
                 $licenseCount++;
-                if ($package['licenses'] === [] && $reportMissing) {
+                if ($package['licenses'] === [] && $reportMissingLicense) {
                     addFinding($findings, 'license', 'license_missing', 'medium', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'], 'Dependency has no license metadata in lockfile; human/legal review required.', $level, $mode, $policy, $licensePolicy, $riskConfig);
                 }
                 foreach ($package['licenses'] as $license) {
-                    if (in_array($license, $denied, true)) {
-                        addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no legal conclusion is inferred beyond the configured policy.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                    if (in_array($license, $deniedLicenses, true)) {
+                        addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/composer.lock', $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no universal legal conclusion is inferred.', $level, $mode, $policy, $licensePolicy, $riskConfig);
                     }
                 }
             }
-            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'packages_checked' => $licenseCount];
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
 
-            $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
             $audit = null;
             $scaStatus = 'not_evaluated';
+            $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
             if ($auditFile !== null && $auditFile !== '') {
                 $audit = loadJsonFile($auditFile);
-                $scaStatus = 'fixture';
+                $scaStatus = 'evidence_file';
             } elseif (!$disableExternalSca && commandExists('composer')) {
                 [$auditCode, $auditOut] = runCommand(['composer', 'audit', '--locked', '--format=json', '--no-interaction'], $stackDir);
                 $decoded = json_decode($auditOut, true);
                 if (is_array($decoded)) {
                     $audit = $decoded;
                     $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
-                } else {
-                    $scaStatus = 'unavailable';
                 }
-            } else {
-                $scaStatus = 'unavailable';
             }
             if ($audit === null) {
-                addFinding($findings, 'sca', 'sca_unavailable', 'high', $displayRoot . '/composer.lock', 'composer', 'SCA was not evaluated for this locked stack; do not treat this as PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', 'SCA is NOT EVALUATED for this locked stack; this is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             } else {
                 foreach (composerVulnerabilities($audit) as $vulnerability) {
                     addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/composer.lock', (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
                 }
             }
-            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => $scaStatus];
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'status' => $audit === null ? 'not_evaluated' : $scaStatus];
         }
     }
 
-    if (is_file($nodeManifest)) {
-        $nodeLockName = null;
-        foreach ($nodeLocks as $candidate) {
-            if (is_file($stackDir . '/' . $candidate)) {
-                $nodeLockName = $candidate;
-                break;
-            }
-        }
-        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName];
-        if ($nodeLockName === null) {
+    if (is_file($stackDir . '/package.json')) {
+        $resolved = resolveNodeLock($stackDir);
+        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'node', 'package_manager' => $resolved['manager'], 'lockfile' => $resolved['lock']];
+        if ($resolved['error'] !== null) {
             $checks['lockfiles']['status'] = 'findings';
-            addFinding($findings, 'lockfile', 'node_lock_missing', 'high', $displayRoot . '/package.json', 'node', 'package.json is tracked without a supported lockfile in the same stack root.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-        } elseif (in_array($nodeLockName, ['package-lock.json', 'npm-shrinkwrap.json'], true)) {
-            $nodeLockPath = $stackDir . '/' . $nodeLockName;
-            $nodeLockJson = loadJsonFile($nodeLockPath);
-            $denied = array_map('strval', is_array($licensePolicy['denied'] ?? null) ? $licensePolicy['denied'] : []);
-            $reportMissing = (bool)($licensePolicy['report_missing'] ?? true);
-            $licenseCount = 0;
-            foreach (npmPackagesForLicense($nodeLockJson) as $package) {
-                $licenseCount++;
-                if ($package['licenses'] === [] && $reportMissing) {
-                    addFinding($findings, 'license', 'license_missing', 'medium', $displayRoot . '/' . $nodeLockName, $package['name'] . '@' . $package['version'], 'Dependency has no license metadata in lockfile; human/legal review required.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-                }
-                foreach ($package['licenses'] as $license) {
-                    if (in_array($license, $denied, true)) {
-                        addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/' . $nodeLockName, $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no legal conclusion is inferred beyond the configured policy.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-                    }
-                }
-            }
-            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'packages_checked' => $licenseCount];
-
-            $auditFile = envValue('SUPPLY_CHAIN_NPM_AUDIT_FILE');
-            $audit = null;
-            $scaStatus = 'not_evaluated';
-            if ($auditFile !== null && $auditFile !== '') {
-                $audit = loadJsonFile($auditFile);
-                $scaStatus = 'fixture';
-            } elseif (!$disableExternalSca && commandExists('npm')) {
-                [$auditCode, $auditOut] = runCommand(['npm', 'audit', '--package-lock-only', '--json'], $stackDir);
-                $decoded = json_decode($auditOut, true);
-                if (is_array($decoded) && !isset($decoded['error'])) {
-                    $audit = $decoded;
-                    $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
-                } else {
-                    $scaStatus = 'unavailable';
-                }
-            } else {
-                $scaStatus = 'unavailable';
-            }
-            if ($audit === null) {
-                addFinding($findings, 'sca', 'sca_unavailable', 'high', $displayRoot . '/' . $nodeLockName, 'node', 'SCA was not evaluated for this locked stack; do not treat this as PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-            } else {
-                foreach (npmVulnerabilities($audit) as $vulnerability) {
-                    addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/' . $nodeLockName, (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
-                }
-            }
-            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'status' => $scaStatus];
-        } else {
-            addFinding($findings, 'sca', 'sca_unavailable', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'This baseline records the lockfile but has no built-in SCA parser for this Node lockfile. Provide project-specific SCA evidence; do not treat this as PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
-            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'status' => 'not_evaluated', 'lockfile' => $nodeLockName];
+            addFinding($findings, 'lockfile', $resolved['error'], 'high', $displayRoot . '/package.json', 'node', 'Node lockfile is missing, ambiguous, unsupported, or does not match packageManager.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            continue;
         }
+
+        $nodeLockName = (string)$resolved['lock'];
+        if (!in_array($nodeLockName, ['package-lock.json', 'npm-shrinkwrap.json'], true)) {
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED for this lockfile; provide project-specific evidence.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED for this lockfile; provide project-specific evidence.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            continue;
+        }
+
+        $nodeLockPath = $stackDir . '/' . $nodeLockName;
+        $lock = loadJsonFile($nodeLockPath);
+        $licenseCount = 0;
+        foreach (npmPackagesForLicense($lock) as $package) {
+            $licenseCount++;
+            if ($package['licenses'] === [] && $reportMissingLicense) {
+                addFinding($findings, 'license', 'license_missing', 'medium', $displayRoot . '/' . $nodeLockName, $package['name'] . '@' . $package['version'], 'Dependency has no license metadata in lockfile; human/legal review required.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            }
+            foreach ($package['licenses'] as $license) {
+                if (in_array($license, $deniedLicenses, true)) {
+                    addFinding($findings, 'license', 'license_denied', 'high', $displayRoot . '/' . $nodeLockName, $package['name'] . '@' . $package['version'] . '|' . $license, 'Dependency license matches project deny policy; no universal legal conclusion is inferred.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                }
+            }
+        }
+        $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'status' => 'evaluated', 'packages_checked' => $licenseCount];
+
+        $audit = null;
+        $scaStatus = 'not_evaluated';
+        $auditFile = envValue('SUPPLY_CHAIN_NPM_AUDIT_FILE');
+        if ($auditFile !== null && $auditFile !== '') {
+            $audit = loadJsonFile($auditFile);
+            $scaStatus = 'evidence_file';
+        } elseif (!$disableExternalSca && commandExists('npm')) {
+            [$auditCode, $auditOut] = runCommand(['npm', 'audit', '--package-lock-only', '--json'], $stackDir);
+            $decoded = json_decode($auditOut, true);
+            if (is_array($decoded) && !isset($decoded['error'])) {
+                $audit = $decoded;
+                $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
+            }
+        }
+        if ($audit === null) {
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', 'SCA is NOT EVALUATED for this locked stack; this is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+        } else {
+            foreach (npmVulnerabilities($audit) as $vulnerability) {
+                addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/' . $nodeLockName, (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
+            }
+        }
+        $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'status' => $audit === null ? 'not_evaluated' : $scaStatus];
     }
 }
 
@@ -587,9 +618,10 @@ usort($findings, static function (array $a, array $b): int {
     $severityCompare = severityRank((string)$b['severity']) <=> severityRank((string)$a['severity']);
     return $severityCompare !== 0 ? $severityCompare : strcmp((string)$a['id'], (string)$b['id']);
 });
-$potentialBlockers = count(array_filter($findings, static fn(array $f): bool => (bool)$f['policy_blocking'] && $f['accepted_risk'] === null));
-$enforcedBlockers = count(array_filter($findings, static fn(array $f): bool => (bool)$f['effective_blocking']));
-$acceptedCount = count(array_filter($findings, static fn(array $f): bool => $f['accepted_risk'] !== null));
+$potentialBlockers = count(array_filter($findings, static fn(array $finding): bool => (bool)$finding['policy_blocking'] && $finding['accepted_risk'] === null));
+$enforcedBlockers = count(array_filter($findings, static fn(array $finding): bool => (bool)$finding['effective_blocking']));
+$acceptedCount = count(array_filter($findings, static fn(array $finding): bool => $finding['accepted_risk'] !== null));
+$notEvaluatedCount = count(array_filter($findings, static fn(array $finding): bool => in_array((string)$finding['rule'], ['sca_unavailable', 'license_not_evaluated'], true)));
 [$commitCode, $commitOut] = runCommand(['git', '-C', $root, 'rev-parse', 'HEAD'], $root);
 $commit = $commitCode === 0 ? trim($commitOut) : 'unknown';
 $report = [
@@ -605,6 +637,8 @@ $report = [
         'potential_blockers' => $potentialBlockers,
         'enforced_blockers' => $enforcedBlockers,
         'accepted_risks' => $acceptedCount,
+        'not_evaluated' => $notEvaluatedCount,
+        'evidence_complete' => $notEvaluatedCount === 0 && $checks['secret_scan']['status'] !== 'not_evaluated',
     ],
     'findings' => $findings,
 ];
@@ -617,13 +651,15 @@ if ($json === false || file_put_contents($reportFile, $json . "\n") === false) {
     configError("cannot_write_report path={$reportFile}");
 }
 printf(
-    "SUPPLY_CHAIN_SUMMARY mode=%s level=%s findings=%d potential_blockers=%d enforced_blockers=%d accepted_risks=%d report=%s\n",
+    "SUPPLY_CHAIN_SUMMARY mode=%s level=%s findings=%d potential_blockers=%d enforced_blockers=%d accepted_risks=%d not_evaluated=%d evidence_complete=%d report=%s\n",
     $mode,
     $level,
     count($findings),
     $potentialBlockers,
     $enforcedBlockers,
     $acceptedCount,
+    $notEvaluatedCount,
+    $report['summary']['evidence_complete'] ? 1 : 0,
     $reportFile
 );
 foreach ($findings as $finding) {
