@@ -1,58 +1,27 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-: "${BACKUP_DIR:?BACKUP_DIR is required}"
-: "${RESTORE_DB_HOST:?RESTORE_DB_HOST is required}"
-: "${RESTORE_DB_NAME:?RESTORE_DB_NAME is required}"
-: "${RESTORE_DB_USER:?RESTORE_DB_USER is required}"
-: "${RESTORE_DB_PASSWORD:?RESTORE_DB_PASSWORD is required}"
 : "${RESTORE_DRILL_REPORT_FILE:?RESTORE_DRILL_REPORT_FILE is required}"
-: "${RESTORE_VERIFY_COMMAND:?RESTORE_VERIFY_COMMAND is required}"
 
+BACKUP_DIR="${BACKUP_DIR:-}"
+RESTORE_DB_HOST="${RESTORE_DB_HOST:-}"
+RESTORE_DB_NAME="${RESTORE_DB_NAME:-}"
+RESTORE_DB_USER="${RESTORE_DB_USER:-}"
+RESTORE_DB_PASSWORD="${RESTORE_DB_PASSWORD:-}"
+RESTORE_VERIFY_COMMAND="${RESTORE_VERIFY_COMMAND:-}"
 RPO_SECONDS="${RPO_SECONDS:-86400}"
 RTO_SECONDS="${RTO_SECONDS:-3600}"
 RESTORE_DB_PORT="${RESTORE_DB_PORT:-3306}"
 RESTORE_CONFIRM_ISOLATED="${RESTORE_CONFIRM_ISOLATED:-0}"
 RESTORE_CLEANUP="${RESTORE_CLEANUP:-1}"
 RESTORE_NOW_EPOCH="${RESTORE_NOW_EPOCH:-$(date -u +%s)}"
-
-is_canonical_decimal() {
-  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
-}
-
-is_positive_canonical_decimal() {
-  [[ "$1" =~ ^[1-9][0-9]*$ ]]
-}
-
-is_positive_canonical_decimal "$RPO_SECONDS" || {
-  echo "RPO_SECONDS must be a positive decimal integer without leading zeros" >&2
-  exit 2
-}
-is_positive_canonical_decimal "$RTO_SECONDS" || {
-  echo "RTO_SECONDS must be a positive decimal integer without leading zeros" >&2
-  exit 2
-}
-is_canonical_decimal "$RESTORE_NOW_EPOCH" || {
-  echo "RESTORE_NOW_EPOCH must be a decimal integer epoch without leading zeros" >&2
-  exit 2
-}
-[[ "$RESTORE_CLEANUP" == "0" || "$RESTORE_CLEANUP" == "1" ]] || { echo "RESTORE_CLEANUP must be 0 or 1" >&2; exit 2; }
-[[ "$RESTORE_CONFIRM_ISOLATED" == "1" ]] || {
-  echo "RESTORE_CONFIRM_ISOLATED=1 is required; restore drills must target an isolated database" >&2
-  exit 2
-}
-[[ "$RESTORE_DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || {
-  echo "RESTORE_DB_NAME may contain only letters, numbers and underscore" >&2
-  exit 2
-}
-
-command -v mysql >/dev/null 2>&1 || { echo "mysql is required" >&2; exit 1; }
-command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
+BASH_ARITH_MAX="9223372036854775807"
 
 mkdir -p "$(dirname "$RESTORE_DRILL_REPORT_FILE")"
 umask 077
 
 start_epoch="$(date -u +%s)"
+measurement_end_epoch=""
 restore_created=0
 result_status="failed"
 result_reason="preflight_failed"
@@ -61,12 +30,22 @@ cleanup_status="not_applicable"
 source_db="unknown"
 created_at_epoch="unknown"
 backup_age_seconds="unknown"
+verification_command_configured="no"
+[[ -n "$RESTORE_VERIFY_COMMAND" ]] && verification_command_configured="yes"
+
+report_duration_seconds() {
+  local fallback_end="$1"
+  local effective_end="$fallback_end"
+  [[ -n "$measurement_end_epoch" ]] && effective_end="$measurement_end_epoch"
+  printf '%s\n' "$(( effective_end - start_epoch ))"
+}
 
 write_report() {
   local status="$1"
   local reason="$2"
   local end_epoch="$3"
-  local duration_seconds=$(( end_epoch - start_epoch ))
+  local duration_seconds
+  duration_seconds="$(report_duration_seconds "$end_epoch")"
   cat > "$RESTORE_DRILL_REPORT_FILE" <<EOF
 RESTORE_DRILL status=$status reason=$reason
 backup_dir=$BACKUP_DIR
@@ -77,7 +56,7 @@ backup_age_seconds=$backup_age_seconds
 rpo_seconds=$RPO_SECONDS
 restore_duration_seconds=$duration_seconds
 rto_seconds=$RTO_SECONDS
-verification_command_configured=yes
+verification_command_configured=$verification_command_configured
 cleanup_enabled=$RESTORE_CLEANUP
 cleanup_status=$cleanup_status
 pre_cleanup_reason=$pre_cleanup_reason
@@ -87,7 +66,7 @@ EOF
 
 cleanup_and_report() {
   local rc=$?
-  local end_epoch
+  local end_epoch duration_seconds
   local cleanup_failed=0
   trap - EXIT
   end_epoch="$(date -u +%s)"
@@ -116,22 +95,21 @@ cleanup_and_report() {
     rc=1
   fi
 
-  # The final evidence is always written after cleanup so cleanup outcome cannot
-  # be hidden by an earlier PASS or by another failure such as an RPO/RTO miss.
   write_report "$result_status" "$result_reason" "$end_epoch"
+  duration_seconds="$(report_duration_seconds "$end_epoch")"
 
   if (( rc == 0 )); then
-    echo "RESTORE_DRILL status=passed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE"
+    echo "RESTORE_DRILL status=passed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$duration_seconds rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE"
   elif (( cleanup_failed == 1 )); then
-    echo "RESTORE_DRILL status=failed reason=cleanup_failed pre_cleanup_reason=$pre_cleanup_reason backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE" >&2
+    echo "RESTORE_DRILL status=failed reason=cleanup_failed pre_cleanup_reason=$pre_cleanup_reason backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$duration_seconds rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE" >&2
   fi
 
   exit "$rc"
 }
 trap cleanup_and_report EXIT
 
-# Replace any previous evidence immediately so a stale PASS cannot remain visible
-# while a new drill is validating the backup.
+# Replace any previous evidence before validating the rest of the drill contract.
+# From this point onward every failure is finalized by the EXIT trap.
 write_report "running" "started" "$start_epoch"
 
 fail_drill() {
@@ -144,6 +122,23 @@ fail_drill() {
   exit "$code"
 }
 
+is_bash_decimal() {
+  local value="$1"
+  local value_len max_len
+
+  [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  value_len=${#value}
+  max_len=${#BASH_ARITH_MAX}
+
+  (( value_len < max_len )) && return 0
+  (( value_len > max_len )) && return 1
+  [[ "$value" == "$BASH_ARITH_MAX" || "$value" < "$BASH_ARITH_MAX" ]]
+}
+
+is_positive_bash_decimal() {
+  is_bash_decimal "$1" && [[ "$1" != "0" ]]
+}
+
 checksum_manifest_complete() {
   local dir="$1"
   local sums="$dir/SHA256SUMS"
@@ -151,6 +146,22 @@ checksum_manifest_complete() {
   grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]commit\.txt$' "$sums" &&
     grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]database\.sql$' "$sums"
 }
+
+[[ -n "$BACKUP_DIR" ]] || fail_drill "configuration_invalid" "BACKUP_DIR is required" 2
+[[ -n "$RESTORE_DB_HOST" ]] || fail_drill "configuration_invalid" "RESTORE_DB_HOST is required" 2
+[[ -n "$RESTORE_DB_NAME" ]] || fail_drill "configuration_invalid" "RESTORE_DB_NAME is required" 2
+[[ -n "$RESTORE_DB_USER" ]] || fail_drill "configuration_invalid" "RESTORE_DB_USER is required" 2
+[[ -n "$RESTORE_DB_PASSWORD" ]] || fail_drill "configuration_invalid" "RESTORE_DB_PASSWORD is required" 2
+[[ -n "$RESTORE_VERIFY_COMMAND" ]] || fail_drill "configuration_invalid" "RESTORE_VERIFY_COMMAND is required" 2
+is_positive_bash_decimal "$RPO_SECONDS" || fail_drill "configuration_invalid" "RPO_SECONDS must be a positive decimal integer within Bash arithmetic range" 2
+is_positive_bash_decimal "$RTO_SECONDS" || fail_drill "configuration_invalid" "RTO_SECONDS must be a positive decimal integer within Bash arithmetic range" 2
+is_bash_decimal "$RESTORE_NOW_EPOCH" || fail_drill "configuration_invalid" "RESTORE_NOW_EPOCH must be a decimal integer epoch within Bash arithmetic range" 2
+[[ "$RESTORE_CLEANUP" == "0" || "$RESTORE_CLEANUP" == "1" ]] || fail_drill "configuration_invalid" "RESTORE_CLEANUP must be 0 or 1" 2
+[[ "$RESTORE_CONFIRM_ISOLATED" == "1" ]] || fail_drill "isolation_not_confirmed" "RESTORE_CONFIRM_ISOLATED=1 is required; restore drills must target an isolated database" 2
+[[ "$RESTORE_DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || fail_drill "configuration_invalid" "RESTORE_DB_NAME may contain only letters, numbers and underscore" 2
+
+command -v mysql >/dev/null 2>&1 || fail_drill "mysql_missing" "mysql is required"
+command -v sha256sum >/dev/null 2>&1 || fail_drill "sha256sum_missing" "sha256sum is required"
 
 [[ -d "$BACKUP_DIR" ]] || fail_drill "backup_directory_missing" "backup directory not found: $BACKUP_DIR"
 [[ -f "$BACKUP_DIR/BACKUP_COMPLETE" ]] || fail_drill "backup_incomplete" "backup is not marked complete"
@@ -164,7 +175,7 @@ created_at_epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$BACK
 
 [[ "$manifest_status" == "complete" ]] || fail_drill "backup_manifest_incomplete" "backup manifest is not complete"
 [[ -n "$source_db" ]] || fail_drill "backup_manifest_invalid" "database_name missing from backup manifest"
-is_canonical_decimal "$created_at_epoch" || fail_drill "backup_manifest_invalid" "created_at_epoch invalid in backup manifest"
+is_bash_decimal "$created_at_epoch" || fail_drill "backup_manifest_invalid" "created_at_epoch invalid in backup manifest"
 [[ "$RESTORE_DB_NAME" != "$source_db" ]] || \
   fail_drill "source_target_match" "restore target must differ from source database: $source_db" 2
 (( created_at_epoch <= RESTORE_NOW_EPOCH )) || fail_drill "backup_future_timestamp" "backup timestamp is in the future"
@@ -221,8 +232,8 @@ if ! bash -c "$RESTORE_VERIFY_COMMAND"; then
   fail_drill "verification_failed" "restore verification command failed"
 fi
 
-end_epoch="$(date -u +%s)"
-duration_seconds=$(( end_epoch - start_epoch ))
+measurement_end_epoch="$(date -u +%s)"
+duration_seconds=$(( measurement_end_epoch - start_epoch ))
 rpo_status="passed"
 rto_status="passed"
 (( backup_age_seconds <= RPO_SECONDS )) || rpo_status="failed"
