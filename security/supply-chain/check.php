@@ -179,15 +179,15 @@ function acceptedRiskFor(string $findingId, array $riskConfig): ?array
         configError('accepted_risk.exceptions must be an array');
     }
     foreach ($exceptions as $entry) {
-        if (!is_array($entry) || (string)($entry['finding_id'] ?? '') !== $findingId) {
+        if (!is_array($entry) || !isset($entry['finding_id']) || !is_string($entry['finding_id']) || $entry['finding_id'] !== $findingId) {
             continue;
         }
         foreach (['owner', 'approval_ref', 'mitigation', 'expires_at'] as $field) {
-            if (trim((string)($entry[$field] ?? '')) === '') {
+            if (!array_key_exists($field, $entry) || !is_string($entry[$field]) || trim($entry[$field]) === '') {
                 return null;
             }
         }
-        $date = (string)$entry['expires_at'];
+        $date = $entry['expires_at'];
         if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $parts) !== 1) {
             return null;
         }
@@ -202,9 +202,9 @@ function acceptedRiskFor(string $findingId, array $riskConfig): ?array
             return null;
         }
         return [
-            'owner' => (string)$entry['owner'],
-            'approval_ref' => (string)$entry['approval_ref'],
-            'mitigation' => (string)$entry['mitigation'],
+            'owner' => $entry['owner'],
+            'approval_ref' => $entry['approval_ref'],
+            'mitigation' => $entry['mitigation'],
             'expires_at' => $date,
         ];
     }
@@ -256,16 +256,61 @@ function addFinding(
 
 function validNpmAudit(array $audit): bool
 {
-    return isset($audit['auditReportVersion'])
-        && is_int($audit['auditReportVersion'])
-        && array_key_exists('vulnerabilities', $audit)
-        && is_array($audit['vulnerabilities'])
-        && !isset($audit['error']);
+    if (!isset($audit['auditReportVersion'])
+        || !is_int($audit['auditReportVersion'])
+        || !array_key_exists('vulnerabilities', $audit)
+        || !is_array($audit['vulnerabilities'])
+        || isset($audit['error'])) {
+        return false;
+    }
+    foreach ($audit['vulnerabilities'] as $data) {
+        if (!is_array($data) || !array_key_exists('via', $data) || !is_array($data['via'])) {
+            return false;
+        }
+        if (isset($data['severity']) && !is_string($data['severity'])) {
+            return false;
+        }
+        foreach ($data['via'] as $entry) {
+            if (is_string($entry)) {
+                continue;
+            }
+            if (!is_array($entry)) {
+                return false;
+            }
+            foreach (['title', 'url', 'severity'] as $field) {
+                if (isset($entry[$field]) && !is_string($entry[$field])) {
+                    return false;
+                }
+            }
+            if (isset($entry['source']) && !is_int($entry['source']) && !is_string($entry['source'])) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 function validComposerAudit(array $audit): bool
 {
-    return array_key_exists('advisories', $audit) && is_array($audit['advisories']);
+    if (!array_key_exists('advisories', $audit) || !is_array($audit['advisories'])) {
+        return false;
+    }
+    foreach ($audit['advisories'] as $items) {
+        if (!is_array($items)) {
+            return false;
+        }
+        foreach ($items as $entry) {
+            if (!is_array($entry)) {
+                return false;
+            }
+            foreach (['packageName', 'severity', 'advisoryId', 'cve', 'title', 'link'] as $field) {
+                if (isset($entry[$field]) && !is_string($entry[$field])) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 /** @return array<int,array<string,mixed>> */
@@ -463,7 +508,7 @@ $allowlist = loadSecretAllowlist(
 );
 $findings = [];
 $checks = [
-    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_text_tree', 'binary_skipped' => 0],
+    'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_text_tree', 'binary_skipped' => 0, 'incomplete' => false],
     'lockfiles' => ['status' => 'pass'],
     'sca' => [],
     'licenses' => [],
@@ -477,6 +522,7 @@ foreach (trackedFiles($root) as $relativePath) {
     $handle = fopen($fullPath, 'rb');
     if ($handle === false) {
         $checks['secret_scan']['status'] = 'not_evaluated';
+        $checks['secret_scan']['incomplete'] = true;
         $checks['secret_scan']['unreadable'][] = $relativePath;
         continue;
     }
@@ -484,6 +530,7 @@ foreach (trackedFiles($root) as $relativePath) {
     if ($prefix === false) {
         fclose($handle);
         $checks['secret_scan']['status'] = 'not_evaluated';
+        $checks['secret_scan']['incomplete'] = true;
         $checks['secret_scan']['unreadable'][] = $relativePath;
         continue;
     }
@@ -653,6 +700,9 @@ $potentialBlockers = count(array_filter($findings, static fn(array $finding): bo
 $enforcedBlockers = count(array_filter($findings, static fn(array $finding): bool => (bool)$finding['effective_blocking']));
 $acceptedCount = count(array_filter($findings, static fn(array $finding): bool => $finding['accepted_risk'] !== null));
 $notEvaluatedCount = count(array_filter($findings, static fn(array $finding): bool => in_array((string)$finding['rule'], ['sca_unavailable', 'license_not_evaluated'], true)));
+if (($checks['secret_scan']['incomplete'] ?? false) === true) {
+    $notEvaluatedCount++;
+}
 [$commitCode, $commitOut] = runCommand(['git', '-C', $root, 'rev-parse', 'HEAD'], $root);
 $commit = $commitCode === 0 ? trim($commitOut) : 'unknown';
 $report = [
@@ -669,7 +719,7 @@ $report = [
         'enforced_blockers' => $enforcedBlockers,
         'accepted_risks' => $acceptedCount,
         'not_evaluated' => $notEvaluatedCount,
-        'evidence_complete' => $notEvaluatedCount === 0 && $checks['secret_scan']['status'] !== 'not_evaluated',
+        'evidence_complete' => $notEvaluatedCount === 0,
     ],
     'findings' => $findings,
 ];
