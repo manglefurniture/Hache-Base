@@ -32,7 +32,7 @@ El backup generado por `deployment/backup.sh` se considera **completo** solo cua
 - `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` numérico;
 - marcador `BACKUP_COMPLETE` creado al final.
 
-Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`; si un backup marcado completo está corrupto o inconsistente, devuelve `invalid_backup`. Un `created_at_epoch` ausente o no numérico también es `invalid_backup` y nunca se ignora en favor de evidencia más antigua.
+Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. En cambio, si existe `BACKUP_COMPLETE`, la evidencia ya se declaró terminada: la pérdida de `backup-manifest.env`, un `created_at_epoch` ausente/no numérico o cualquier artefacto obligatorio inconsistente se trata como `invalid_backup` y nunca se ignora en favor de evidencia más antigua. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`.
 
 ## Freshness y alerta
 
