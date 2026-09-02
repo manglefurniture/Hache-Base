@@ -16,12 +16,26 @@ RESTORE_CONFIRM_ISOLATED="${RESTORE_CONFIRM_ISOLATED:-0}"
 RESTORE_CLEANUP="${RESTORE_CLEANUP:-1}"
 RESTORE_NOW_EPOCH="${RESTORE_NOW_EPOCH:-$(date -u +%s)}"
 
-for value_name in RPO_SECONDS RTO_SECONDS RESTORE_NOW_EPOCH; do
-  value="${!value_name}"
-  [[ "$value" =~ ^[0-9]+$ ]] || { echo "$value_name must be an integer" >&2; exit 2; }
-done
-(( RPO_SECONDS > 0 )) || { echo "RPO_SECONDS must be greater than zero" >&2; exit 2; }
-(( RTO_SECONDS > 0 )) || { echo "RTO_SECONDS must be greater than zero" >&2; exit 2; }
+is_canonical_decimal() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
+}
+
+is_positive_canonical_decimal() {
+  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+is_positive_canonical_decimal "$RPO_SECONDS" || {
+  echo "RPO_SECONDS must be a positive decimal integer without leading zeros" >&2
+  exit 2
+}
+is_positive_canonical_decimal "$RTO_SECONDS" || {
+  echo "RTO_SECONDS must be a positive decimal integer without leading zeros" >&2
+  exit 2
+}
+is_canonical_decimal "$RESTORE_NOW_EPOCH" || {
+  echo "RESTORE_NOW_EPOCH must be a decimal integer epoch without leading zeros" >&2
+  exit 2
+}
 [[ "$RESTORE_CLEANUP" == "0" || "$RESTORE_CLEANUP" == "1" ]] || { echo "RESTORE_CLEANUP must be 0 or 1" >&2; exit 2; }
 [[ "$RESTORE_CONFIRM_ISOLATED" == "1" ]] || {
   echo "RESTORE_CONFIRM_ISOLATED=1 is required; restore drills must target an isolated database" >&2
@@ -71,20 +85,37 @@ EOF
 cleanup_and_report() {
   local rc=$?
   local end_epoch
+  local cleanup_failed=0
   trap - EXIT
   end_epoch="$(date -u +%s)"
 
   if (( restore_created == 1 )) && [[ "$RESTORE_CLEANUP" == "1" ]]; then
     export MYSQL_PWD="$RESTORE_DB_PASSWORD"
-    mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
-      -e "DROP DATABASE IF EXISTS \`$RESTORE_DB_NAME\`;" >/dev/null 2>&1 || \
+    if ! mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
+      -e "DROP DATABASE IF EXISTS \`$RESTORE_DB_NAME\`;" >/dev/null 2>&1; then
+      cleanup_failed=1
       echo "RESTORE_DRILL_WARNING cleanup_failed database=$RESTORE_DB_NAME" >&2
+    fi
     unset MYSQL_PWD
+  fi
+
+  if (( cleanup_failed == 1 && rc == 0 )); then
+    result_status="failed"
+    result_reason="cleanup_failed"
+    report_written=0
+    rc=1
   fi
 
   if (( report_written == 0 )); then
     write_report "$result_status" "$result_reason" "$end_epoch"
   fi
+
+  if (( rc == 0 )); then
+    echo "RESTORE_DRILL status=passed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE"
+  elif [[ "$result_reason" == "cleanup_failed" ]]; then
+    echo "RESTORE_DRILL status=failed reason=cleanup_failed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE" >&2
+  fi
+
   exit "$rc"
 }
 trap cleanup_and_report EXIT
@@ -123,7 +154,7 @@ created_at_epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$BACK
 
 [[ "$manifest_status" == "complete" ]] || fail_drill "backup_manifest_incomplete" "backup manifest is not complete"
 [[ -n "$source_db" ]] || fail_drill "backup_manifest_invalid" "database_name missing from backup manifest"
-[[ "$created_at_epoch" =~ ^[0-9]+$ ]] || fail_drill "backup_manifest_invalid" "created_at_epoch invalid in backup manifest"
+is_canonical_decimal "$created_at_epoch" || fail_drill "backup_manifest_invalid" "created_at_epoch invalid in backup manifest"
 [[ "$RESTORE_DB_NAME" != "$source_db" ]] || \
   fail_drill "source_target_match" "restore target must differ from source database: $source_db" 2
 (( created_at_epoch <= RESTORE_NOW_EPOCH )) || fail_drill "backup_future_timestamp" "backup timestamp is in the future"
@@ -196,8 +227,6 @@ if [[ "$rpo_status" == "failed" || "$rto_status" == "failed" ]]; then
   exit 1
 fi
 
+# Do not publish PASS until the EXIT trap completes cleanup successfully.
 result_status="passed"
 result_reason="verified"
-write_report "$result_status" "$result_reason" "$end_epoch"
-report_written=1
-echo "RESTORE_DRILL status=passed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$duration_seconds rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE"
