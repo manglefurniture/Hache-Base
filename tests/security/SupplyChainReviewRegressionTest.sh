@@ -71,6 +71,30 @@ grep -q 'rule=sca_unavailable' "$invalid_npm_inner/out.txt"
 grep -q 'not_evaluated=1' "$invalid_npm_inner/out.txt"
 grep -q 'evidence_complete=0' "$invalid_npm_inner/out.txt"
 
+invalid_npm_advisory="$(new_repo invalid-npm-advisory)"
+make_node_lock "$invalid_npm_advisory"
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{"vuln-pkg":{"severity":"high","via":[{}]}}}' > "$invalid_npm_advisory/npm-audit.json"
+commit_all "$invalid_npm_advisory"
+run_check "$invalid_npm_advisory" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$invalid_npm_advisory/npm-audit.json" > "$invalid_npm_advisory/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_npm_advisory/out.txt"
+grep -q 'not_evaluated=1' "$invalid_npm_advisory/out.txt"
+grep -q 'evidence_complete=0' "$invalid_npm_advisory/out.txt"
+
+invalid_lock="$(new_repo invalid-node-lock)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0"}' > "$invalid_lock/package.json"
+printf '%s\n' '{}' > "$invalid_lock/package-lock.json"
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{}}' > "$invalid_lock/npm-audit.json"
+commit_all "$invalid_lock"
+set +e
+run_check "$invalid_lock" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_NPM_AUDIT_FILE="$invalid_lock/npm-audit.json" > "$invalid_lock/out.txt" 2>&1
+invalid_lock_rc=$?
+set -e
+[[ "$invalid_lock_rc" -eq 1 ]]
+grep -q 'rule=node_lock_invalid_format' "$invalid_lock/out.txt"
+grep -q 'rule=license_not_evaluated' "$invalid_lock/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_lock/out.txt"
+grep -q 'evidence_complete=0' "$invalid_lock/out.txt"
+
 invalid_composer="$(new_repo invalid-composer)"
 printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer/composer.json"
 printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer/composer.lock"
@@ -90,6 +114,16 @@ run_check "$invalid_composer_inner" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C
 grep -q 'rule=sca_unavailable' "$invalid_composer_inner/out.txt"
 grep -q 'not_evaluated=1' "$invalid_composer_inner/out.txt"
 grep -q 'evidence_complete=0' "$invalid_composer_inner/out.txt"
+
+invalid_composer_advisory="$(new_repo invalid-composer-advisory)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer_advisory/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer_advisory/composer.lock"
+printf '%s\n' '{"advisories":{"vendor/pkg":[{}]}}' > "$invalid_composer_advisory/composer-audit.json"
+commit_all "$invalid_composer_advisory"
+run_check "$invalid_composer_advisory" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$invalid_composer_advisory/composer-audit.json" > "$invalid_composer_advisory/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_composer_advisory/out.txt"
+grep -q 'not_evaluated=1' "$invalid_composer_advisory/out.txt"
+grep -q 'evidence_complete=0' "$invalid_composer_advisory/out.txt"
 
 multi="$(new_repo multi-advisory)"
 make_node_lock "$multi"
@@ -199,8 +233,28 @@ printf '%s\n' 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890' > "$incomplete_secr
 commit_all "$incomplete_secret"
 chmod 000 "$incomplete_secret/a-unreadable.txt"
 set +e
-run_check "$incomplete_secret" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$incomplete_secret/out.txt" 2>&1
-incomplete_rc=$?
+if [[ "$(id -u)" -eq 0 ]]; then
+  command -v runuser >/dev/null 2>&1 || { echo 'runuser required for root unreadable regression' >&2; exit 1; }
+  getent passwd nobody >/dev/null 2>&1 || { echo 'nobody user required for root unreadable regression' >&2; exit 1; }
+  cp "$ROOT/security/supply-chain/check.php" "$incomplete_secret/check-runner.php"
+  chmod -R a+rX "$incomplete_secret"
+  chmod 777 "$incomplete_secret"
+  chmod 000 "$incomplete_secret/a-unreadable.txt"
+  runuser -u nobody -- env \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0='*' \
+    SUPPLY_CHAIN_ROOT="$incomplete_secret" \
+    SUPPLY_CHAIN_REPORT_FILE="$incomplete_secret/report.json" \
+    SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 \
+    SUPPLY_CHAIN_MODE=baseline \
+    SUPPLY_CHAIN_LEVEL=A \
+    php "$incomplete_secret/check-runner.php" > "$incomplete_secret/out.txt" 2>&1
+  incomplete_rc=$?
+else
+  run_check "$incomplete_secret" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$incomplete_secret/out.txt" 2>&1
+  incomplete_rc=$?
+fi
 set -e
 chmod 600 "$incomplete_secret/a-unreadable.txt"
 [[ "$incomplete_rc" -eq 1 ]]
