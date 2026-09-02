@@ -9,8 +9,8 @@ Hache-Base adopta un despliegue verificable, observable y recuperable. El runner
 - `deploy.sh`: commit fijado, rollback ref, backup, migraciones configurables, pruebas, readiness, smoke y ventana de observación P0-10.
 - `liveness-check.sh`: confirma que el proceso/endpoint responde; no afirma que el servicio esté listo para tráfico.
 - `health-check.sh`: nombre compatible del gate de **readiness**; valida status y puede exigir body/version.
-- `rollback.sh`: reversión explícita de código; puede anexar `rolled_back` al record del deploy sin convertir un fallo de logging en fallo del rollback ya ejecutado.
-- `mark-deploy-recovery.sh`: registra explícitamente `manual_recovery` o `rolled_back` cuando la recuperación ocurrió fuera del runner.
+- `rollback.sh`: reversión explícita de código; registra un evento `code_rollback` con `recovery_state=pending_verification` sin convertir un fallo de logging en fallo del rollback ya ejecutado.
+- `mark-deploy-recovery.sh`: registra explícitamente `manual_recovery` o `rolled_back` solo después de la recuperación y sus verificaciones correspondientes.
 - `DEPLOY-FAILURE-RUNBOOK.md`: respuesta mínima ante fallo parcial.
 - `BACKUP-ROLLBACK.md`: política y límites de recuperación.
 
@@ -108,7 +108,15 @@ Antes de activar HSTS, promover CSP a enforcement o adoptar cookies `Secure` det
 
 ## Recuperación explícita
 
-`rollback.sh <commit-o-rama>` revierte solo código. Si se conoce el `DEPLOY_RECORD_FILE`, pasarlo en el entorno para anexar `state=rolled_back` al mismo record. Si el append del record falla después del checkout, el script emite `ROLLBACK_RECORD_WARNING` pero conserva el éxito del rollback de código.
+`rollback.sh <commit-o-rama>` revierte solo código. Si se conoce el `DEPLOY_RECORD_FILE`, pasarlo en el entorno para anexar `DEPLOY_RECOVERY_EVENT event=code_rollback ... recovery_state=pending_verification`. Ese evento **no** cierra la recuperación ni equivale a `state=rolled_back`; confirma únicamente que el código volvió al ref solicitado. Si el append del record falla después del checkout, el script emite `ROLLBACK_RECORD_WARNING` pero conserva el éxito del rollback de código.
+
+Después del rollback, ejecutar las verificaciones del runbook (readiness, smoke, commit efectivo, señales de integridad y ventana cuando aplique). Solo después de verificar la recuperación se registra el estado canónico final:
+
+```bash
+DEPLOY_RECORD_FILE=/ruta/record \
+APP_ROOT=/ruta/app \
+bash deployment/mark-deploy-recovery.sh rolled_back verificacion_post_rollback_ok
+```
 
 Cuando la recuperación fue manual:
 
@@ -118,7 +126,7 @@ APP_ROOT=/ruta/app \
 bash deployment/mark-deploy-recovery.sh manual_recovery motivo_corto
 ```
 
-El helper registra evidencia; no ejecuta la recuperación.
+El helper registra evidencia; no ejecuta la recuperación ni sustituye las verificaciones del runbook.
 
 ## Requisitos por proyecto
 
