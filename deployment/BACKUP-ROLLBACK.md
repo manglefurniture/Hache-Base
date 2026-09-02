@@ -22,7 +22,7 @@ P0-10 añade `templates/DEPLOY-RECOVERY.md` para declarar por release qué cambi
 
 El rollback de código y el de base de datos son decisiones separadas. Volver el código automáticamente después de una migración no reversible puede dejar código y esquema incompatibles.
 
-`rollback.sh <commit-o-rama>` restaura solo el código. Si se proporciona `DEPLOY_RECORD_FILE`, anexa un estado `rolled_back` al mismo registro después de completar el checkout.
+`rollback.sh <commit-o-rama>` restaura solo el código. Si se proporciona `DEPLOY_RECORD_FILE`, registra `event=code_rollback` con `recovery_state=pending_verification`; ese evento confirma únicamente la reversión de código y **no** cierra la recuperación. Después de ejecutar readiness, smoke, comprobación del commit efectivo y la ventana/señales definidas por el runbook, el operador registra el estado canónico final con `mark-deploy-recovery.sh rolled_back`.
 
 Si la base debe volver atrás, usar un backup verificado y un procedimiento explícito de restauración. P0-10 no automatiza restore; P0-11 define RPO/RTO, restore drill y freshness de backups.
 
