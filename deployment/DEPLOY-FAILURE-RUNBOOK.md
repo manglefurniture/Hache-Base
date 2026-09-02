@@ -13,7 +13,9 @@ Un fallo de deploy no autoriza un rollback ciego. Código, base de datos, assets
 3. Identificar `failed_phase`, el último `DEPLOY_STATE` exitoso y, cuando aplique, la señal que interrumpió el runner.
 4. Si existe riesgo de corrupción, duplicación, exposición de seguridad o escritura incompatible, detener primero las mutaciones/tráfico afectado según la infraestructura del proyecto.
 
-`deploy.sh` convierte `SIGTERM` en exit code 143 y `SIGINT` en 130, registra `state=failed` y emite `DEPLOY_RECOVERY_REQUIRED` antes de salir. `SIGKILL` y una caída abrupta del host no pueden ser interceptados por un proceso; en esos casos el operador debe tratar un record sin estado terminal como despliegue potencialmente parcial y reconciliarlo con commit, gates e infraestructura reales.
+`deploy.sh` convierte `SIGTERM` en exit code 143 y `SIGINT` en 130. Las fases potencialmente largas se ejecutan en un process group administrado: ante una de esas señales, el runner la propaga al grupo activo, espera una gracia breve configurable mediante `SIGNAL_GRACE_SECONDS` y escala a `SIGKILL` si el proceso no termina. Solo después registra `state=failed` y emite `DEPLOY_RECOVERY_REQUIRED`. Esto evita declarar cancelado un deploy mientras una migración, test o gate sigue ejecutándose en segundo plano.
+
+`SIGKILL` dirigido al propio runner y una caída abrupta del host no pueden ser interceptados por un proceso; en esos casos el operador debe tratar un record sin estado terminal como despliegue potencialmente parcial y reconciliarlo con commit, gates e infraestructura reales.
 
 ## 2. Clasificar qué cambió
 
