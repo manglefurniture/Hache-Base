@@ -1,0 +1,47 @@
+name: P0-12 npm final repair
+
+on:
+  push:
+    branches:
+      - feat/production-readiness-p0-12-supply-chain-20260902
+    paths:
+      - tools/p0-12-npm-final-fixes.py
+      - .github/workflows/p0-12-npm-final-fixes.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-readiness-p0-12-supply-chain-20260902
+          fetch-depth: 0
+      - name: Apply asserted repair
+        run: python3 tools/p0-12-npm-final-fixes.py
+      - name: Syntax and targeted regressions
+        run: |
+          php -l security/supply-chain/check.php
+          bash tests/security/SupplyChainReviewRound2RegressionTest.sh
+          bash tests/security/SupplyChainReviewRegressionTest.sh
+          bash tests/security/SupplyChainEvidenceScopeRegressionTest.sh
+          bash tests/security/SupplyChainFinalReviewRegressionTest.sh
+          bash tests/security/SupplyChainHeadEvidenceRegressionTest.sh
+          bash tests/security/SupplyChainConfigHeadRegressionTest.sh
+          bash tests/security/SupplyChainPolicyTest.sh
+      - name: Full suite
+        run: bash tests/run.sh
+      - name: Whitespace
+        run: git diff --check
+      - name: Commit repaired files
+        run: |
+          git config user.name 'Hache Interactive'
+          git config user.email 'manglefurniture@gmail.com'
+          git add security/supply-chain/check.php tests/security/SupplyChainReviewRound2RegressionTest.sh
+          git diff --cached --quiet && exit 1
+          git commit -m 'Fix final npm supply-chain review findings'
+          git push origin HEAD:feat/production-readiness-p0-12-supply-chain-20260902
