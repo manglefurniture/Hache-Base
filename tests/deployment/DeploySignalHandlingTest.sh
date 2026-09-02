@@ -24,6 +24,16 @@ assert_not_contains() {
   fi
 }
 
+process_can_execute() {
+  local pid="$1"
+  local stat
+
+  kill -0 "$pid" 2>/dev/null || return 1
+  stat="$(ps -o stat= -p "$pid" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  [[ -n "$stat" ]] || return 1
+  [[ "$stat" != Z* ]]
+}
+
 make_fixture() {
   local name="$1"
   APP="$TMP/$name-app"
@@ -172,13 +182,13 @@ run_parent_term_case() {
   [[ -f "$leader_signal_file" ]] || fail "TERM was not forwarded to the managed phase leader"
 
   attempts=40
-  while kill -0 "$worker_pid" 2>/dev/null && (( attempts > 0 )); do
+  while process_can_execute "$worker_pid" && (( attempts > 0 )); do
     sleep 0.05
     attempts=$((attempts - 1))
   done
-  if kill -0 "$worker_pid" 2>/dev/null; then
+  if process_can_execute "$worker_pid"; then
     kill -KILL "$worker_pid" 2>/dev/null || true
-    fail "surviving worker remained alive after process-group cancellation"
+    fail "surviving worker remained executable after process-group cancellation"
   fi
 
   assert_failed_record "$out" 143 TERM
