@@ -19,6 +19,7 @@ Todo archivo de esta carpeta debe:
 - `SESSION-SECURITY.md`: adopción P0-08 de cookies, fixation, idle/absolute expiry, logout y trusted proxy para sesión.
 - `DEPLOY-RECOVERY.md`: adopción P0-10 con matriz código/DB/assets/config, punto de no retorno, smoke, observación, criterios y drill de recovery.
 - `BACKUP-RESTORE.md`: adopción P0-11 con RPO/RTO, freshness/alertas y evidencia de restore aislado.
+- `SUPPLY-CHAIN-TRIAGE.md`: adopción P0-12 con stacks/lockfiles, secret scan, SCA, triage/SLA, mitigaciones SEC-014 y revisión de licencias.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
 - `PERFORMANCE-BUDGET.md`: presupuesto de performance.
 - `staging.env.example`: referencia de configuración de staging.
