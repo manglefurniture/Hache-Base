@@ -62,7 +62,7 @@ En Node, si `package.json` declara `packageManager`, el lockfile debe correspond
 
 Combinaciones ambiguas con más de un lockfile en `HEAD` se rechazan. Si `packageManager` no existe, se admite exactamente uno de los lockfiles reconocidos; el proyecto sigue siendo responsable de fijar su toolchain de forma reproducible.
 
-Para npm, el lock soportado debe tener `lockfileVersion` 2/3, una entrada raíz válida y conjuntos de dependencias coherentes con `package.json`. Además, cada dependencia directa o transitiva declarada por un paquete debe resolverse desde ubicaciones alcanzables por la resolución jerárquica de Node; una copia anidada bajo un paquete hermano no satisface el requisito. Un grafo truncado queda inválido.
+Para npm, el lock soportado debe tener `lockfileVersion` 2/3, una entrada raíz válida y conjuntos de dependencias coherentes con `package.json`. Además, cada dependencia directa o transitiva declarada por un paquete debe resolverse desde ubicaciones alcanzables por la resolución jerárquica de Node; una copia anidada bajo un paquete hermano no satisface el requisito. Un grafo truncado queda inválido. La versión del paquete resuelto también debe satisfacer la restricción declarada. Los links/workspaces soportados se resuelven contra su entrada real del lock; protocolos o constraints que el checker no pueda interpretar de forma confiable no se elevan a evidencia completa y dejan el stack como inválido/NOT EVALUATED para SCA y licencias.
 
 Para Composer, `composer.lock` debe contener `packages`/`packages-dev` válidos, cubrir los requisitos directos no-plataforma de `composer.json` y mantener cerrado el grafo transitivo declarado por los `require` de los paquetes bloqueados. Las versiones bloqueadas deben satisfacer las restricciones Composer que el checker puede evaluar; si una restricción no puede evaluarse de forma confiable, el lock no se eleva a evidencia completa.
 
@@ -91,7 +91,7 @@ Los symlinks trackeados **no se dereferencian**. Se analiza el contenido del blo
 
 El reporte conserva solo `rule`, archivo y línea. Nunca persiste el valor detectado.
 
-`secret-scan.allowlist` solo puede usarse para fixtures falsos deliberados. Cada entrada debe ser una **ruta exacta** bajo `tests/` o `fixtures/` y una regla exacta reconocida; no se permiten globs, `*` ni rutas de runtime como `src/`.
+`secret-scan.allowlist` solo puede usarse para fixtures falsos deliberados. Cada entrada debe ser una **ruta exacta** bajo `tests/` o `fixtures/` y una regla exacta reconocida; no se permiten globs, `*` ni rutas de runtime como `src/`. La allowlist predeterminada se lee del blob versionado en `HEAD`, no del working tree. `SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE` es el único override explícito para aportar una allowlist externa.
 
 Formato:
 

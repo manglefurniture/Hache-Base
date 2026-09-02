@@ -207,14 +207,11 @@ function findingId(string $category, string $rule, string $location, string $sub
 }
 
 /** @return array<int,array{path:string,rule:string}> */
-function loadSecretAllowlist(string $path, array $knownRules): array
+function parseSecretAllowlist(string $raw, array $knownRules, string $source): array
 {
-    if (!is_file($path)) {
-        return [];
-    }
-    $rows = file($path, FILE_IGNORE_NEW_LINES);
-    if ($rows === false) {
-        configError("unreadable_secret_allowlist path={$path}");
+    $rows = preg_split('/\R/', $raw);
+    if (!is_array($rows)) {
+        configError("unreadable_secret_allowlist source={$source}");
     }
     $entries = [];
     foreach ($rows as $row) {
@@ -236,6 +233,29 @@ function loadSecretAllowlist(string $path, array $knownRules): array
         $entries[] = ['path' => $allowPath, 'rule' => $rule];
     }
     return $entries;
+}
+
+/** @return array<int,array{path:string,rule:string}> */
+function loadSecretAllowlist(string $path, array $knownRules): array
+{
+    if (!is_file($path)) {
+        return [];
+    }
+    $raw = file_get_contents($path);
+    if ($raw === false) {
+        configError("unreadable_secret_allowlist path={$path}");
+    }
+    return parseSecretAllowlist($raw, $knownRules, $path);
+}
+
+/** @return array<int,array{path:string,rule:string}> */
+function loadSecretAllowlistFromHead(string $root, string $relativePath, array $knownRules): array
+{
+    $raw = headFileContent($root, $relativePath);
+    if ($raw === null) {
+        return [];
+    }
+    return parseSecretAllowlist($raw, $knownRules, 'HEAD:' . $relativePath);
 }
 
 /** @param array<int,array{path:string,rule:string}> $allowlist */
@@ -565,14 +585,33 @@ function composerVersionSatisfies(string $version, string $constraint): bool
     return false;
 }
 
-/** @param array<string,mixed> $packages */
-function npmLockResolvesPackage(array $packages, string $fromPath, string $dependencyName): bool
+/** @return array{path:string,data:array<string,mixed>}|null */
+function npmLockResolvedPackage(array $packages, string $fromPath, string $dependencyName): ?array
 {
     $base = trim($fromPath, '/');
     while (true) {
         $candidate = ($base === '' ? '' : $base . '/') . 'node_modules/' . $dependencyName;
         if (isset($packages[$candidate]) && is_array($packages[$candidate])) {
-            return true;
+            $data = $packages[$candidate];
+            if (($data['link'] ?? false) === true) {
+                $resolved = $data['resolved'] ?? null;
+                if (!is_string($resolved) || trim($resolved) === '') {
+                    return null;
+                }
+                $resolved = trim(str_replace('\\', '/', $resolved));
+                while (str_starts_with($resolved, './')) {
+                    $resolved = substr($resolved, 2);
+                }
+                $resolved = trim($resolved, '/');
+                if ($resolved === '' || str_starts_with($resolved, '../') || str_contains($resolved, '/../')) {
+                    return null;
+                }
+                if (!isset($packages[$resolved]) || !is_array($packages[$resolved])) {
+                    return null;
+                }
+                return ['path' => $resolved, 'data' => $packages[$resolved]];
+            }
+            return ['path' => $candidate, 'data' => $data];
         }
         if ($base === '') {
             break;
@@ -580,6 +619,161 @@ function npmLockResolvesPackage(array $packages, string $fromPath, string $depen
         $marker = '/node_modules/';
         $position = strrpos($base, $marker);
         $base = $position === false ? '' : substr($base, 0, $position);
+    }
+    return null;
+}
+
+/** @return array{0:int,1:int,2:int}|null */
+function npmNumericVersion(string $version): ?array
+{
+    $value = trim($version);
+    if (str_starts_with($value, 'v')) {
+        $value = substr($value, 1);
+    }
+    if (preg_match('/^(\d+)\.(\d+)\.(\d+)$/', $value, $matches) !== 1) {
+        return null;
+    }
+    return [(int)$matches[1], (int)$matches[2], (int)$matches[3]];
+}
+
+/** @param array{0:int,1:int,2:int} $version */
+function npmVersionString(array $version): string
+{
+    return $version[0] . '.' . $version[1] . '.' . $version[2];
+}
+
+/** @param array{0:int,1:int,2:int} $locked */
+function npmConstraintTokenSatisfied(array $locked, string $token): bool
+{
+    $token = trim($token);
+    if ($token === '' || $token === '*' || strtolower($token) === 'x') {
+        return true;
+    }
+    $lockedString = npmVersionString($locked);
+
+    if (preg_match('/^([\^~])\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/', $token, $matches) === 1) {
+        $operator = $matches[1];
+        $specified = isset($matches[3]) && $matches[3] !== '' ? (isset($matches[4]) && $matches[4] !== '' ? 3 : 2) : 1;
+        $base = [(int)$matches[2], (int)($matches[3] ?? 0), (int)($matches[4] ?? 0)];
+        if (version_compare($lockedString, npmVersionString($base), '<')) {
+            return false;
+        }
+        if ($operator === '^') {
+            if ($specified === 1 || $base[0] > 0) {
+                $upper = [$base[0] + 1, 0, 0];
+            } elseif ($specified === 2 || $base[1] > 0) {
+                $upper = [0, $base[1] + 1, 0];
+            } else {
+                $upper = [0, 0, $base[2] + 1];
+            }
+        } else {
+            $upper = $specified === 1 ? [$base[0] + 1, 0, 0] : [$base[0], $base[1] + 1, 0];
+        }
+        return version_compare($lockedString, npmVersionString($upper), '<');
+    }
+
+    if (preg_match('/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/', $token, $matches) === 1) {
+        $specified = isset($matches[2]) && $matches[2] !== '' ? (isset($matches[3]) && $matches[3] !== '' ? 3 : 2) : 1;
+        $base = [(int)$matches[1], (int)($matches[2] ?? 0), (int)($matches[3] ?? 0)];
+        if ($specified === 3) {
+            return version_compare($lockedString, npmVersionString($base), '=');
+        }
+        $upper = $specified === 1 ? [$base[0] + 1, 0, 0] : [$base[0], $base[1] + 1, 0];
+        return version_compare($lockedString, npmVersionString($base), '>=')
+            && version_compare($lockedString, npmVersionString($upper), '<');
+    }
+
+    if (preg_match('/^v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?$/', $token, $matches) === 1) {
+        if (in_array($matches[1], ['x', 'X', '*'], true)) {
+            return true;
+        }
+        $major = (int)$matches[1];
+        $minorRaw = $matches[2] ?? 'x';
+        $patchRaw = $matches[3] ?? 'x';
+        if (in_array($minorRaw, ['x', 'X', '*'], true)) {
+            $lower = [$major, 0, 0];
+            $upper = [$major + 1, 0, 0];
+        } elseif (in_array($patchRaw, ['x', 'X', '*'], true)) {
+            $minor = (int)$minorRaw;
+            $lower = [$major, $minor, 0];
+            $upper = [$major, $minor + 1, 0];
+        } else {
+            return false;
+        }
+        return version_compare($lockedString, npmVersionString($lower), '>=')
+            && version_compare($lockedString, npmVersionString($upper), '<');
+    }
+
+    if (preg_match('/^(<=|>=|<|>|=)\s*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/', $token, $matches) === 1) {
+        $target = [(int)$matches[2], (int)($matches[3] ?? 0), (int)($matches[4] ?? 0)];
+        return version_compare($lockedString, npmVersionString($target), $matches[1]);
+    }
+
+    return false;
+}
+
+function npmVersionSatisfies(string $version, string $constraint): bool
+{
+    $constraint = trim($constraint);
+    if (str_starts_with($constraint, 'workspace:')) {
+        $constraint = substr($constraint, strlen('workspace:'));
+        if (in_array($constraint, ['', '*', '^', '~'], true)) {
+            return npmNumericVersion($version) !== null;
+        }
+    }
+    if ($constraint === '' || $constraint === '*') {
+        return npmNumericVersion($version) !== null;
+    }
+    if (preg_match('~^(?:file:|link:|git\+|https?://|npm:)~i', $constraint) === 1) {
+        return false;
+    }
+    $locked = npmNumericVersion($version);
+    if ($locked === null) {
+        return false;
+    }
+    $branches = preg_split('/\s*\|\|\s*/', $constraint);
+    if (!is_array($branches)) {
+        return false;
+    }
+    foreach ($branches as $branch) {
+        $branch = trim($branch);
+        if ($branch === '') {
+            continue;
+        }
+        if (preg_match('/^v?(\d+(?:\.\d+){0,2})\s+-\s+v?(\d+(?:\.\d+){0,2})$/', $branch, $range) === 1) {
+            $lowerParts = array_map('intval', explode('.', $range[1]));
+            $upperPartsRaw = array_map('intval', explode('.', $range[2]));
+            $lower = [$lowerParts[0] ?? 0, $lowerParts[1] ?? 0, $lowerParts[2] ?? 0];
+            $upper = [$upperPartsRaw[0] ?? 0, $upperPartsRaw[1] ?? 0, $upperPartsRaw[2] ?? 0];
+            $lockedString = npmVersionString($locked);
+            $lowerOk = version_compare($lockedString, npmVersionString($lower), '>=');
+            $upperSpecified = count($upperPartsRaw);
+            if ($upperSpecified >= 3) {
+                $upperOk = version_compare($lockedString, npmVersionString($upper), '<=');
+            } elseif ($upperSpecified === 2) {
+                $upperOk = version_compare($lockedString, npmVersionString([$upper[0], $upper[1] + 1, 0]), '<');
+            } else {
+                $upperOk = version_compare($lockedString, npmVersionString([$upper[0] + 1, 0, 0]), '<');
+            }
+            if ($lowerOk && $upperOk) {
+                return true;
+            }
+            continue;
+        }
+        $tokens = preg_split('/\s+/', $branch);
+        if (!is_array($tokens) || $tokens === []) {
+            continue;
+        }
+        $all = true;
+        foreach ($tokens as $token) {
+            if ($token !== '' && !npmConstraintTokenSatisfied($locked, $token)) {
+                $all = false;
+                break;
+            }
+        }
+        if ($all) {
+            return true;
+        }
     }
     return false;
 }
@@ -628,6 +822,9 @@ function validNpmLock(array $lock, array $manifest): bool
         if ($path !== '' && (($data['link'] ?? false) !== true) && (!isset($data['version']) || trim((string)$data['version']) === '')) {
             return false;
         }
+        if (($data['link'] ?? false) === true && (!isset($data['resolved']) || !is_string($data['resolved']) || trim($data['resolved']) === '')) {
+            return false;
+        }
         if (isset($data['license'])) {
             if (!is_string($data['license']) && !is_array($data['license'])) {
                 return false;
@@ -649,7 +846,12 @@ function validNpmLock(array $lock, array $manifest): bool
                 if (!is_string($name) || trim($name) === '' || !is_string($constraint) || trim($constraint) === '') {
                     return false;
                 }
-                if (!npmLockResolvesPackage($lock['packages'], $path, $name)) {
+                $resolved = npmLockResolvedPackage($lock['packages'], $path, $name);
+                if ($resolved === null) {
+                    return false;
+                }
+                $resolvedVersion = $resolved['data']['version'] ?? null;
+                if (!is_string($resolvedVersion) || trim($resolvedVersion) === '' || !npmVersionSatisfies($resolvedVersion, $constraint)) {
                     return false;
                 }
             }
@@ -1063,7 +1265,10 @@ $secretRules = [
     'stripe_live_secret' => '~\bsk_live_[A-Za-z0-9]{16,}\b~',
     'google_api_key' => '~\bAIza[0-9A-Za-z_-]{30,}\b~',
 ];
-$allowlist = loadSecretAllowlist((string)envValue('SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE', $root . '/security/supply-chain/secret-scan.allowlist'), $secretRules);
+$allowlistOverride = envValue('SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE');
+$allowlist = $allowlistOverride === null || $allowlistOverride === ''
+    ? loadSecretAllowlistFromHead($root, 'security/supply-chain/secret-scan.allowlist', $secretRules)
+    : loadSecretAllowlist($allowlistOverride, $secretRules);
 $findings = [];
 $checks = [
     'secret_scan' => ['status' => 'pass', 'scope' => 'tracked_head_text_tree', 'binary_skipped' => 0, 'symlink_blobs_scanned' => 0, 'incomplete' => false],
