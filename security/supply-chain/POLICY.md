@@ -7,11 +7,11 @@ Este paquete implementa el baseline reusable de P0-12 sin convertir Hache Base e
 P0-12 cubre:
 
 - guardrail de lockfiles para stacks declarados;
-- secret scan de firmas de alta confianza sobre archivos actualmente trackeados;
+- secret scan de firmas de alta confianza sobre archivos de texto actualmente trackeados;
 - SCA para Composer y npm cuando existe lockfile compatible y hay herramienta/evidencia disponible;
 - inventario de licencias desde lockfiles compatibles;
 - modos `report`, `baseline` y `block`;
-- registro explícito de mitigaciones/riesgo aceptado con owner, aprobación y expiración;
+- registro explícito de mitigaciones/riesgo aceptado para findings SCA con owner, aprobación y expiración;
 - SLA de triage versionado.
 
 No cubre SBOM/provenance, pinning de GitHub Actions/containers por digest ni scans históricos exhaustivos; eso pertenece a madurez posterior/P2-06 o a tooling específico del proyecto.
@@ -19,15 +19,15 @@ No cubre SBOM/provenance, pinning de GitHub Actions/containers por digest ni sca
 ## Relación normativa
 
 - **SEC-013**: los secretos no pueden quedar versionados ni expuestos. El scanner de P0-12 busca únicamente patrones de alta confianza y nunca imprime el valor detectado. Un hit real no se “acepta”: se revoca/rota y se elimina del árbol/historia según corresponda.
-- **SEC-014**: en niveles B/C una vulnerabilidad crítica/alta explotable no se libera sin actualización, mitigación equivalente o aislamiento documentado y aprobado. El gate puede bloquear `critical/high` en `block`; en A se reporta y requiere triage, sin elevar automáticamente la severidad normativa.
+- **SEC-014**: en niveles B/C una vulnerabilidad crítica/alta explotable no se libera sin actualización, mitigación equivalente o aislamiento documentado y aprobado. El gate puede bloquear findings reales `critical/high` en `block`; en A se reportan y requieren triage, sin elevar automáticamente la severidad normativa.
 
-La mera existencia de `check.php` o un reporte sin hallazgos **no demuestra** que SEC-013/SEC-014 estén PASS en un proyecto si el alcance de scan/SCA no cubre su stack real.
+La mera existencia de `check.php` o un reporte sin blockers **no demuestra** que SEC-013/SEC-014 estén PASS en un proyecto si el alcance de scan/SCA no cubre su stack real. El reporte expone `not_evaluated` y `evidence_complete` para impedir confundir ausencia de evidencia con PASS.
 
 ## Modos
 
 ### `report`
 
-Genera evidencia y siempre deja los findings como no bloqueantes. Se usa para primera adopción y baseline.
+Genera evidencia y deja los findings como no bloqueantes. Se usa para primera adopción y baseline.
 
 ### `baseline`
 
@@ -35,14 +35,16 @@ Bloquea solo las categorías de baja ambigüedad configuradas en `policy.json`: 
 
 ### `block`
 
-Aplica toda la política:
+Aplica la política de findings evaluados:
 
 - secretos y manifests sin lockfile bloquean;
-- SCA crítico/alto bloquea en B/C salvo mitigación aprobada vigente;
-- ausencia de SCA para un stack con lockfile bloquea en B/C porque el control queda `NOT EVALUATED`, no PASS;
+- findings SCA reales `critical/high` bloquean en B/C salvo mitigación aprobada vigente;
+- `sca_unavailable` permanece **NOT EVALUATED**, no se convierte artificialmente en vulnerabilidad ni blocker SEC-014;
 - licencias solo bloquean según `license-policy.json` del proyecto.
 
-## Stacks
+Un exit code 0 con `not_evaluated > 0` no significa Production Ready: el proyecto todavía necesita completar la evidencia antes del release según el Standard/checklist aplicable.
+
+## Stacks y lockfiles
 
 `SUPPLY_CHAIN_STACK_ROOTS` acepta raíces relativas separadas por coma, por ejemplo:
 
@@ -50,7 +52,15 @@ Aplica toda la política:
 SUPPLY_CHAIN_STACK_ROOTS=".,frontend" php security/supply-chain/check.php
 ```
 
-Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`package.json` + lockfile). El parser SCA/licencias integrado cubre `composer.lock`, `package-lock.json` y `npm-shrinkwrap.json`. `pnpm-lock.yaml`/`yarn.lock` cuentan como lockfiles de reproducibilidad, pero requieren evidencia SCA/licencias específica del proyecto y nunca se tratan como PASS por defecto.
+Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`package.json` + lockfile). En Node, si `package.json` declara `packageManager`, el lockfile debe corresponder a ese manager:
+
+- `npm` → `package-lock.json` o `npm-shrinkwrap.json`;
+- `yarn` → `yarn.lock`;
+- `pnpm` → `pnpm-lock.yaml`.
+
+Combinaciones ambiguas con más de un lockfile se rechazan. Si `packageManager` no existe, se admite exactamente uno de los lockfiles reconocidos; el proyecto sigue siendo responsable de fijar su toolchain de forma reproducible.
+
+El parser SCA/licencias integrado cubre `composer.lock`, `package-lock.json` y `npm-shrinkwrap.json`. `pnpm-lock.yaml`/`yarn.lock` cuentan como lockfiles de reproducibilidad, pero SCA y licencias quedan explícitamente `NOT EVALUATED` hasta aportar evidencia específica del proyecto.
 
 ## SCA
 
@@ -59,36 +69,40 @@ Para ejecución real:
 - Composer: `composer audit --locked --format=json --no-interaction`;
 - npm: `npm audit --package-lock-only --json`.
 
-Si la herramienta no existe, falla la red, el JSON no es interpretable o el lockfile no tiene parser integrado, el resultado es `sca_unavailable`: **NOT EVALUATED**.
+Si la herramienta no existe, falla la red, el JSON no es interpretable o el lockfile no tiene parser integrado, el resultado es `sca_unavailable`: **NOT EVALUATED**. Ese estado no es PASS ni una vulnerabilidad demostrada y por eso no se eleva artificialmente a blocker SEC-014.
 
 Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE` existen para fixtures/evidencia pre-generada; no son un bypass de producción.
 
 ## Secret scan
 
-El baseline analiza el árbol trackeado actual mediante firmas de alta confianza: private keys, AWS access keys, GitHub tokens, Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
+El baseline analiza línea por línea todos los archivos de texto trackeados, sin omitir silenciosamente archivos grandes, mediante firmas de alta confianza: private keys, AWS access keys, GitHub tokens, Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
+
+Los archivos binarios se contabilizan aparte (`binary_skipped`) y el alcance declarado es `tracked_text_tree`; no se afirma que contenido binario sea evaluado como texto. Si un archivo de texto no puede leerse, `secret_scan.status` pasa a `not_evaluated`.
 
 El reporte conserva solo `rule`, archivo y línea. Nunca persiste el valor detectado.
 
-`secret-scan.allowlist` solo puede usarse para fixtures/documentación con valores falsos deliberados. Formato:
+`secret-scan.allowlist` solo puede usarse para fixtures falsos deliberados. Cada entrada debe ser una **ruta exacta** bajo `tests/` o `fixtures/` y una regla exacta reconocida; no se permiten globs, `*` ni rutas de runtime como `src/`.
+
+Formato:
 
 ```text
-ruta/o/glob rule
+tests/fixtures/fake-secret.txt openai_key
 ```
 
-Un secreto real requiere revocación/rotación y remoción; no debe silenciarse.
+Un secreto real requiere revocación/rotación y remoción; `accepted-risk.json` nunca se aplica a findings `secret`.
 
 El scan actual no equivale a un scan exhaustivo del historial Git. Si un proyecto pudo haber versionado secretos previamente, debe añadir evidencia de history scan/rotación con tooling especializado.
 
 ## Riesgo aceptado / mitigación SEC-014
 
-`accepted-risk.json` admite excepciones por `finding_id`. Para ser vigentes deben contener:
+`accepted-risk.json` admite excepciones únicamente para findings SCA `vulnerability` por `finding_id`. Para ser vigentes deben contener:
 
 - `owner`;
 - `approval_ref`;
 - `mitigation`;
-- `expires_at` (`YYYY-MM-DD`).
+- `expires_at` en formato canónico `YYYY-MM-DD` y no expirado.
 
-Una excepción incompleta o expirada no desactiva el bloqueo. Este mecanismo representa mitigación/aislamiento aprobado; no autoriza secretos reales.
+Una excepción incompleta, mal formada o expirada no desactiva el bloqueo. Este mecanismo representa mitigación/aislamiento aprobado de SEC-014; no autoriza secretos ni findings de lockfile/licencias.
 
 Ejemplo:
 
@@ -120,11 +134,12 @@ El reloj parte de la primera detección real del proyecto. CI incluye el SLA apl
 - `report_missing=true`: metadata de licencia ausente se reporta para revisión humana;
 - `denied`: lista explícita de identificadores/licencias que el proyecto decidió no aceptar;
 - `block_denied=true`: coincidencias con esa lista bloquean en modo `block`;
-- `block_missing=false` por default: ausencia de metadata no se convierte automáticamente en conclusión legal.
+- `block_missing=false` por default: ausencia de metadata no se convierte automáticamente en conclusión legal;
+- yarn/pnpm sin parser integrado generan `license_not_evaluated` y un estado explícito `NOT EVALUATED`.
 
 ## Exit codes
 
-- `0`: ejecución válida sin blockers aplicados por el modo actual;
+- `0`: ejecución válida sin blockers aplicados por el modo actual; revisar `evidence_complete` antes de interpretar el resultado;
 - `1`: existen findings bloqueantes bajo el modo/nivel actual;
 - `2`: configuración/entrada inválida y no hay evidencia confiable.
 
@@ -133,7 +148,7 @@ El reloj parte de la primera detección real del proyecto. CI incluye el SLA apl
 1. `report` para inventario inicial;
 2. resolver falsos positivos/stack roots y documentar riesgos;
 3. `baseline` para secretos + lockfiles;
-4. probar SCA/licencias con el stack real;
+4. completar SCA/licencias con el stack real hasta `evidence_complete=true`;
 5. `block` en B/C cuando el equipo pueda sostener triage/SLA y mitigaciones explícitas.
 
-No promover a `block` ocultando `sca_unavailable`; ausencia de evidencia sigue siendo ausencia de evidencia.
+No promover un release ocultando `sca_unavailable` o `license_not_evaluated`; ausencia de evidencia sigue siendo ausencia de evidencia aunque no sea un blocker automático del scanner.
