@@ -84,6 +84,39 @@ set -e
 grep -q 'BACKUP_FRESHNESS status=invalid_backup' <<<"$failed_manifest_output"
 grep -q 'reason=manifest_status' <<<"$failed_manifest_output"
 
+INVALID_TS_ROOT="$TMP/invalid-timestamp-backups"
+mkdir -p "$INVALID_TS_ROOT"
+make_backup_fixture "$INVALID_TS_ROOT/deploy-valid" 900 production_db
+make_backup_fixture "$INVALID_TS_ROOT/deploy-invalid-ts" 950 production_db
+sed -i 's/^created_at_epoch=.*/created_at_epoch=not-a-number/' \
+  "$INVALID_TS_ROOT/deploy-invalid-ts/backup-manifest.env"
+
+set +e
+invalid_ts_output="$(BACKUP_ROOT="$INVALID_TS_ROOT" RPO_SECONDS=200 BACKUP_CHECK_NOW_EPOCH=1000 \
+  bash "$ROOT/deployment/backup-freshness-check.sh" 2>&1)"
+invalid_ts_rc=$?
+set -e
+[[ "$invalid_ts_rc" -ne 0 ]]
+grep -q 'BACKUP_FRESHNESS status=invalid_backup' <<<"$invalid_ts_output"
+grep -q 'reason=invalid_created_at_epoch' <<<"$invalid_ts_output"
+
+INCOMPLETE_SUMS_ROOT="$TMP/incomplete-sums-backups"
+mkdir -p "$INCOMPLETE_SUMS_ROOT"
+make_backup_fixture "$INCOMPLETE_SUMS_ROOT/deploy-incomplete-sums" 950 production_db
+grep 'commit.txt' "$INCOMPLETE_SUMS_ROOT/deploy-incomplete-sums/SHA256SUMS" > \
+  "$INCOMPLETE_SUMS_ROOT/deploy-incomplete-sums/SHA256SUMS.tmp"
+mv "$INCOMPLETE_SUMS_ROOT/deploy-incomplete-sums/SHA256SUMS.tmp" \
+  "$INCOMPLETE_SUMS_ROOT/deploy-incomplete-sums/SHA256SUMS"
+
+set +e
+incomplete_sums_output="$(BACKUP_ROOT="$INCOMPLETE_SUMS_ROOT" RPO_SECONDS=200 BACKUP_CHECK_NOW_EPOCH=1000 \
+  bash "$ROOT/deployment/backup-freshness-check.sh" 2>&1)"
+incomplete_sums_rc=$?
+set -e
+[[ "$incomplete_sums_rc" -ne 0 ]]
+grep -q 'BACKUP_FRESHNESS status=invalid_backup' <<<"$incomplete_sums_output"
+grep -q 'reason=checksum_manifest_incomplete' <<<"$incomplete_sums_output"
+
 mkdir -p "$TMP/empty-backups"
 set +e
 missing_output="$(BACKUP_ROOT="$TMP/empty-backups" RPO_SECONDS=50 BACKUP_CHECK_NOW_EPOCH=1000 \
@@ -232,6 +265,35 @@ set -e
 [[ "$checksum_rc" -ne 0 ]]
 grep -q 'backup checksum validation failed' <<<"$checksum_output"
 grep -q '^RESTORE_DRILL status=failed reason=checksum_failed$' "$checksum_report"
+[[ ! -s "$mysql_log" ]]
+
+INCOMPLETE_RESTORE="$TMP/incomplete-restore-sums"
+make_backup_fixture "$INCOMPLETE_RESTORE" 900 production_db
+grep 'commit.txt' "$INCOMPLETE_RESTORE/SHA256SUMS" > "$INCOMPLETE_RESTORE/SHA256SUMS.tmp"
+mv "$INCOMPLETE_RESTORE/SHA256SUMS.tmp" "$INCOMPLETE_RESTORE/SHA256SUMS"
+
+: > "$mysql_log"
+incomplete_report="$TMP/reports/incomplete-checksum-manifest.txt"
+set +e
+incomplete_restore_output="$(
+  BACKUP_DIR="$INCOMPLETE_RESTORE" \
+  RESTORE_DB_HOST=staging-db \
+  RESTORE_DB_NAME=restore_incomplete_sums_db \
+  RESTORE_DB_USER=restore_user \
+  RESTORE_DB_PASSWORD=fixture-secret \
+  RESTORE_CONFIRM_ISOLATED=1 \
+  RESTORE_VERIFY_COMMAND=true \
+  RESTORE_DRILL_REPORT_FILE="$incomplete_report" \
+  RPO_SECONDS=200 \
+  RTO_SECONDS=30 \
+  RESTORE_NOW_EPOCH=1000 \
+  bash "$ROOT/deployment/restore-drill.sh" 2>&1
+)"
+incomplete_restore_rc=$?
+set -e
+[[ "$incomplete_restore_rc" -ne 0 ]]
+grep -q 'backup checksum manifest does not cover required files' <<<"$incomplete_restore_output"
+grep -q '^RESTORE_DRILL status=failed reason=checksum_manifest_incomplete$' "$incomplete_report"
 [[ ! -s "$mysql_log" ]]
 
 stale_report="$TMP/reports/stale-restore.txt"
