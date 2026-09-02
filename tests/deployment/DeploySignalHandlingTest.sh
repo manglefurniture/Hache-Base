@@ -74,27 +74,13 @@ SH
   git -C "$APP" checkout -q --detach "$PREVIOUS"
 }
 
-run_signal_case() {
-  local signal_name="$1"
+assert_failed_record() {
+  local out="$1"
   local expected_code="$2"
-  local name="signal-${signal_name,,}"
-  make_fixture "$name"
-
-  local out="$TMP/$name.out"
-  set +e
-  APP_ROOT="$APP" \
-  TARGET_COMMIT="$TARGET" \
-  BACKUP_ROOT="$TMP/$name-backups" \
-  DEPLOY_RECORD_ROOT="$TMP/$name-records" \
-  TEST_COMMAND="kill -${signal_name} \"\$PPID\"; exit 0" \
-  bash "$APP/deployment/deploy.sh" >"$out" 2>&1
-  local code=$?
-  set -e
-
-  [[ "$code" == "$expected_code" ]] || fail "$signal_name must exit $expected_code, got $code"
-  assert_contains "$out" "DEPLOY_RECOVERY_REQUIRED failed_phase=tests exit_code=$expected_code signal=$signal_name"
-
+  local signal_name="$3"
   local record
+
+  assert_contains "$out" "DEPLOY_RECOVERY_REQUIRED failed_phase=tests exit_code=$expected_code signal=$signal_name"
   record="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$out" | tail -n1)"
   [[ -f "$record" ]] || fail "$signal_name deploy record missing"
   assert_contains "$record" "state=code_changed status=passed"
@@ -105,7 +91,92 @@ run_signal_case() {
   [[ "$(git -C "$APP" rev-parse HEAD)" == "$TARGET" ]] || fail "$signal_name must not trigger unsafe automatic rollback"
 }
 
-run_signal_case TERM 143
-run_signal_case INT 130
+# INT path: child triggers the signal while the runner is waiting in a managed phase.
+run_internal_int_case() {
+  make_fixture signal-int
+  local out="$TMP/signal-int.out"
+
+  set +e
+  APP_ROOT="$APP" \
+  TARGET_COMMIT="$TARGET" \
+  BACKUP_ROOT="$TMP/signal-int-backups" \
+  DEPLOY_RECORD_ROOT="$TMP/signal-int-records" \
+  TEST_COMMAND='kill -INT "$PPID"; exit 0' \
+  bash "$APP/deployment/deploy.sh" >"$out" 2>&1
+  local code=$?
+  set -e
+
+  [[ "$code" == "130" ]] || fail "INT must exit 130, got $code"
+  assert_failed_record "$out" 130 INT
+}
+
+# P1 regression: TERM is sent only to the runner PID while its test phase remains active.
+# The phase traps TERM for evidence and intentionally keeps running, forcing the runner
+# to forward TERM to the process group and escalate after the configured grace period.
+run_parent_term_case() {
+  make_fixture signal-parent-term
+
+  local out="$TMP/signal-parent-term.out"
+  local child_pid_file="$TMP/signal-parent-term-child.pid"
+  local child_signal_file="$TMP/signal-parent-term-child.signal"
+  local test_command
+  test_command="trap 'printf TERM > \"$child_signal_file\"' TERM; printf '%s\\n' \"\$\$\" > \"$child_pid_file\"; while :; do sleep 10; done"
+
+  set +e
+  APP_ROOT="$APP" \
+  TARGET_COMMIT="$TARGET" \
+  BACKUP_ROOT="$TMP/signal-parent-term-backups" \
+  DEPLOY_RECORD_ROOT="$TMP/signal-parent-term-records" \
+  SIGNAL_GRACE_SECONDS=1 \
+  TEST_COMMAND="$test_command" \
+  bash "$APP/deployment/deploy.sh" >"$out" 2>&1 &
+  local runner_pid=$!
+  set -e
+
+  local attempts=100
+  while [[ ! -s "$child_pid_file" && "$attempts" -gt 0 ]]; do
+    sleep 0.05
+    attempts=$((attempts - 1))
+  done
+  [[ -s "$child_pid_file" ]] || {
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+    fail "managed test child did not start"
+  }
+
+  local child_pid
+  child_pid="$(cat "$child_pid_file")"
+  kill -TERM "$runner_pid"
+
+  # A watchdog keeps a broken implementation from hanging CI indefinitely.
+  (
+    sleep 5
+    kill -KILL "$runner_pid" 2>/dev/null || true
+  ) &
+  local watchdog_pid=$!
+
+  set +e
+  wait "$runner_pid"
+  local code=$?
+  set -e
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+
+  [[ "$code" == "143" ]] || {
+    kill -KILL "$child_pid" 2>/dev/null || true
+    fail "parent-only TERM must exit 143, got $code"
+  }
+
+  [[ -f "$child_signal_file" ]] || fail "TERM was not forwarded to the active phase"
+  if kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$child_pid" 2>/dev/null || true
+    fail "active phase survived parent cancellation"
+  fi
+
+  assert_failed_record "$out" 143 TERM
+}
+
+run_internal_int_case
+run_parent_term_case
 
 echo "DEPLOY_SIGNAL_HANDLING_OK"
