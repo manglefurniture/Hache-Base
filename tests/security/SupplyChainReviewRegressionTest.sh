@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+new_repo() {
+  local name="$1"
+  local dir="$TMP/$name"
+  mkdir -p "$dir/security/supply-chain"
+  cp "$ROOT/security/supply-chain/policy.json" "$dir/security/supply-chain/policy.json"
+  cp "$ROOT/security/supply-chain/license-policy.json" "$dir/security/supply-chain/license-policy.json"
+  cp "$ROOT/security/supply-chain/accepted-risk.json" "$dir/security/supply-chain/accepted-risk.json"
+  cp "$ROOT/security/supply-chain/secret-scan.allowlist" "$dir/security/supply-chain/secret-scan.allowlist"
+  git -C "$dir" init -q
+  git -C "$dir" config user.email fixture@example.test
+  git -C "$dir" config user.name fixture
+  printf '%s\n' fixture > "$dir/README.md"
+  git -C "$dir" add .
+  git -C "$dir" commit -qm init
+  printf '%s\n' "$dir"
+}
+
+commit_all() {
+  git -C "$1" add .
+  git -C "$1" commit -qm fixture
+}
+
+run_check() {
+  local dir="$1"
+  shift
+  env \
+    SUPPLY_CHAIN_ROOT="$dir" \
+    SUPPLY_CHAIN_REPORT_FILE="$dir/report.json" \
+    SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 \
+    "$@" \
+    php "$ROOT/security/supply-chain/check.php"
+}
+
+make_node_lock() {
+  local dir="$1"
+  printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0"}' > "$dir/package.json"
+  cat > "$dir/package-lock.json" <<'JSON'
+{
+  "name":"fixture",
+  "lockfileVersion":3,
+  "packages":{
+    "":{"name":"fixture","version":"1.0.0","license":"MIT"},
+    "node_modules/vuln-pkg":{"name":"vuln-pkg","version":"1.0.0","license":"MIT"}
+  }
+}
+JSON
+}
+
+invalid_npm="$(new_repo invalid-npm)"
+make_node_lock "$invalid_npm"
+printf '%s\n' '{}' > "$invalid_npm/npm-audit.json"
+commit_all "$invalid_npm"
+run_check "$invalid_npm" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$invalid_npm/npm-audit.json" > "$invalid_npm/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_npm/out.txt"
+grep -q 'not_evaluated=1' "$invalid_npm/out.txt"
+grep -q 'evidence_complete=0' "$invalid_npm/out.txt"
+
+invalid_composer="$(new_repo invalid-composer)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer/composer.lock"
+printf '%s\n' '{}' > "$invalid_composer/composer-audit.json"
+commit_all "$invalid_composer"
+run_check "$invalid_composer" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$invalid_composer/composer-audit.json" > "$invalid_composer/out.txt"
+grep -q 'rule=sca_unavailable' "$invalid_composer/out.txt"
+grep -q 'not_evaluated=1' "$invalid_composer/out.txt"
+grep -q 'evidence_complete=0' "$invalid_composer/out.txt"
+
+multi="$(new_repo multi-advisory)"
+make_node_lock "$multi"
+cat > "$multi/npm-audit.json" <<'JSON'
+{
+  "auditReportVersion":2,
+  "vulnerabilities":{
+    "vuln-pkg":{
+      "name":"vuln-pkg",
+      "severity":"critical",
+      "isDirect":true,
+      "via":[
+        {"source":111,"title":"first advisory","url":"https://example.test/111","severity":"high"},
+        {"source":222,"title":"second advisory","url":"https://example.test/222","severity":"critical"}
+      ]
+    }
+  }
+}
+JSON
+commit_all "$multi"
+set +e
+run_check "$multi" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$multi/npm-audit.json" > "$multi/out.txt" 2>&1
+multi_rc=$?
+set -e
+[[ "$multi_rc" -eq 1 ]]
+[[ "$(grep -c 'category=sca .*rule=vulnerability' "$multi/out.txt")" -eq 2 ]]
+[[ "$(php -r '$r=json_decode(file_get_contents($argv[1]),true); $ids=[]; foreach($r["findings"] as $f){if($f["rule"]==="vulnerability"){$ids[$f["id"]]=1;}} echo count($ids);' "$multi/report.json")" -eq 2 ]]
+
+first_id="$(php -r '$r=json_decode(file_get_contents($argv[1]),true); foreach($r["findings"] as $f){if($f["rule"]==="vulnerability" && str_contains($f["subject"],"npm:111")){echo $f["id"]; exit;}}' "$multi/report.json")"
+[[ -n "$first_id" ]]
+cat > "$multi/security/supply-chain/accepted-risk.json" <<JSON
+{
+  "schema":"hache-supply-chain-accepted-risk-v1",
+  "exceptions":[{
+    "finding_id":"$first_id",
+    "owner":"fixture-owner",
+    "approval_ref":"FIXTURE-111",
+    "mitigation":"first advisory isolated",
+    "expires_at":"2099-12-31"
+  }]
+}
+JSON
+set +e
+run_check "$multi" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$multi/npm-audit.json" > "$multi/accepted.txt" 2>&1
+accepted_rc=$?
+set -e
+[[ "$accepted_rc" -eq 1 ]]
+grep -q 'accepted_risks=1' "$multi/accepted.txt"
+grep -q 'enforced_blockers=1' "$multi/accepted.txt"
+
+bad_date="$(new_repo bad-date)"
+make_node_lock "$bad_date"
+cat > "$bad_date/npm-audit.json" <<'JSON'
+{"auditReportVersion":2,"vulnerabilities":{"vuln-pkg":{"name":"vuln-pkg","severity":"high","via":[{"source":333,"title":"date advisory","severity":"high"}]}}}
+JSON
+commit_all "$bad_date"
+set +e
+run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" > "$bad_date/initial.txt" 2>&1
+initial_rc=$?
+set -e
+[[ "$initial_rc" -eq 1 ]]
+date_id="$(php -r '$r=json_decode(file_get_contents($argv[1]),true); foreach($r["findings"] as $f){if($f["rule"]==="vulnerability"){echo $f["id"]; exit;}}' "$bad_date/report.json")"
+
+for invalid_date in 'next year' '2099-02-31'; do
+  cat > "$bad_date/security/supply-chain/accepted-risk.json" <<JSON
+{
+  "schema":"hache-supply-chain-accepted-risk-v1",
+  "exceptions":[{
+    "finding_id":"$date_id",
+    "owner":"fixture-owner",
+    "approval_ref":"FIXTURE-DATE",
+    "mitigation":"must not become evergreen",
+    "expires_at":"$invalid_date"
+  }]
+}
+JSON
+  set +e
+  run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" > "$bad_date/date.txt" 2>&1
+  date_rc=$?
+  set -e
+  [[ "$date_rc" -eq 1 ]]
+  grep -q 'accepted_risks=0' "$bad_date/date.txt"
+done
+
+echo "SUPPLY_CHAIN_REVIEW_REGRESSION_OK"
