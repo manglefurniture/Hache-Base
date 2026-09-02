@@ -22,6 +22,8 @@
 
 El RPO debe expresarse como un umbral medible de antigüedad del último backup válido. El RTO debe medirse desde el inicio del drill —incluida la validación/checksum del backup— hasta que la restauración aislada supera la verificación definida por el proyecto.
 
+Los valores que participan en aritmética (`created_at_epoch`, RPO/RTO y epochs de referencia) deben ser enteros decimales canónicos dentro del rango firmado de 64 bits (`0..9223372036854775807`; RPO/RTO deben ser mayores que cero). No se aceptan ceros iniciales ni valores que puedan desbordar la aritmética de Bash.
+
 ## Contrato de backup
 
 El backup generado por `deployment/backup.sh` se considera **completo** solo cuando contiene:
@@ -29,10 +31,10 @@ El backup generado por `deployment/backup.sh` se considera **completo** solo cua
 - `database.sql` no vacío;
 - `commit.txt`;
 - `SHA256SUMS` válido que incluya explícitamente `commit.txt` y `database.sql`;
-- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` como entero decimal canónico sin ceros iniciales;
+- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` como entero decimal canónico dentro del rango admitido;
 - marcador `BACKUP_COMPLETE` creado al final.
 
-Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. En cambio, si existe `BACKUP_COMPLETE`, la evidencia ya se declaró terminada: la pérdida de `backup-manifest.env`, un `created_at_epoch` ausente/no canónico o cualquier artefacto obligatorio inconsistente se trata como `invalid_backup` y nunca se ignora en favor de evidencia más antigua. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`.
+Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. En cambio, si existe `BACKUP_COMPLETE`, la evidencia ya se declaró terminada: la pérdida de `backup-manifest.env`, un `created_at_epoch` ausente/no canónico/fuera de rango o cualquier artefacto obligatorio inconsistente se trata como `invalid_backup` y nunca se ignora en favor de evidencia más antigua. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`.
 
 ## Freshness y alerta
 
@@ -82,7 +84,9 @@ bash deployment/restore-drill.sh
 
 `RESTORE_VERIFY_COMMAND` debe validar evidencia útil del proyecto —por ejemplo tablas/filas críticas, invariantes o un smoke controlado contra la DB restaurada—. Un import SQL sin verificación específica no basta para declarar DB-007.
 
-El reporte se reemplaza al iniciar el drill y el resultado final se escribe **después** del cleanup. Todo fallo posterior —incluido checksum inválido, manifest de checksums incompleto o cleanup fallido— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
+`RESTORE_DRILL_REPORT_FILE` se inicializa antes del preflight operativo. Por ello, una configuración inválida, aislamiento no confirmado o herramienta requerida ausente reemplaza cualquier PASS anterior y termina con evidencia `failed`; la única excepción inevitable es no poder registrar evidencia cuando el propio path de reporte no fue proporcionado.
+
+El resultado final se escribe **después** del cleanup. Todo fallo posterior —incluido checksum inválido, manifest de checksums incompleto o cleanup fallido— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
 
 Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución al terminar. Si ese cleanup falla, el resultado final pasa a `reason=cleanup_failed`, `cleanup_status=failed` y exit code no-cero. Si el drill ya venía fallando por otra causa, `pre_cleanup_reason` conserva esa causa previa para no perder evidencia. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
 
