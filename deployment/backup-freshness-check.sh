@@ -6,21 +6,31 @@ set -Eeuo pipefail
 RPO_SECONDS="${RPO_SECONDS:-86400}"
 BACKUP_CHECK_NOW_EPOCH="${BACKUP_CHECK_NOW_EPOCH:-$(date -u +%s)}"
 BACKUP_ALERT_COMMAND="${BACKUP_ALERT_COMMAND:-}"
+BASH_ARITH_MAX="9223372036854775807"
 
-is_canonical_decimal() {
-  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
+is_bash_decimal() {
+  local value="$1"
+  local value_len max_len
+
+  [[ "$value" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  value_len=${#value}
+  max_len=${#BASH_ARITH_MAX}
+
+  (( value_len < max_len )) && return 0
+  (( value_len > max_len )) && return 1
+  [[ "$value" == "$BASH_ARITH_MAX" || "$value" < "$BASH_ARITH_MAX" ]]
 }
 
-is_positive_canonical_decimal() {
-  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+is_positive_bash_decimal() {
+  is_bash_decimal "$1" && [[ "$1" != "0" ]]
 }
 
-is_positive_canonical_decimal "$RPO_SECONDS" || {
-  echo "RPO_SECONDS must be a positive decimal integer without leading zeros" >&2
+is_positive_bash_decimal "$RPO_SECONDS" || {
+  echo "RPO_SECONDS must be a positive decimal integer within Bash arithmetic range" >&2
   exit 2
 }
-is_canonical_decimal "$BACKUP_CHECK_NOW_EPOCH" || {
-  echo "BACKUP_CHECK_NOW_EPOCH must be a decimal integer epoch without leading zeros" >&2
+is_bash_decimal "$BACKUP_CHECK_NOW_EPOCH" || {
+  echo "BACKUP_CHECK_NOW_EPOCH must be a decimal integer epoch within Bash arithmetic range" >&2
   exit 2
 }
 command -v sha256sum >/dev/null 2>&1 || {
@@ -72,7 +82,7 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   fi
 
   epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$candidate/backup-manifest.env")"
-  if ! is_canonical_decimal "$epoch"; then
+  if ! is_bash_decimal "$epoch"; then
     unrankable_invalid_backup="$candidate"
     unrankable_invalid_reason="invalid_created_at_epoch"
     continue
