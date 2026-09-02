@@ -29,10 +29,10 @@ El backup generado por `deployment/backup.sh` se considera **completo** solo cua
 - `database.sql` no vacío;
 - `commit.txt`;
 - `SHA256SUMS` válido que incluya explícitamente `commit.txt` y `database.sql`;
-- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` numérico;
+- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` como entero decimal canónico sin ceros iniciales;
 - marcador `BACKUP_COMPLETE` creado al final.
 
-Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. En cambio, si existe `BACKUP_COMPLETE`, la evidencia ya se declaró terminada: la pérdida de `backup-manifest.env`, un `created_at_epoch` ausente/no numérico o cualquier artefacto obligatorio inconsistente se trata como `invalid_backup` y nunca se ignora en favor de evidencia más antigua. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`.
+Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. En cambio, si existe `BACKUP_COMPLETE`, la evidencia ya se declaró terminada: la pérdida de `backup-manifest.env`, un `created_at_epoch` ausente/no canónico o cualquier artefacto obligatorio inconsistente se trata como `invalid_backup` y nunca se ignora en favor de evidencia más antigua. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`.
 
 ## Freshness y alerta
 
@@ -82,9 +82,9 @@ bash deployment/restore-drill.sh
 
 `RESTORE_VERIFY_COMMAND` debe validar evidencia útil del proyecto —por ejemplo tablas/filas críticas, invariantes o un smoke controlado contra la DB restaurada—. Un import SQL sin verificación específica no basta para declarar DB-007.
 
-El reporte se reemplaza al iniciar el drill y todo fallo posterior —incluido checksum inválido o manifest de checksums incompleto— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
+El reporte se reemplaza al iniciar el drill y el resultado final se escribe **después** del cleanup. Todo fallo posterior —incluido checksum inválido, manifest de checksums incompleto o cleanup fallido— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
 
-Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución al terminar. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
+Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución al terminar. Si ese cleanup falla, el resultado final pasa a `reason=cleanup_failed`, `cleanup_status=failed` y exit code no-cero. Si el drill ya venía fallando por otra causa, `pre_cleanup_reason` conserva esa causa previa para no perder evidencia. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
 
 ## Evidencia del último drill
 
@@ -95,6 +95,8 @@ Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución
 - Duración total del drill, incluida validación del backup + restore + verify: `<segundos>`
 - RTO objetivo / resultado: `<...>`
 - Verificación ejecutada: `<descripción>`
+- Estado de cleanup (`cleanup_status`): `<passed|failed|disabled|not_applicable>`
+- Causa previa si cleanup sobrescribió el resultado (`pre_cleanup_reason`): `<...>`
 - Reporte: `<ruta/artifact/ref>`
 - Resultado: `<PASS|FAIL>`
 - Incidencias/correcciones: `<...>`
