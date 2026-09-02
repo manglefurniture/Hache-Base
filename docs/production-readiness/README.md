@@ -83,7 +83,7 @@ P0-10 endurece el runner de deploy y la evidencia de fallo parcial sin automatiz
 - readiness y smoke pueden ejecutarse antes y después de una ventana de observación;
 - `REQUIRE_SMOKE=1` y `REQUIRE_OBSERVATION=1` permiten convertir esos contratos en gates explícitos por entorno;
 - ausencia de smoke/ventana con defaults compatibles se registra como `NOT_EVALUATED`, nunca como PASS;
-- `deployment/rollback.sh` puede anexar `rolled_back` al record del release;
+- `deployment/rollback.sh` registra únicamente `event=code_rollback` con `recovery_state=pending_verification`; el estado canónico `rolled_back` se registra después mediante `deployment/mark-deploy-recovery.sh` una vez completadas las verificaciones post-rollback del runbook;
 - `deployment/mark-deploy-recovery.sh` permite registrar `manual_recovery`/`rolled_back` después de una recuperación explícita;
 - `deployment/DEPLOY-FAILURE-RUNBOOK.md` evita reintentos/rollbacks ciegos y separa código de DB/assets/config;
 - `templates/DEPLOY-RECOVERY.md` documenta matriz código/DB/assets/config, compatibilidad, punto de no retorno, smoke, ventana, criterios y drill de staging;
