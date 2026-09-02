@@ -1,0 +1,49 @@
+name: P0-12 test expectations apply
+
+on:
+  push:
+    branches:
+      - feat/production-readiness-p0-12-supply-chain-20260902
+    paths:
+      - .github/workflows/p0-12-test-expectations-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Align accepted-risk fixtures with explicit override contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/security/SupplyChainPolicyTest.sh')
+          s = p.read_text()
+          old1 = 'run_check "$secret_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$secret_repo/risk-attempt.txt" 2>&1'
+          new1 = 'run_check "$secret_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$secret_repo/security/supply-chain/accepted-risk.json" > "$secret_repo/risk-attempt.txt" 2>&1'
+          old2 = 'run_check "$audit_repo" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$audit_repo/npm-audit.json" > "$audit_repo/accepted.txt"'
+          new2 = 'run_check "$audit_repo" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$audit_repo/npm-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$audit_repo/security/supply-chain/accepted-risk.json" > "$audit_repo/accepted.txt"'
+          for old, new, label in [(old1,new1,'secret accepted-risk override'), (old2,new2,'sca accepted-risk override')]:
+              if s.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one match, got {s.count(old)}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Validate targeted test
+        run: |
+          bash -n tests/security/SupplyChainPolicyTest.sh
+          bash tests/security/SupplyChainPolicyTest.sh
+          git diff --check
+      - name: Commit validated test alignment
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/security/SupplyChainPolicyTest.sh
+          git diff --cached --quiet && exit 1
+          git commit -m "Align supply-chain accepted-risk fixtures with HEAD config contract"
+          git push origin HEAD:feat/production-readiness-p0-12-supply-chain-20260902
