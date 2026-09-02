@@ -90,6 +90,7 @@ EOF
 cleanup_and_report() {
   local rc=$?
   local end_epoch
+  trap - EXIT
   end_epoch="$(date -u +%s)"
 
   if (( restore_created == 1 )) && [[ "$RESTORE_CLEANUP" == "1" ]]; then
