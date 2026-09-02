@@ -67,15 +67,21 @@ emit_gate() {
 }
 
 validate_record_root_outside_worktree() {
+  # Missing tools are reported by preflight. Avoid masking that error here.
+  command -v git >/dev/null 2>&1 || return 0
   command -v realpath >/dev/null 2>&1 || return 0
 
-  local app_root_real record_root_real
-  app_root_real="$(realpath -e "$APP_ROOT")"
+  local git_root git_root_real record_root_real
+  git_root="$(git -C "$APP_ROOT" rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "DEPLOY_CONFIG_FAILED APP_ROOT must be inside a Git working tree" >&2
+    return 1
+  }
+  git_root_real="$(realpath -e "$git_root")"
   record_root_real="$(realpath -m "$DEPLOY_RECORD_ROOT")"
 
   case "$record_root_real" in
-    "$app_root_real"|"$app_root_real"/*)
-      echo "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside APP_ROOT" >&2
+    "$git_root_real"|"$git_root_real"/*)
+      echo "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside the Git working tree" >&2
       return 1
       ;;
   esac
@@ -174,17 +180,29 @@ bash -lc "$TEST_COMMAND"
 emit_state "tests_passed" "passed" "test_command_completed"
 
 run_smoke() {
+  local exit_code
   current_phase="smoke"
+
   if [[ -n "${SMOKE_COMMAND:-}" ]]; then
-    bash -lc "$SMOKE_COMMAND"
-    emit_gate "smoke" "passed" "source=SMOKE_COMMAND"
-    return 0
+    if bash -lc "$SMOKE_COMMAND"; then
+      emit_gate "smoke" "passed" "source=SMOKE_COMMAND"
+      return 0
+    else
+      exit_code=$?
+      emit_gate "smoke" "failed" "source=SMOKE_COMMAND;exit_code=${exit_code}"
+      return "$exit_code"
+    fi
   fi
 
   if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
-    bash "$APP_ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"
-    emit_gate "smoke" "passed" "source=SMOKE_BASE_URL"
-    return 0
+    if bash "$APP_ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"; then
+      emit_gate "smoke" "passed" "source=SMOKE_BASE_URL"
+      return 0
+    else
+      exit_code=$?
+      emit_gate "smoke" "failed" "source=SMOKE_BASE_URL;exit_code=${exit_code}"
+      return "$exit_code"
+    fi
   fi
 
   if [[ "$REQUIRE_SMOKE" == "1" ]]; then
@@ -196,9 +214,16 @@ run_smoke() {
 }
 
 run_release_gates() {
+  local exit_code
   current_phase="readiness"
-  bash "$APP_ROOT/deployment/health-check.sh"
-  emit_gate "readiness" "passed" "health_check_completed"
+  if bash "$APP_ROOT/deployment/health-check.sh"; then
+    emit_gate "readiness" "passed" "health_check_completed"
+  else
+    exit_code=$?
+    emit_gate "readiness" "failed" "exit_code=${exit_code}"
+    return "$exit_code"
+  fi
+
   run_smoke
 }
 
