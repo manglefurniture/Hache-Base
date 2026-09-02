@@ -35,12 +35,21 @@ alert() {
   fi
 }
 
+checksum_manifest_complete() {
+  local dir="$1"
+  local sums="$dir/SHA256SUMS"
+
+  grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]commit\.txt$' "$sums" &&
+    grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]database\.sql$' "$sums"
+}
+
 latest_valid_epoch=-1
 latest_valid_backup=""
 latest_seen_epoch=-1
 latest_seen_backup=""
 latest_seen_valid=0
 latest_seen_reason=""
+invalid_timestamp_backup=""
 
 shopt -s nullglob
 for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
@@ -49,7 +58,10 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   [[ -f "$candidate/backup-manifest.env" ]] || continue
 
   epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$candidate/backup-manifest.env")"
-  [[ "$epoch" =~ ^[0-9]+$ ]] || continue
+  if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
+    invalid_timestamp_backup="$candidate"
+    continue
+  fi
 
   candidate_valid=1
   candidate_reason=""
@@ -67,9 +79,12 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   elif [[ ! -f "$candidate/SHA256SUMS" ]]; then
     candidate_valid=0
     candidate_reason="missing_checksums"
+  elif ! checksum_manifest_complete "$candidate"; then
+    candidate_valid=0
+    candidate_reason="checksum_manifest_incomplete"
   elif ! (
     cd "$candidate"
-    sha256sum -c SHA256SUMS >/dev/null 2>&1
+    sha256sum --check --strict SHA256SUMS >/dev/null 2>&1
   ); then
     candidate_valid=0
     candidate_reason="checksum_failed"
@@ -92,6 +107,12 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   fi
 done
 shopt -u nullglob
+
+if [[ -n "$invalid_timestamp_backup" ]]; then
+  echo "BACKUP_FRESHNESS status=invalid_backup backup=$invalid_timestamp_backup reason=invalid_created_at_epoch age_seconds=unknown rpo_seconds=$RPO_SECONDS" >&2
+  alert "invalid_backup" "$invalid_timestamp_backup" "unknown"
+  exit 1
+fi
 
 if [[ -z "$latest_seen_backup" ]]; then
   echo "BACKUP_FRESHNESS status=missing backup=none age_seconds=unknown rpo_seconds=$RPO_SECONDS"
