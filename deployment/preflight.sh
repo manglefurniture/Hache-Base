@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 : "${APP_ROOT:?APP_ROOT is required}"
 
-for command in git php curl mysqldump sha256sum realpath; do
+for command in git php curl mysqldump sha256sum realpath mktemp; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "PREFLIGHT_FAILED missing command: $command" >&2
     exit 1
