@@ -188,7 +188,13 @@ function acceptedRiskFor(string $findingId, array $riskConfig): ?array
             }
         }
         $date = (string)$entry['expires_at'];
-        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $parts) !== 1) {
+            return null;
+        }
+        $year = (int)$parts[1];
+        $month = (int)$parts[2];
+        $day = (int)$parts[3];
+        if (!checkdate($month, $day, $year)) {
             return null;
         }
         $expires = strtotime($date . ' 23:59:59 UTC');
@@ -248,36 +254,63 @@ function addFinding(
     ];
 }
 
+function validNpmAudit(array $audit): bool
+{
+    return isset($audit['auditReportVersion'])
+        && is_int($audit['auditReportVersion'])
+        && array_key_exists('vulnerabilities', $audit)
+        && is_array($audit['vulnerabilities'])
+        && !isset($audit['error']);
+}
+
+function validComposerAudit(array $audit): bool
+{
+    return array_key_exists('advisories', $audit) && is_array($audit['advisories']);
+}
+
 /** @return array<int,array<string,mixed>> */
 function npmVulnerabilities(array $audit): array
 {
     $result = [];
-    $vulnerabilities = $audit['vulnerabilities'] ?? [];
-    if (!is_array($vulnerabilities)) {
-        return $result;
-    }
-    foreach ($vulnerabilities as $package => $data) {
+    foreach ((array)($audit['vulnerabilities'] ?? []) as $package => $data) {
         if (!is_array($data)) {
             continue;
         }
-        $severity = normalizeSeverity((string)($data['severity'] ?? 'unknown'));
-        $advisory = 'npm:' . $package;
-        $title = 'npm audit finding';
-        $url = '';
+        $packageSeverity = normalizeSeverity((string)($data['severity'] ?? 'unknown'));
+        $objectAdvisories = 0;
+        $seen = [];
         foreach ((array)($data['via'] ?? []) as $entry) {
             if (!is_array($entry)) {
                 continue;
             }
-            $advisory = isset($entry['source']) ? 'npm:' . (string)$entry['source'] : $advisory;
-            $title = (string)($entry['title'] ?? $title);
-            $url = (string)($entry['url'] ?? $url);
-            $entrySeverity = normalizeSeverity((string)($entry['severity'] ?? 'unknown'));
-            if (severityRank($entrySeverity) > severityRank($severity)) {
-                $severity = $entrySeverity;
+            $objectAdvisories++;
+            $advisory = isset($entry['source']) ? 'npm:' . (string)$entry['source'] : 'npm:' . $package . ':via:' . $objectAdvisories;
+            $key = (string)$package . '|' . $advisory;
+            if (isset($seen[$key])) {
+                continue;
             }
-            break;
+            $seen[$key] = true;
+            $severity = normalizeSeverity((string)($entry['severity'] ?? $packageSeverity));
+            if ($severity === 'unknown') {
+                $severity = $packageSeverity;
+            }
+            $result[] = [
+                'package' => (string)$package,
+                'severity' => $severity,
+                'advisory' => $advisory,
+                'title' => (string)($entry['title'] ?? 'npm audit finding'),
+                'url' => (string)($entry['url'] ?? ''),
+            ];
         }
-        $result[] = ['package' => (string)$package, 'severity' => $severity, 'advisory' => $advisory, 'title' => $title, 'url' => $url];
+        if ($objectAdvisories === 0) {
+            $result[] = [
+                'package' => (string)$package,
+                'severity' => $packageSeverity,
+                'advisory' => 'npm:' . (string)$package,
+                'title' => 'npm audit package finding',
+                'url' => '',
+            ];
+        }
     }
     return $result;
 }
@@ -286,11 +319,7 @@ function npmVulnerabilities(array $audit): array
 function composerVulnerabilities(array $audit): array
 {
     $result = [];
-    $advisories = $audit['advisories'] ?? [];
-    if (!is_array($advisories)) {
-        return $result;
-    }
-    foreach ($advisories as $package => $items) {
+    foreach ((array)($audit['advisories'] ?? []) as $package => $items) {
         if (!is_array($items)) {
             continue;
         }
@@ -314,11 +343,7 @@ function composerVulnerabilities(array $audit): array
 function npmPackagesForLicense(array $lock): array
 {
     $result = [];
-    $packages = $lock['packages'] ?? [];
-    if (!is_array($packages)) {
-        return $result;
-    }
-    foreach ($packages as $path => $data) {
+    foreach ((array)($lock['packages'] ?? []) as $path => $data) {
         if ($path === '' || !is_array($data)) {
             continue;
         }
@@ -534,18 +559,21 @@ foreach ($stackRoots as $stackRelative) {
             $scaStatus = 'not_evaluated';
             $auditFile = envValue('SUPPLY_CHAIN_COMPOSER_AUDIT_FILE');
             if ($auditFile !== null && $auditFile !== '') {
-                $audit = loadJsonFile($auditFile);
-                $scaStatus = 'evidence_file';
+                $candidate = loadJsonFile($auditFile);
+                if (validComposerAudit($candidate)) {
+                    $audit = $candidate;
+                    $scaStatus = 'evidence_file';
+                }
             } elseif (!$disableExternalSca && commandExists('composer')) {
                 [$auditCode, $auditOut] = runCommand(['composer', 'audit', '--locked', '--format=json', '--no-interaction'], $stackDir);
                 $decoded = json_decode($auditOut, true);
-                if (is_array($decoded)) {
+                if (is_array($decoded) && validComposerAudit($decoded)) {
                     $audit = $decoded;
                     $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
                 }
             }
             if ($audit === null) {
-                addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', 'SCA is NOT EVALUATED for this locked stack; this is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer', 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             } else {
                 foreach (composerVulnerabilities($audit) as $vulnerability) {
                     addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/composer.lock', (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
@@ -593,18 +621,21 @@ foreach ($stackRoots as $stackRelative) {
         $scaStatus = 'not_evaluated';
         $auditFile = envValue('SUPPLY_CHAIN_NPM_AUDIT_FILE');
         if ($auditFile !== null && $auditFile !== '') {
-            $audit = loadJsonFile($auditFile);
-            $scaStatus = 'evidence_file';
+            $candidate = loadJsonFile($auditFile);
+            if (validNpmAudit($candidate)) {
+                $audit = $candidate;
+                $scaStatus = 'evidence_file';
+            }
         } elseif (!$disableExternalSca && commandExists('npm')) {
             [$auditCode, $auditOut] = runCommand(['npm', 'audit', '--package-lock-only', '--json'], $stackDir);
             $decoded = json_decode($auditOut, true);
-            if (is_array($decoded) && !isset($decoded['error'])) {
+            if (is_array($decoded) && validNpmAudit($decoded)) {
                 $audit = $decoded;
                 $scaStatus = $auditCode === 0 ? 'pass' : 'findings';
             }
         }
         if ($audit === null) {
-            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', 'SCA is NOT EVALUATED for this locked stack; this is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node', 'SCA is NOT EVALUATED for this locked stack; evidence was absent or invalid. This is not a vulnerability finding and not a PASS.', $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
             foreach (npmVulnerabilities($audit) as $vulnerability) {
                 addFinding($findings, 'sca', 'vulnerability', (string)$vulnerability['severity'], $displayRoot . '/' . $nodeLockName, (string)$vulnerability['package'] . '|' . (string)$vulnerability['advisory'], (string)$vulnerability['title'] . ((string)$vulnerability['url'] !== '' ? ' ' . (string)$vulnerability['url'] : ''), $level, $mode, $policy, $licensePolicy, $riskConfig);
