@@ -54,9 +54,10 @@ umask 077
 
 start_epoch="$(date -u +%s)"
 restore_created=0
-report_written=0
 result_status="failed"
 result_reason="preflight_failed"
+pre_cleanup_reason="none"
+cleanup_status="not_applicable"
 source_db="unknown"
 created_at_epoch="unknown"
 backup_age_seconds="unknown"
@@ -78,6 +79,8 @@ restore_duration_seconds=$duration_seconds
 rto_seconds=$RTO_SECONDS
 verification_command_configured=yes
 cleanup_enabled=$RESTORE_CLEANUP
+cleanup_status=$cleanup_status
+pre_cleanup_reason=$pre_cleanup_reason
 EOF
   chmod 600 "$RESTORE_DRILL_REPORT_FILE"
 }
@@ -89,31 +92,38 @@ cleanup_and_report() {
   trap - EXIT
   end_epoch="$(date -u +%s)"
 
-  if (( restore_created == 1 )) && [[ "$RESTORE_CLEANUP" == "1" ]]; then
-    export MYSQL_PWD="$RESTORE_DB_PASSWORD"
-    if ! mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
-      -e "DROP DATABASE IF EXISTS \`$RESTORE_DB_NAME\`;" >/dev/null 2>&1; then
-      cleanup_failed=1
-      echo "RESTORE_DRILL_WARNING cleanup_failed database=$RESTORE_DB_NAME" >&2
+  if (( restore_created == 1 )); then
+    if [[ "$RESTORE_CLEANUP" == "1" ]]; then
+      export MYSQL_PWD="$RESTORE_DB_PASSWORD"
+      if mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
+        -e "DROP DATABASE IF EXISTS \`$RESTORE_DB_NAME\`;" >/dev/null 2>&1; then
+        cleanup_status="passed"
+      else
+        cleanup_status="failed"
+        cleanup_failed=1
+        echo "RESTORE_DRILL_WARNING cleanup_failed database=$RESTORE_DB_NAME" >&2
+      fi
+      unset MYSQL_PWD
+    else
+      cleanup_status="disabled"
     fi
-    unset MYSQL_PWD
   fi
 
-  if (( cleanup_failed == 1 && rc == 0 )); then
+  if (( cleanup_failed == 1 )); then
+    pre_cleanup_reason="$result_reason"
     result_status="failed"
     result_reason="cleanup_failed"
-    report_written=0
     rc=1
   fi
 
-  if (( report_written == 0 )); then
-    write_report "$result_status" "$result_reason" "$end_epoch"
-  fi
+  # The final evidence is always written after cleanup so cleanup outcome cannot
+  # be hidden by an earlier PASS or by another failure such as an RPO/RTO miss.
+  write_report "$result_status" "$result_reason" "$end_epoch"
 
   if (( rc == 0 )); then
     echo "RESTORE_DRILL status=passed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE"
-  elif [[ "$result_reason" == "cleanup_failed" ]]; then
-    echo "RESTORE_DRILL status=failed reason=cleanup_failed backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE" >&2
+  elif (( cleanup_failed == 1 )); then
+    echo "RESTORE_DRILL status=failed reason=cleanup_failed pre_cleanup_reason=$pre_cleanup_reason backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$(( end_epoch - start_epoch )) rto_seconds=$RTO_SECONDS report=$RESTORE_DRILL_REPORT_FILE" >&2
   fi
 
   exit "$rc"
@@ -221,12 +231,10 @@ rto_status="passed"
 if [[ "$rpo_status" == "failed" || "$rto_status" == "failed" ]]; then
   result_status="failed"
   result_reason="recovery_objective_missed"
-  write_report "$result_status" "$result_reason" "$end_epoch"
-  report_written=1
   echo "RESTORE_DRILL status=failed reason=$result_reason backup_age_seconds=$backup_age_seconds rpo_seconds=$RPO_SECONDS duration_seconds=$duration_seconds rto_seconds=$RTO_SECONDS"
   exit 1
 fi
 
-# Do not publish PASS until the EXIT trap completes cleanup successfully.
+# PASS is published only by the EXIT trap after cleanup succeeds or is explicitly disabled.
 result_status="passed"
 result_reason="verified"
