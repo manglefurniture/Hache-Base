@@ -35,27 +35,6 @@ done
 command -v mysql >/dev/null 2>&1 || { echo "mysql is required" >&2; exit 1; }
 command -v sha256sum >/dev/null 2>&1 || { echo "sha256sum is required" >&2; exit 1; }
 
-[[ -d "$BACKUP_DIR" ]] || { echo "backup directory not found: $BACKUP_DIR" >&2; exit 1; }
-[[ -f "$BACKUP_DIR/BACKUP_COMPLETE" ]] || { echo "backup is not marked complete" >&2; exit 1; }
-[[ -f "$BACKUP_DIR/backup-manifest.env" ]] || { echo "backup manifest missing" >&2; exit 1; }
-[[ -s "$BACKUP_DIR/database.sql" ]] || { echo "database.sql missing or empty" >&2; exit 1; }
-[[ -f "$BACKUP_DIR/SHA256SUMS" ]] || { echo "SHA256SUMS missing" >&2; exit 1; }
-
-source_db="$(awk -F= '$1 == "database_name" { print $2; exit }' "$BACKUP_DIR/backup-manifest.env")"
-created_at_epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$BACKUP_DIR/backup-manifest.env")"
-[[ -n "$source_db" ]] || { echo "database_name missing from backup manifest" >&2; exit 1; }
-[[ "$created_at_epoch" =~ ^[0-9]+$ ]] || { echo "created_at_epoch invalid in backup manifest" >&2; exit 1; }
-[[ "$RESTORE_DB_NAME" != "$source_db" ]] || {
-  echo "restore target must differ from source database: $source_db" >&2
-  exit 2
-}
-(( created_at_epoch <= RESTORE_NOW_EPOCH )) || { echo "backup timestamp is in the future" >&2; exit 1; }
-
-(
-  cd "$BACKUP_DIR"
-  sha256sum -c SHA256SUMS >/dev/null
-)
-
 mkdir -p "$(dirname "$RESTORE_DRILL_REPORT_FILE")"
 umask 077
 
@@ -63,8 +42,10 @@ start_epoch="$(date -u +%s)"
 restore_created=0
 report_written=0
 result_status="failed"
-result_reason="unexpected_failure"
-backup_age_seconds=$(( RESTORE_NOW_EPOCH - created_at_epoch ))
+result_reason="preflight_failed"
+source_db="unknown"
+created_at_epoch="unknown"
+backup_age_seconds="unknown"
 
 write_report() {
   local status="$1"
@@ -108,19 +89,83 @@ cleanup_and_report() {
 }
 trap cleanup_and_report EXIT
 
+# Replace any previous evidence immediately so a stale PASS cannot remain visible
+# while a new drill is validating the backup.
+write_report "running" "started" "$start_epoch"
+
+fail_drill() {
+  local reason="$1"
+  local message="$2"
+  local code="${3:-1}"
+  result_status="failed"
+  result_reason="$reason"
+  echo "$message" >&2
+  exit "$code"
+}
+
+[[ -d "$BACKUP_DIR" ]] || fail_drill "backup_directory_missing" "backup directory not found: $BACKUP_DIR"
+[[ -f "$BACKUP_DIR/BACKUP_COMPLETE" ]] || fail_drill "backup_incomplete" "backup is not marked complete"
+[[ -f "$BACKUP_DIR/backup-manifest.env" ]] || fail_drill "backup_manifest_missing" "backup manifest missing"
+[[ -s "$BACKUP_DIR/database.sql" ]] || fail_drill "database_sql_missing" "database.sql missing or empty"
+[[ -f "$BACKUP_DIR/SHA256SUMS" ]] || fail_drill "checksums_missing" "SHA256SUMS missing"
+
+manifest_status="$(awk -F= '$1 == "backup_status" { print $2; exit }' "$BACKUP_DIR/backup-manifest.env")"
+source_db="$(awk -F= '$1 == "database_name" { print $2; exit }' "$BACKUP_DIR/backup-manifest.env")"
+created_at_epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$BACKUP_DIR/backup-manifest.env")"
+
+[[ "$manifest_status" == "complete" ]] || fail_drill "backup_manifest_incomplete" "backup manifest is not complete"
+[[ -n "$source_db" ]] || fail_drill "backup_manifest_invalid" "database_name missing from backup manifest"
+[[ "$created_at_epoch" =~ ^[0-9]+$ ]] || fail_drill "backup_manifest_invalid" "created_at_epoch invalid in backup manifest"
+[[ "$RESTORE_DB_NAME" != "$source_db" ]] || \
+  fail_drill "source_target_match" "restore target must differ from source database: $source_db" 2
+(( created_at_epoch <= RESTORE_NOW_EPOCH )) || fail_drill "backup_future_timestamp" "backup timestamp is in the future"
+
+backup_age_seconds=$(( RESTORE_NOW_EPOCH - created_at_epoch ))
+
+result_reason="checksum_failed"
+if ! (
+  cd "$BACKUP_DIR"
+  sha256sum -c SHA256SUMS >/dev/null 2>&1
+); then
+  fail_drill "checksum_failed" "backup checksum validation failed"
+fi
+
 export MYSQL_PWD="$RESTORE_DB_PASSWORD"
-mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
-  -e "DROP DATABASE IF EXISTS \`$RESTORE_DB_NAME\`; CREATE DATABASE \`$RESTORE_DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+result_reason="target_exists_check_failed"
+if ! existing_target="$(
+  mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
+    --batch --skip-column-names \
+    -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '$RESTORE_DB_NAME';"
+)"; then
+  unset MYSQL_PWD
+  fail_drill "target_exists_check_failed" "could not verify restore target existence"
+fi
+
+if [[ -n "$existing_target" ]]; then
+  unset MYSQL_PWD
+  fail_drill "target_preexisting" "restore target already exists; refusing to modify preexisting database: $RESTORE_DB_NAME" 2
+fi
+
+result_reason="target_create_failed"
+if ! mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
+  -e "CREATE DATABASE \`$RESTORE_DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"; then
+  unset MYSQL_PWD
+  fail_drill "target_create_failed" "failed to create isolated restore target"
+fi
 restore_created=1
 
-mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
-  "$RESTORE_DB_NAME" < "$BACKUP_DIR/database.sql"
+result_reason="restore_import_failed"
+if ! mysql --host="$RESTORE_DB_HOST" --port="$RESTORE_DB_PORT" --user="$RESTORE_DB_USER" \
+  "$RESTORE_DB_NAME" < "$BACKUP_DIR/database.sql"; then
+  unset MYSQL_PWD
+  fail_drill "restore_import_failed" "failed to import backup into isolated restore target"
+fi
 unset MYSQL_PWD
 
 export RESTORE_DB_HOST RESTORE_DB_PORT RESTORE_DB_NAME RESTORE_DB_USER RESTORE_DB_PASSWORD
+result_reason="verification_failed"
 if ! bash -c "$RESTORE_VERIFY_COMMAND"; then
-  result_reason="verification_failed"
-  exit 1
+  fail_drill "verification_failed" "restore verification command failed"
 fi
 
 end_epoch="$(date -u +%s)"
