@@ -21,6 +21,8 @@ current_commit="$(git rev-parse HEAD)"
 echo "CODE_ROLLBACK_OK $current_commit"
 echo "Database restoration is intentionally separate; restore only from a verified backup when required by the migration history."
 
+echo "Recovery is not closed yet: verify readiness, smoke, effective version and observation before recording rolled_back."
+
 sanitize_field() {
   local value="$1"
   value="${value//$'\n'/_}"
@@ -38,12 +40,12 @@ if [[ -n "${DEPLOY_RECORD_FILE:-}" && -f "$DEPLOY_RECORD_FILE" ]]; then
   fi
 fi
 
-recovery_line="DEPLOY_STATE timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ) state=rolled_back status=passed target_commit=$(sanitize_field "$target_commit") current_commit=$(sanitize_field "$current_commit") rollback_ref=$(sanitize_field "$ROLLBACK_REF") detail=code_rollback_completed"
-printf '%s\n' "$recovery_line"
+rollback_event="DEPLOY_RECOVERY_EVENT timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ) event=code_rollback status=passed target_commit=$(sanitize_field "$target_commit") current_commit=$(sanitize_field "$current_commit") rollback_ref=$(sanitize_field "$ROLLBACK_REF") recovery_state=pending_verification detail=code_rollback_completed"
+printf '%s\n' "$rollback_event"
 
 if [[ -n "${DEPLOY_RECORD_FILE:-}" ]]; then
   if [[ -f "$DEPLOY_RECORD_FILE" && -w "$DEPLOY_RECORD_FILE" ]]; then
-    if ! printf '%s\n' "$recovery_line" >> "$DEPLOY_RECORD_FILE"; then
+    if ! printf '%s\n' "$rollback_event" >> "$DEPLOY_RECORD_FILE"; then
       echo "ROLLBACK_RECORD_WARNING unable to append deploy record: $DEPLOY_RECORD_FILE" >&2
     fi
   else
