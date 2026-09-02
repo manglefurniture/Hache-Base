@@ -81,7 +81,7 @@ function withinRoot(string $root, string $relative): string
     if ($relative === '' || $relative === '.') {
         return $root;
     }
-    if (str_starts_with($relative, '/') || preg_match('~^[A-Za-z]:[\\\\/]~', $relative)) {
+    if (str_starts_with($relative, '/') || preg_match('~^[A-Za-z]:[\\/]~', $relative)) {
         configError("stack_root_must_be_relative value={$relative}");
     }
     $candidate = realpath($root . DIRECTORY_SEPARATOR . $relative);
@@ -263,27 +263,36 @@ function validNpmAudit(array $audit): bool
         || isset($audit['error'])) {
         return false;
     }
-    foreach ($audit['vulnerabilities'] as $data) {
-        if (!is_array($data) || !array_key_exists('via', $data) || !is_array($data['via'])) {
+    foreach ($audit['vulnerabilities'] as $package => $data) {
+        if (!is_string($package) || trim($package) === '' || !is_array($data) || !array_key_exists('via', $data) || !is_array($data['via'])) {
             return false;
         }
-        if (isset($data['severity']) && !is_string($data['severity'])) {
+        if (!isset($data['severity']) || !is_string($data['severity']) || normalizeSeverity($data['severity']) === 'unknown') {
             return false;
         }
         foreach ($data['via'] as $entry) {
             if (is_string($entry)) {
+                if (trim($entry) === '') {
+                    return false;
+                }
                 continue;
             }
             if (!is_array($entry)) {
                 return false;
             }
-            foreach (['title', 'url', 'severity'] as $field) {
+            if (!array_key_exists('source', $entry)
+                || (!is_int($entry['source']) && (!is_string($entry['source']) || trim($entry['source']) === ''))) {
+                return false;
+            }
+            if (!array_key_exists('severity', $entry)
+                || !is_string($entry['severity'])
+                || normalizeSeverity($entry['severity']) === 'unknown') {
+                return false;
+            }
+            foreach (['title', 'url'] as $field) {
                 if (isset($entry[$field]) && !is_string($entry[$field])) {
                     return false;
                 }
-            }
-            if (isset($entry['source']) && !is_int($entry['source']) && !is_string($entry['source'])) {
-                return false;
             }
         }
     }
@@ -295,16 +304,66 @@ function validComposerAudit(array $audit): bool
     if (!array_key_exists('advisories', $audit) || !is_array($audit['advisories'])) {
         return false;
     }
-    foreach ($audit['advisories'] as $items) {
-        if (!is_array($items)) {
+    foreach ($audit['advisories'] as $package => $items) {
+        if (!is_string($package) || trim($package) === '' || !is_array($items)) {
             return false;
         }
         foreach ($items as $entry) {
             if (!is_array($entry)) {
                 return false;
             }
-            foreach (['packageName', 'severity', 'advisoryId', 'cve', 'title', 'link'] as $field) {
+            $packageName = $entry['packageName'] ?? $package;
+            if (!is_string($packageName) || trim($packageName) === '') {
+                return false;
+            }
+            if (!isset($entry['severity']) || !is_string($entry['severity']) || normalizeSeverity($entry['severity']) === 'unknown') {
+                return false;
+            }
+            $advisoryId = $entry['advisoryId'] ?? null;
+            $cve = $entry['cve'] ?? null;
+            $hasIdentity = (is_string($advisoryId) && trim($advisoryId) !== '') || (is_string($cve) && trim($cve) !== '');
+            if (!$hasIdentity) {
+                return false;
+            }
+            foreach (['packageName', 'advisoryId', 'cve', 'title', 'link'] as $field) {
                 if (isset($entry[$field]) && !is_string($entry[$field])) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+function validNpmLock(array $lock): bool
+{
+    if (!isset($lock['lockfileVersion'])
+        || !is_int($lock['lockfileVersion'])
+        || !in_array($lock['lockfileVersion'], [2, 3], true)
+        || !array_key_exists('packages', $lock)
+        || !is_array($lock['packages'])
+        || !array_key_exists('', $lock['packages'])
+        || !is_array($lock['packages'][''])) {
+        return false;
+    }
+    foreach ($lock['packages'] as $path => $data) {
+        if (!is_string($path) || !is_array($data)) {
+            return false;
+        }
+        foreach (['name', 'version'] as $field) {
+            if (isset($data[$field]) && !is_string($data[$field])) {
+                return false;
+            }
+        }
+        if (isset($data['license'])) {
+            if (is_string($data['license'])) {
+                continue;
+            }
+            if (!is_array($data['license'])) {
+                return false;
+            }
+            foreach ($data['license'] as $license) {
+                if (!is_string($license)) {
                     return false;
                 }
             }
@@ -650,6 +709,15 @@ foreach ($stackRoots as $stackRelative) {
 
         $nodeLockPath = $stackDir . '/' . $nodeLockName;
         $lock = loadJsonFile($nodeLockPath);
+        if (!validNpmLock($lock)) {
+            $checks['lockfiles']['status'] = 'findings';
+            addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported or structurally invalid; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED because the npm lockfile format is invalid or unsupported.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED because the npm lockfile format is invalid or unsupported.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            continue;
+        }
         $licenseCount = 0;
         foreach (npmPackagesForLicense($lock) as $package) {
             $licenseCount++;
