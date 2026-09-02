@@ -66,6 +66,28 @@ grep -q 'rule=openai_key' "$secret_repo/out.txt"
 ! grep -q "$secret_value" "$secret_repo/out.txt"
 ! grep -q "$secret_value" "$secret_repo/report.json"
 
+# accepted-risk is SEC-014 mitigation only and must never silence a secret.
+secret_finding_id="$(php -r '$r=json_decode(file_get_contents($argv[1]),true); foreach($r["findings"] as $f){if($f["category"]==="secret"){echo $f["id"]; exit;}}' "$secret_repo/report.json")"
+cat > "$secret_repo/security/supply-chain/accepted-risk.json" <<JSON
+{
+  "schema": "hache-supply-chain-accepted-risk-v1",
+  "exceptions": [{
+    "finding_id": "$secret_finding_id",
+    "owner": "fixture-owner",
+    "approval_ref": "FIXTURE-SECRET",
+    "mitigation": "this must not suppress SEC-013",
+    "expires_at": "2099-12-31"
+  }]
+}
+JSON
+set +e
+run_check "$secret_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$secret_repo/risk-attempt.txt" 2>&1
+secret_risk_rc=$?
+set -e
+[[ "$secret_risk_rc" -eq 1 ]]
+grep -q 'accepted_risks=0' "$secret_repo/risk-attempt.txt"
+grep -q 'category=secret' "$secret_repo/risk-attempt.txt"
+
 allow_repo="$(new_repo allow)"
 printf '%s\n' 'fixture.txt openai_key' >> "$allow_repo/security/supply-chain/secret-scan.allowlist"
 printf '%s\n' "$secret_value" > "$allow_repo/fixture.txt"
