@@ -83,9 +83,11 @@ Esto valida la primitive. SEC-007 sigue requiriendo evidencia HTTP del proyecto 
 - readiness y smoke antes y después de una ventana de observación;
 - fallo en tests con `state=failed`, `failed_phase` y exit code conservado;
 - ausencia de rollback automático inseguro tras un fallo parcial;
-- `rollback.sh` puede anexar `state=rolled_back` al mismo record;
-- `mark-deploy-recovery.sh` puede cerrar evidencia con `manual_recovery`;
+- `rollback.sh` registra un evento `code_rollback` con `recovery_state=pending_verification`, sin cerrar por sí solo la recuperación;
+- `mark-deploy-recovery.sh` registra el estado canónico `rolled_back` únicamente después de la verificación post-rollback, o `manual_recovery` cuando corresponda;
 - `REQUIRE_SMOKE=1` sin contrato configurado falla antes de cambiar código.
+
+`tests/deployment/RollbackRecoveryStateTest.sh` cubre específicamente que el rollback de código no escriba `state=rolled_back` antes de verificar la recuperación y que el cierre explícito posterior sí quede registrado mediante `mark-deploy-recovery.sh`.
 
 La regresión valida el contrato del runner. No demuestra que un proyecto haya probado staging, compatibilidad de migraciones, restore, señales reales ni su CUF desplegado; esa evidencia se documenta con `templates/DEPLOY-RECOVERY.md`.
 
