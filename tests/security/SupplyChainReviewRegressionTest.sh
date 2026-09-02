@@ -95,6 +95,23 @@ grep -q 'rule=license_not_evaluated' "$invalid_lock/out.txt"
 grep -q 'rule=sca_unavailable' "$invalid_lock/out.txt"
 grep -q 'evidence_complete=0' "$invalid_lock/out.txt"
 
+mismatched_lock="$(new_repo mismatched-node-lock)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","dependencies":{"left-pad":"1.3.0"}}' > "$mismatched_lock/package.json"
+cat > "$mismatched_lock/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"}}}
+JSON
+printf '%s\n' '{"auditReportVersion":2,"vulnerabilities":{}}' > "$mismatched_lock/npm-audit.json"
+commit_all "$mismatched_lock"
+set +e
+run_check "$mismatched_lock" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_NPM_AUDIT_FILE="$mismatched_lock/npm-audit.json" > "$mismatched_lock/out.txt" 2>&1
+mismatched_lock_rc=$?
+set -e
+[[ "$mismatched_lock_rc" -eq 1 ]]
+grep -q 'rule=node_lock_invalid_format' "$mismatched_lock/out.txt"
+grep -q 'rule=license_not_evaluated' "$mismatched_lock/out.txt"
+grep -q 'rule=sca_unavailable' "$mismatched_lock/out.txt"
+grep -q 'evidence_complete=0' "$mismatched_lock/out.txt"
+
 invalid_composer="$(new_repo invalid-composer)"
 printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$invalid_composer/composer.json"
 printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$invalid_composer/composer.lock"
@@ -124,6 +141,49 @@ run_check "$invalid_composer_advisory" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVE
 grep -q 'rule=sca_unavailable' "$invalid_composer_advisory/out.txt"
 grep -q 'not_evaluated=1' "$invalid_composer_advisory/out.txt"
 grep -q 'evidence_complete=0' "$invalid_composer_advisory/out.txt"
+
+composer_identity="$(new_repo composer-identity)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"1.0.0"}}' > "$composer_identity/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.0.0","license":["MIT"]}],"packages-dev":[]}' > "$composer_identity/composer.lock"
+cat > "$composer_identity/composer-audit.json" <<'JSON'
+{
+  "advisories": {
+    "vendor/pkg": [
+      {"advisoryId":"","cve":"CVE-2099-0001","packageName":"vendor/pkg","title":"first CVE","severity":"high"},
+      {"advisoryId":"","cve":"CVE-2099-0002","packageName":"vendor/pkg","title":"second CVE","severity":"critical"}
+    ]
+  }
+}
+JSON
+commit_all "$composer_identity"
+set +e
+run_check "$composer_identity" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$composer_identity/composer-audit.json" > "$composer_identity/out.txt" 2>&1
+composer_identity_rc=$?
+set -e
+[[ "$composer_identity_rc" -eq 1 ]]
+[[ "$(grep -c 'category=sca .*rule=vulnerability' "$composer_identity/out.txt")" -eq 2 ]]
+[[ "$(php -r '$r=json_decode(file_get_contents($argv[1]),true); $ids=[]; foreach($r["findings"] as $f){if($f["rule"]==="vulnerability"){$ids[$f["id"]]=1;}} echo count($ids);' "$composer_identity/report.json")" -eq 2 ]]
+composer_first_id="$(php -r '$r=json_decode(file_get_contents($argv[1]),true); foreach($r["findings"] as $f){if($f["rule"]==="vulnerability" && str_contains($f["subject"],"CVE-2099-0001")){echo $f["id"]; exit;}}' "$composer_identity/report.json")"
+[[ -n "$composer_first_id" ]]
+cat > "$composer_identity/security/supply-chain/accepted-risk.json" <<JSON
+{
+  "schema":"hache-supply-chain-accepted-risk-v1",
+  "exceptions":[{
+    "finding_id":"$composer_first_id",
+    "owner":"fixture-owner",
+    "approval_ref":"FIXTURE-CVE-1",
+    "mitigation":"accept first CVE only",
+    "expires_at":"2099-12-31"
+  }]
+}
+JSON
+set +e
+run_check "$composer_identity" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$composer_identity/composer-audit.json" > "$composer_identity/accepted.txt" 2>&1
+composer_accepted_rc=$?
+set -e
+[[ "$composer_accepted_rc" -eq 1 ]]
+grep -q 'accepted_risks=1' "$composer_identity/accepted.txt"
+grep -q 'enforced_blockers=1' "$composer_identity/accepted.txt"
 
 multi="$(new_repo multi-advisory)"
 make_node_lock "$multi"
@@ -237,6 +297,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
   command -v runuser >/dev/null 2>&1 || { echo 'runuser required for root unreadable regression' >&2; exit 1; }
   getent passwd nobody >/dev/null 2>&1 || { echo 'nobody user required for root unreadable regression' >&2; exit 1; }
   cp "$ROOT/security/supply-chain/check.php" "$incomplete_secret/check-runner.php"
+  chmod 755 "$TMP"
   chmod -R a+rX "$incomplete_secret"
   chmod 777 "$incomplete_secret"
   chmod 000 "$incomplete_secret/a-unreadable.txt"
