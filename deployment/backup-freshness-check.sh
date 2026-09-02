@@ -7,12 +7,20 @@ RPO_SECONDS="${RPO_SECONDS:-86400}"
 BACKUP_CHECK_NOW_EPOCH="${BACKUP_CHECK_NOW_EPOCH:-$(date -u +%s)}"
 BACKUP_ALERT_COMMAND="${BACKUP_ALERT_COMMAND:-}"
 
-[[ "$RPO_SECONDS" =~ ^[0-9]+$ ]] && (( RPO_SECONDS > 0 )) || {
-  echo "RPO_SECONDS must be a positive integer" >&2
+is_canonical_decimal() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
+}
+
+is_positive_canonical_decimal() {
+  [[ "$1" =~ ^[1-9][0-9]*$ ]]
+}
+
+is_positive_canonical_decimal "$RPO_SECONDS" || {
+  echo "RPO_SECONDS must be a positive decimal integer without leading zeros" >&2
   exit 2
 }
-[[ "$BACKUP_CHECK_NOW_EPOCH" =~ ^[0-9]+$ ]] || {
-  echo "BACKUP_CHECK_NOW_EPOCH must be an integer epoch" >&2
+is_canonical_decimal "$BACKUP_CHECK_NOW_EPOCH" || {
+  echo "BACKUP_CHECK_NOW_EPOCH must be a decimal integer epoch without leading zeros" >&2
   exit 2
 }
 command -v sha256sum >/dev/null 2>&1 || {
@@ -64,7 +72,7 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   fi
 
   epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$candidate/backup-manifest.env")"
-  if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
+  if ! is_canonical_decimal "$epoch"; then
     unrankable_invalid_backup="$candidate"
     unrankable_invalid_reason="invalid_created_at_epoch"
     continue
