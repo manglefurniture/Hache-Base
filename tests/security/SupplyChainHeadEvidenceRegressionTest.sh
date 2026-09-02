@@ -108,4 +108,29 @@ commit_all "$hyphen_repo"
 raw_check "$hyphen_repo" SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$hyphen_repo/out.txt"
 ! grep -q 'rule=composer_lock_invalid_format' "$hyphen_repo/out.txt"
 
+
+# A declared stack is evidence from HEAD, not from whether its directory still exists in a dirty working tree.
+head_stack="$(new_repo normalized-head-stack)"
+mkdir -p "$head_stack/frontend"
+printf '%s\n' '{"name":"frontend","private":true,"packageManager":"npm@11.0.0","dependencies":{"pkg":"^1.0.0"}}' > "$head_stack/frontend/package.json"
+cat > "$head_stack/frontend/package-lock.json" <<'JSON'
+{"name":"frontend","lockfileVersion":3,"packages":{"":{"name":"frontend","version":"1.0.0","dependencies":{"pkg":"^1.0.0"}},"node_modules/pkg":{"name":"pkg","version":"1.2.0","license":"MIT"}}}
+JSON
+commit_all "$head_stack"
+rm -rf "$head_stack/frontend"
+raw_check "$head_stack" SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_STACK_ROOTS='./frontend' > "$head_stack/out.txt"
+! grep -q 'category=lockfile' "$head_stack/out.txt"
+grep -q '"root": "frontend"' "$head_stack/report.json"
+
+# Composer versions that only begin with a numeric prefix are not stable numeric evidence.
+composer_unstable="$(new_repo composer-unstable-version)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/pkg":"^1.2"}}' > "$composer_unstable/composer.json"
+printf '%s\n' '{"packages":[{"name":"vendor/pkg","version":"1.2.x-dev","license":["MIT"]}],"packages-dev":[]}' > "$composer_unstable/composer.lock"
+commit_all "$composer_unstable"
+set +e
+raw_check "$composer_unstable" SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA=1 SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_unstable/out.txt" 2>&1
+composer_unstable_rc=$?
+set -e
+[[ "$composer_unstable_rc" -eq 1 ]]
+grep -q 'rule=composer_lock_invalid_format' "$composer_unstable/out.txt"
 echo "SUPPLY_CHAIN_HEAD_EVIDENCE_REGRESSION_OK"

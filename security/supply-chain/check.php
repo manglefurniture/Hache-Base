@@ -168,27 +168,41 @@ function severityRank(string $severity): int
     };
 }
 
-function withinRoot(string $root, string $relative): string
+function normalizeStackRoot(string $relative): string
 {
-    if ($relative === '' || $relative === '.') {
-        return $root;
+    $value = trim(str_replace('\\', '/', $relative));
+    if ($value === '' || $value === '.') {
+        return '.';
     }
-    if (str_starts_with($relative, '/') || preg_match('~^[A-Za-z]:[\\/]~', $relative)) {
+    if (str_starts_with($value, '/') || preg_match('~^[A-Za-z]:/~', $value)) {
         configError("stack_root_must_be_relative value={$relative}");
     }
-    $candidate = realpath($root . DIRECTORY_SEPARATOR . $relative);
-    if ($candidate === false || ($candidate !== $root && !str_starts_with($candidate, $root . DIRECTORY_SEPARATOR))) {
-        configError("invalid_stack_root value={$relative}");
+    $segments = explode('/', $value);
+    $normalized = [];
+    foreach ($segments as $segment) {
+        if ($segment === '' || $segment === '.') {
+            continue;
+        }
+        if ($segment === '..') {
+            configError("stack_root_must_not_traverse value={$relative}");
+        }
+        $normalized[] = $segment;
     }
-    return $candidate;
+    return $normalized === [] ? '.' : implode('/', $normalized);
+}
+
+function withinRoot(string $root, string $relative): string
+{
+    $normalized = normalizeStackRoot($relative);
+    return $normalized === '.'
+        ? $root
+        : $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $normalized);
 }
 
 function stackFileRelative(string $stackRelative, string $file): string
 {
-    if ($stackRelative === '' || $stackRelative === '.') {
-        return $file;
-    }
-    return trim($stackRelative, '/') . '/' . $file;
+    $normalized = normalizeStackRoot($stackRelative);
+    return $normalized === '.' ? $file : $normalized . '/' . $file;
 }
 
 /** @return array<int,string> */
@@ -462,7 +476,7 @@ function composerNumericVersion(string $version): ?array
     if (str_starts_with($value, 'v')) {
         $value = substr($value, 1);
     }
-    if (preg_match('/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/', $value, $matches) !== 1) {
+    if (preg_match('/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/', $value, $matches) !== 1) {
         return null;
     }
     return [(int)$matches[1], (int)($matches[2] ?? 0), (int)($matches[3] ?? 0)];
@@ -1324,10 +1338,15 @@ foreach ($trackedPaths as $relativePath) {
 }
 
 $stackRootsRaw = trim((string)envValue('SUPPLY_CHAIN_STACK_ROOTS', '.'));
-$stackRoots = array_values(array_unique(array_filter(array_map('trim', explode(',', $stackRootsRaw)), static fn(string $value): bool => $value !== '')));
-if ($stackRoots === []) {
-    $stackRoots = ['.'];
+$rawStackRoots = array_values(array_filter(array_map('trim', explode(',', $stackRootsRaw)), static fn(string $value): bool => $value !== ''));
+if ($rawStackRoots === []) {
+    $rawStackRoots = ['.'];
 }
+$normalizedStackRoots = [];
+foreach ($rawStackRoots as $stackRoot) {
+    $normalizedStackRoots[normalizeStackRoot($stackRoot)] = true;
+}
+$stackRoots = array_keys($normalizedStackRoots);
 $stackSummaries = [];
 $deniedLicenses = array_map('strval', is_array($licensePolicy['denied'] ?? null) ? $licensePolicy['denied'] : []);
 $reportMissingLicense = (bool)($licensePolicy['report_missing'] ?? true);
