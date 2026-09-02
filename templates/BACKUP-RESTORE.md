@@ -28,11 +28,11 @@ El backup generado por `deployment/backup.sh` se considera **completo** solo cua
 
 - `database.sql` no vacío;
 - `commit.txt`;
-- `SHA256SUMS` válido;
-- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch`;
+- `SHA256SUMS` válido que incluya explícitamente `commit.txt` y `database.sql`;
+- `backup-manifest.env` con `backup_status=complete` y `created_at_epoch` numérico;
 - marcador `BACKUP_COMPLETE` creado al final.
 
-Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios y checksums antes de declarar `fresh`; si el backup completo más reciente está corrupto o inconsistente, devuelve `invalid_backup` y falla aunque exista un backup válido más antiguo.
+Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios, cobertura de `SHA256SUMS` y checksums antes de declarar `fresh`; si un backup marcado completo está corrupto o inconsistente, devuelve `invalid_backup`. Un `created_at_epoch` ausente o no numérico también es `invalid_backup` y nunca se ignora en favor de evidencia más antigua.
 
 ## Freshness y alerta
 
@@ -64,6 +64,8 @@ El wrapper recibe cuatro argumentos: `status`, `backup_path`, `age_seconds`, `rp
 
 Nunca usar el nombre de la DB fuente ni una DB productiva como target. El script exige `RESTORE_CONFIRM_ISOLATED=1`, rechaza que `RESTORE_DB_NAME` coincida con `database_name` del manifest y **falla si el target ya existe**. El drill solo crea una DB nueva cuya propiedad corresponde a esa ejecución y el cleanup solo puede eliminar esa DB creada por el propio drill.
 
+Antes de tocar la DB target, el drill verifica además que `SHA256SUMS` incluya explícitamente `commit.txt` y `database.sql` y que ambos checksums sean válidos.
+
 ```bash
 BACKUP_DIR=/ruta/backup-completo \
 RESTORE_DB_HOST=<host-staging> \
@@ -80,7 +82,7 @@ bash deployment/restore-drill.sh
 
 `RESTORE_VERIFY_COMMAND` debe validar evidencia útil del proyecto —por ejemplo tablas/filas críticas, invariantes o un smoke controlado contra la DB restaurada—. Un import SQL sin verificación específica no basta para declarar DB-007.
 
-El reporte se reemplaza al iniciar el drill y todo fallo posterior —incluido checksum inválido— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
+El reporte se reemplaza al iniciar el drill y todo fallo posterior —incluido checksum inválido o manifest de checksums incompleto— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
 
 Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución al terminar. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
 
