@@ -60,6 +60,8 @@ Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`
 
 Combinaciones ambiguas con más de un lockfile se rechazan. Si `packageManager` no existe, se admite exactamente uno de los lockfiles reconocidos; el proyecto sigue siendo responsable de fijar su toolchain de forma reproducible.
 
+Para npm, el lock soportado debe tener `lockfileVersion` 2/3, una entrada raíz válida y conjuntos de dependencias coherentes con `package.json`. Para Composer, `composer.lock` debe contener `packages`/`packages-dev` válidos y cubrir los requisitos directos no-plataforma declarados por `composer.json`. Un lock ausente, inválido o desalineado deja SCA y licencias explícitamente **NOT EVALUATED**; no puede producir `evidence_complete=true`.
+
 El parser SCA/licencias integrado cubre `composer.lock`, `package-lock.json` y `npm-shrinkwrap.json`. `pnpm-lock.yaml`/`yarn.lock` cuentan como lockfiles de reproducibilidad, pero SCA y licencias quedan explícitamente `NOT EVALUATED` hasta aportar evidencia específica del proyecto.
 
 ## SCA
@@ -71,7 +73,7 @@ Para ejecución real:
 
 Si la herramienta no existe, falla la red, el JSON no es interpretable o el lockfile no tiene parser integrado, el resultado es `sca_unavailable`: **NOT EVALUATED**. Ese estado no es PASS ni una vulnerabilidad demostrada y por eso no se eleva artificialmente a blocker SEC-014.
 
-Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE` existen para fixtures/evidencia pre-generada; no son un bypass de producción.
+Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE` existen para fixtures/evidencia pre-generada; no son un bypass de producción. Un único archivo pre-generado solo se acepta cuando la invocación contiene exactamente un stack del mismo ecosistema. Si `SUPPLY_CHAIN_STACK_ROOTS` contiene varios stacks Composer o varios stacks Node, la evidencia pre-generada única se considera de alcance ambiguo y esos stacks quedan `NOT EVALUATED`; se debe dividir la ejecución o generar/auditar evidencia por stack.
 
 ## Secret scan
 
