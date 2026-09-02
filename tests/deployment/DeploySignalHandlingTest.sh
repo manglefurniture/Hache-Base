@@ -110,17 +110,18 @@ run_internal_int_case() {
   assert_failed_record "$out" 130 INT
 }
 
-# P1 regression: TERM is sent only to the runner PID while its test phase remains active.
-# The phase traps TERM for evidence and intentionally keeps running, forcing the runner
-# to forward TERM to the process group and escalate after the configured grace period.
+# P1 regression: TERM is sent only to the runner PID. The managed phase leader exits
+# on TERM, but a background worker in the same process group ignores TERM. The runner
+# must keep observing the PGID after the leader exits and KILL the surviving worker
+# before it records the failed deployment.
 run_parent_term_case() {
   make_fixture signal-parent-term
 
   local out="$TMP/signal-parent-term.out"
-  local child_pid_file="$TMP/signal-parent-term-child.pid"
-  local child_signal_file="$TMP/signal-parent-term-child.signal"
+  local leader_signal_file="$TMP/signal-parent-term-leader.signal"
+  local worker_pid_file="$TMP/signal-parent-term-worker.pid"
   local test_command
-  test_command="trap 'printf TERM > \"$child_signal_file\"' TERM; printf '%s\\n' \"\$\$\" > \"$child_pid_file\"; while :; do sleep 10; done"
+  test_command="(trap '' TERM; printf '%s\\n' \"\$BASHPID\" > \"$worker_pid_file\"; while :; do sleep 10; done) & trap 'printf TERM > \"$leader_signal_file\"; exit 0' TERM; while :; do sleep 10; done"
 
   set +e
   APP_ROOT="$APP" \
@@ -134,24 +135,25 @@ run_parent_term_case() {
   set -e
 
   local attempts=100
-  while [[ ! -s "$child_pid_file" && "$attempts" -gt 0 ]]; do
+  while [[ ! -s "$worker_pid_file" && "$attempts" -gt 0 ]]; do
     sleep 0.05
     attempts=$((attempts - 1))
   done
-  [[ -s "$child_pid_file" ]] || {
+  [[ -s "$worker_pid_file" ]] || {
     kill -KILL "$runner_pid" 2>/dev/null || true
     wait "$runner_pid" 2>/dev/null || true
-    fail "managed test child did not start"
+    fail "managed worker did not start"
   }
 
-  local child_pid
-  child_pid="$(cat "$child_pid_file")"
+  local worker_pid
+  worker_pid="$(cat "$worker_pid_file")"
   kill -TERM "$runner_pid"
 
   # A watchdog keeps a broken implementation from hanging CI indefinitely.
   (
     sleep 5
     kill -KILL "$runner_pid" 2>/dev/null || true
+    kill -KILL "$worker_pid" 2>/dev/null || true
   ) &
   local watchdog_pid=$!
 
@@ -163,14 +165,20 @@ run_parent_term_case() {
   wait "$watchdog_pid" 2>/dev/null || true
 
   [[ "$code" == "143" ]] || {
-    kill -KILL "$child_pid" 2>/dev/null || true
+    kill -KILL "$worker_pid" 2>/dev/null || true
     fail "parent-only TERM must exit 143, got $code"
   }
 
-  [[ -f "$child_signal_file" ]] || fail "TERM was not forwarded to the active phase"
-  if kill -0 "$child_pid" 2>/dev/null; then
-    kill -KILL "$child_pid" 2>/dev/null || true
-    fail "active phase survived parent cancellation"
+  [[ -f "$leader_signal_file" ]] || fail "TERM was not forwarded to the managed phase leader"
+
+  attempts=40
+  while kill -0 "$worker_pid" 2>/dev/null && (( attempts > 0 )); do
+    sleep 0.05
+    attempts=$((attempts - 1))
+  done
+  if kill -0 "$worker_pid" 2>/dev/null; then
+    kill -KILL "$worker_pid" 2>/dev/null || true
+    fail "surviving worker remained alive after process-group cancellation"
   fi
 
   assert_failed_record "$out" 143 TERM
