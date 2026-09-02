@@ -218,7 +218,7 @@ cat > "$composer_identity/security/supply-chain/accepted-risk.json" <<JSON
 }
 JSON
 set +e
-run_check "$composer_identity" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$composer_identity/composer-audit.json" > "$composer_identity/accepted.txt" 2>&1
+run_check "$composer_identity" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=C SUPPLY_CHAIN_COMPOSER_AUDIT_FILE="$composer_identity/composer-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$composer_identity/security/supply-chain/accepted-risk.json" > "$composer_identity/accepted.txt" 2>&1
 composer_accepted_rc=$?
 set -e
 [[ "$composer_accepted_rc" -eq 1 ]]
@@ -267,7 +267,7 @@ cat > "$multi/security/supply-chain/accepted-risk.json" <<JSON
 }
 JSON
 set +e
-run_check "$multi" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$multi/npm-audit.json" > "$multi/accepted.txt" 2>&1
+run_check "$multi" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$multi/npm-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$multi/security/supply-chain/accepted-risk.json" > "$multi/accepted.txt" 2>&1
 accepted_rc=$?
 set -e
 [[ "$accepted_rc" -eq 1 ]]
@@ -301,7 +301,7 @@ for invalid_date in 'next year' '2099-02-31'; do
 }
 JSON
   set +e
-  run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" > "$bad_date/date.txt" 2>&1
+  run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$bad_date/security/supply-chain/accepted-risk.json" > "$bad_date/date.txt" 2>&1
   date_rc=$?
   set -e
   [[ "$date_rc" -eq 1 ]]
@@ -321,7 +321,7 @@ cat > "$bad_date/security/supply-chain/accepted-risk.json" <<JSON
 }
 JSON
 set +e
-run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" > "$bad_date/type.txt" 2>&1
+run_check "$bad_date" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$bad_date/npm-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$bad_date/security/supply-chain/accepted-risk.json" > "$bad_date/type.txt" 2>&1
 type_rc=$?
 set -e
 [[ "$type_rc" -eq 1 ]]
