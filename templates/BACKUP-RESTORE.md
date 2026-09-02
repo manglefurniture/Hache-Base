@@ -20,7 +20,7 @@
 - Ubicación/storage de backups: `<sin credenciales>`
 - Protección/cifrado: `<mecanismo y owner>`
 
-El RPO debe expresarse como un umbral medible de antigüedad del último backup válido. El RTO debe medirse desde el inicio del drill hasta que la restauración aislada supera la verificación definida por el proyecto.
+El RPO debe expresarse como un umbral medible de antigüedad del último backup válido. El RTO debe medirse desde el inicio del drill —incluida la validación/checksum del backup— hasta que la restauración aislada supera la verificación definida por el proyecto.
 
 ## Contrato de backup
 
@@ -32,7 +32,7 @@ El backup generado por `deployment/backup.sh` se considera **completo** solo cua
 - `backup-manifest.env` con `backup_status=complete` y `created_at_epoch`;
 - marcador `BACKUP_COMPLETE` creado al final.
 
-Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO.
+Una carpeta incompleta o sin marcador final no cuenta para freshness ni para RPO. `backup-freshness-check.sh` vuelve a validar `backup_status`, artefactos obligatorios y checksums antes de declarar `fresh`; si el backup completo más reciente está corrupto o inconsistente, devuelve `invalid_backup` y falla aunque exista un backup válido más antiguo.
 
 ## Freshness y alerta
 
@@ -53,7 +53,7 @@ RPO_SECONDS=<rpo_en_segundos> \
 bash deployment/backup-freshness-check.sh
 ```
 
-El wrapper recibe cuatro argumentos: `status`, `backup_path`, `age_seconds`, `rpo_seconds`. No debe contener secretos en la línea de comandos ni convertir un backup stale/missing en PASS.
+El wrapper recibe cuatro argumentos: `status`, `backup_path`, `age_seconds`, `rpo_seconds`. No debe contener secretos en la línea de comandos ni convertir un backup stale/missing/invalid en PASS.
 
 - Cadencia del check: `<ej. cada 15 min>`
 - Canal/monitor de alerta: `<servicio>`
@@ -62,12 +62,12 @@ El wrapper recibe cuatro argumentos: `status`, `backup_path`, `age_seconds`, `rp
 
 ## Restore drill aislado
 
-Nunca usar el nombre de la DB fuente ni una DB productiva como target. El script exige `RESTORE_CONFIRM_ISOLATED=1` y rechaza que `RESTORE_DB_NAME` coincida con `database_name` del manifest.
+Nunca usar el nombre de la DB fuente ni una DB productiva como target. El script exige `RESTORE_CONFIRM_ISOLATED=1`, rechaza que `RESTORE_DB_NAME` coincida con `database_name` del manifest y **falla si el target ya existe**. El drill solo crea una DB nueva cuya propiedad corresponde a esa ejecución y el cleanup solo puede eliminar esa DB creada por el propio drill.
 
 ```bash
 BACKUP_DIR=/ruta/backup-completo \
 RESTORE_DB_HOST=<host-staging> \
-RESTORE_DB_NAME=<db_aislada> \
+RESTORE_DB_NAME=<db_aislada_nueva> \
 RESTORE_DB_USER=<usuario> \
 RESTORE_DB_PASSWORD=<desde-secret-store> \
 RESTORE_CONFIRM_ISOLATED=1 \
@@ -80,7 +80,9 @@ bash deployment/restore-drill.sh
 
 `RESTORE_VERIFY_COMMAND` debe validar evidencia útil del proyecto —por ejemplo tablas/filas críticas, invariantes o un smoke controlado contra la DB restaurada—. Un import SQL sin verificación específica no basta para declarar DB-007.
 
-Por default `RESTORE_CLEANUP=1` elimina la DB aislada al terminar. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
+El reporte se reemplaza al iniciar el drill y todo fallo posterior —incluido checksum inválido— termina persistiendo un resultado `failed`; una evidencia PASS anterior no debe permanecer como resultado vigente de una ejecución fallida.
+
+Por default `RESTORE_CLEANUP=1` elimina la DB aislada creada por esta ejecución al terminar. Solo usar `RESTORE_CLEANUP=0` si la retención temporal del drill está aprobada y protegida.
 
 ## Evidencia del último drill
 
@@ -88,7 +90,7 @@ Por default `RESTORE_CLEANUP=1` elimina la DB aislada al terminar. Solo usar `RE
 - Backup restaurado: `<identificador/ruta no secreta>`
 - Edad del backup al iniciar: `<segundos>`
 - RPO objetivo / resultado: `<...>`
-- Duración medida del restore+verify: `<segundos>`
+- Duración total del drill, incluida validación del backup + restore + verify: `<segundos>`
 - RTO objetivo / resultado: `<...>`
 - Verificación ejecutada: `<descripción>`
 - Reporte: `<ruta/artifact/ref>`
