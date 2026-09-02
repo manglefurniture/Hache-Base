@@ -16,6 +16,14 @@ assert_contains() {
   grep -F -- "$text" "$file" >/dev/null || fail "expected '$text' in $file"
 }
 
+assert_not_contains() {
+  local file="$1"
+  local text="$2"
+  if grep -F -- "$text" "$file" >/dev/null; then
+    fail "did not expect '$text' in $file"
+  fi
+}
+
 make_fixture() {
   local name="$1"
   APP="$TMP/$name-app"
@@ -55,7 +63,12 @@ set -Eeuo pipefail
 : "${HEALTH_COUNT_FILE:?HEALTH_COUNT_FILE is required}"
 count=0
 [[ -f "$HEALTH_COUNT_FILE" ]] && count="$(cat "$HEALTH_COUNT_FILE")"
-printf '%s\n' "$((count + 1))" > "$HEALTH_COUNT_FILE"
+next="$((count + 1))"
+printf '%s\n' "$next" > "$HEALTH_COUNT_FILE"
+if [[ "${FAIL_HEALTH_ON_COUNT:-0}" == "$next" ]]; then
+  echo "HEALTHCHECK_FAILED fixture count=$next" >&2
+  exit 8
+fi
 echo "HEALTHCHECK_OK"
 SH
 
@@ -65,7 +78,12 @@ set -Eeuo pipefail
 : "${SMOKE_COUNT_FILE:?SMOKE_COUNT_FILE is required}"
 count=0
 [[ -f "$SMOKE_COUNT_FILE" ]] && count="$(cat "$SMOKE_COUNT_FILE")"
-printf '%s\n' "$((count + 1))" > "$SMOKE_COUNT_FILE"
+next="$((count + 1))"
+printf '%s\n' "$next" > "$SMOKE_COUNT_FILE"
+if [[ "${FAIL_SMOKE_ON_COUNT:-0}" == "$next" ]]; then
+  echo "SMOKE_FAILED fixture count=$next" >&2
+  exit 6
+fi
 echo "SMOKE_OK"
 SH
 
@@ -81,6 +99,34 @@ SH
   TARGET="$(git -C "$APP" rev-parse HEAD)"
   git -C "$APP" push -q origin HEAD:refs/heads/main
   git -C "$APP" checkout -q --detach "$PREVIOUS"
+}
+
+make_monorepo_fixture() {
+  local name="$1"
+  MONOREPO_ROOT="$TMP/$name-monorepo"
+  APP="$MONOREPO_ROOT/app"
+  ORIGIN="$TMP/$name-origin.git"
+
+  git init -q --bare "$ORIGIN"
+  git init -q "$MONOREPO_ROOT"
+  git -C "$MONOREPO_ROOT" config user.email "fixture@example.test"
+  git -C "$MONOREPO_ROOT" config user.name "Deploy Fixture"
+  git -C "$MONOREPO_ROOT" remote add origin "$ORIGIN"
+
+  mkdir -p "$APP/deployment"
+  cp "$ROOT/deployment/deploy.sh" "$APP/deployment/deploy.sh"
+  echo "before" > "$APP/version.txt"
+  git -C "$MONOREPO_ROOT" add .
+  git -C "$MONOREPO_ROOT" commit -q -m "fixture previous"
+  PREVIOUS="$(git -C "$MONOREPO_ROOT" rev-parse HEAD)"
+  git -C "$MONOREPO_ROOT" push -q origin HEAD:refs/heads/main
+
+  echo "after" > "$APP/version.txt"
+  git -C "$MONOREPO_ROOT" add app/version.txt
+  git -C "$MONOREPO_ROOT" commit -q -m "fixture target"
+  TARGET="$(git -C "$MONOREPO_ROOT" rev-parse HEAD)"
+  git -C "$MONOREPO_ROOT" push -q origin HEAD:refs/heads/main
+  git -C "$MONOREPO_ROOT" checkout -q --detach "$PREVIOUS"
 }
 
 # Success path: canonical phases, smoke and the end-of-window recheck are recorded.
@@ -195,6 +241,70 @@ BACKUP_FAIL_RECORD="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$BACKUP_FAIL_OUT" | ta
 assert_contains "$BACKUP_FAIL_RECORD" "state=failed status=failed"
 assert_contains "$BACKUP_FAIL_RECORD" "failed_phase=backup;exit_code=7"
 
+# A readiness failure after an initial pass must be persisted before the runner exits.
+make_fixture readiness-failure
+READINESS_FAIL_OUT="$TMP/readiness-failure.out"
+READINESS_HEALTH_COUNT="$TMP/readiness-failure-health-count"
+READINESS_SMOKE_COUNT="$TMP/readiness-failure-smoke-count"
+set +e
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/readiness-failure-backups" \
+DEPLOY_RECORD_ROOT="$TMP/readiness-failure-records" \
+HEALTH_COUNT_FILE="$READINESS_HEALTH_COUNT" \
+SMOKE_COUNT_FILE="$READINESS_SMOKE_COUNT" \
+FAIL_HEALTH_ON_COUNT=2 \
+TEST_COMMAND='echo TEST_OK' \
+SMOKE_BASE_URL='http://fixture.invalid' \
+REQUIRE_SMOKE=1 \
+OBSERVATION_SECONDS=0.01 \
+REQUIRE_OBSERVATION=1 \
+bash "$APP/deployment/deploy.sh" >"$READINESS_FAIL_OUT" 2>&1
+READINESS_FAIL_CODE=$?
+set -e
+
+[[ "$READINESS_FAIL_CODE" == "8" ]] || fail "second readiness failure must preserve exit code 8, got $READINESS_FAIL_CODE"
+READINESS_FAIL_RECORD="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$READINESS_FAIL_OUT" | tail -n1)"
+[[ -f "$READINESS_FAIL_RECORD" ]] || fail "readiness failure record missing"
+assert_contains "$READINESS_FAIL_RECORD" "gate=readiness status=passed"
+assert_contains "$READINESS_FAIL_RECORD" "gate=readiness status=failed"
+LATEST_READINESS="$(grep -F 'gate=readiness' "$READINESS_FAIL_RECORD" | tail -n1)"
+[[ "$LATEST_READINESS" == *"status=failed"* ]] || fail "latest readiness result must be failed: $LATEST_READINESS"
+assert_contains "$READINESS_FAIL_RECORD" "failed_phase=readiness;exit_code=8"
+assert_not_contains "$READINESS_FAIL_RECORD" "state=healthy status=passed"
+
+# A smoke failure after an initial pass must also replace stale success evidence.
+make_fixture smoke-failure
+SMOKE_FAIL_OUT="$TMP/smoke-failure.out"
+SMOKE_FAIL_HEALTH_COUNT="$TMP/smoke-failure-health-count"
+SMOKE_FAIL_COUNT="$TMP/smoke-failure-smoke-count"
+set +e
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/smoke-failure-backups" \
+DEPLOY_RECORD_ROOT="$TMP/smoke-failure-records" \
+HEALTH_COUNT_FILE="$SMOKE_FAIL_HEALTH_COUNT" \
+SMOKE_COUNT_FILE="$SMOKE_FAIL_COUNT" \
+FAIL_SMOKE_ON_COUNT=2 \
+TEST_COMMAND='echo TEST_OK' \
+SMOKE_BASE_URL='http://fixture.invalid' \
+REQUIRE_SMOKE=1 \
+OBSERVATION_SECONDS=0.01 \
+REQUIRE_OBSERVATION=1 \
+bash "$APP/deployment/deploy.sh" >"$SMOKE_FAIL_OUT" 2>&1
+SMOKE_FAIL_CODE=$?
+set -e
+
+[[ "$SMOKE_FAIL_CODE" == "6" ]] || fail "second smoke failure must preserve exit code 6, got $SMOKE_FAIL_CODE"
+SMOKE_FAIL_RECORD="$(sed -n 's/^DEPLOY_RECORD_FILE=//p' "$SMOKE_FAIL_OUT" | tail -n1)"
+[[ -f "$SMOKE_FAIL_RECORD" ]] || fail "smoke failure record missing"
+assert_contains "$SMOKE_FAIL_RECORD" "gate=smoke status=passed"
+assert_contains "$SMOKE_FAIL_RECORD" "gate=smoke status=failed"
+LATEST_SMOKE="$(grep -F 'gate=smoke' "$SMOKE_FAIL_RECORD" | tail -n1)"
+[[ "$LATEST_SMOKE" == *"status=failed"* ]] || fail "latest smoke result must be failed: $LATEST_SMOKE"
+assert_contains "$SMOKE_FAIL_RECORD" "failed_phase=smoke;exit_code=6"
+assert_not_contains "$SMOKE_FAIL_RECORD" "state=healthy status=passed"
+
 # Required smoke must fail before code changes when no smoke contract is configured.
 make_fixture smoke-required
 SMOKE_REQUIRED_OUT="$TMP/smoke-required.out"
@@ -212,7 +322,7 @@ assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_CONFIG_FAILED smoke is required"
 assert_contains "$SMOKE_REQUIRED_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "configuration failure must happen before code change"
 
-# Deploy evidence must never be created inside the application working tree.
+# Deploy evidence must never be created anywhere inside the Git working tree.
 make_fixture record-inside
 RECORD_INSIDE_OUT="$TMP/record-inside.out"
 set +e
@@ -225,10 +335,30 @@ RECORD_INSIDE_CODE=$?
 set -e
 
 [[ "$RECORD_INSIDE_CODE" != "0" ]] || fail "record root inside working tree must fail"
-assert_contains "$RECORD_INSIDE_OUT" "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside APP_ROOT"
+assert_contains "$RECORD_INSIDE_OUT" "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside the Git working tree"
 assert_contains "$RECORD_INSIDE_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
 [[ ! -e "$APP/.deploy-records" ]] || fail "rejected record root must not be created inside working tree"
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "record-root validation must happen before code change"
 [[ -z "$(git -C "$APP" status --porcelain=v1)" ]] || fail "record-root validation must leave working tree clean"
+
+# APP_ROOT may be a monorepo subdirectory; sibling directories are still inside the Git working tree.
+make_monorepo_fixture monorepo-record
+MONOREPO_OUT="$TMP/monorepo-record.out"
+MONOREPO_RECORD_ROOT="$MONOREPO_ROOT/deploy-records"
+set +e
+APP_ROOT="$APP" \
+TARGET_COMMIT="$TARGET" \
+BACKUP_ROOT="$TMP/monorepo-backups" \
+DEPLOY_RECORD_ROOT="$MONOREPO_RECORD_ROOT" \
+bash "$APP/deployment/deploy.sh" >"$MONOREPO_OUT" 2>&1
+MONOREPO_CODE=$?
+set -e
+
+[[ "$MONOREPO_CODE" != "0" ]] || fail "record root in monorepo sibling must fail"
+assert_contains "$MONOREPO_OUT" "DEPLOY_CONFIG_FAILED DEPLOY_RECORD_ROOT must be outside the Git working tree"
+assert_contains "$MONOREPO_OUT" "DEPLOY_RECOVERY_REQUIRED failed_phase=configuration"
+[[ ! -e "$MONOREPO_RECORD_ROOT" ]] || fail "rejected monorepo sibling record root must not be created"
+[[ "$(git -C "$MONOREPO_ROOT" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "monorepo validation must happen before code change"
+[[ -z "$(git -C "$MONOREPO_ROOT" status --porcelain=v1)" ]] || fail "monorepo validation must leave whole working tree clean"
 
 echo "DEPLOY_RUNNER_OK"
