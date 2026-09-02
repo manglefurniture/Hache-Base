@@ -28,6 +28,11 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionInco
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionPreActiveCookiePolicyTest.php"
 bash "$ROOT/tests/security/SessionCookieScopeHttpTest.sh"
 bash "$ROOT/tests/deployment/HealthCheckTest.sh"
+bash "$ROOT/tests/deployment/DeployRunnerTest.sh"
+bash "$ROOT/tests/deployment/DeployRunnerReviewHardeningTest.sh"
+bash "$ROOT/tests/deployment/DeployRecordUniquenessTest.sh"
+bash "$ROOT/tests/deployment/DeploySignalHandlingTest.sh"
+bash "$ROOT/tests/deployment/RollbackRecoveryStateTest.sh"
 
 if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
   bash "$ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"

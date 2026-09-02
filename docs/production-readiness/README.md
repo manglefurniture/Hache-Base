@@ -48,43 +48,50 @@ P0-06 añade una Extension **opt-in** de persistencia y claims; no la activa glo
 - `tests/integration/AsyncPersistenceContractTest.php` — evita drift entre el vocabulario persistido y `AsyncOperationState`;
 - `tests/integration/InboxOutboxMariaDbTest.sh` — regresión MariaDB de duplicado, claim concurrente, ambigüedad, out-of-order y reprocess.
 
-P0-06 **no** introduce Redis, broker, queue manager, worker universal, cron global ni integración automática con Resend/pagos/n8n. El proyecto que adopte la Extension debe crear su migración, worker/scheduler, retención, observabilidad y runbook según su riesgo.
+P0-06 **no** introduce Redis, broker, queue manager, worker universal, cron global ni integración automática con Resend/pagos/n8n.
 
 ## Cuarta fase incremental implementada — P0-07
 
 P0-07 endurece exclusivamente el baseline de headers asociado a **SEC-001 / SEC-002 / SEC-003**:
 
-- `security/headers.php` conserva `Headers::apply()` y añade `Headers::build()` para probar el contrato sin emitir headers;
-- `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` y `Permissions-Policy` forman el baseline no persistente;
-- HSTS queda desactivado por defecto hasta que el proyecto demuestre HTTPS estable;
-- al habilitar HSTS, `includeSubDomains` y `preload` siguen desactivados salvo opt-in explícito;
-- CSP queda `off` por default y puede pasar por `report-only` antes de una promoción explícita a `enforce`;
-- el helper CSP rechaza composición insegura de directivas/valores;
-- `X-Forwarded-Proto` solo se acepta desde IPs exactas de proxy confiable y con un único valor normalizado `https`/`http`;
-- `templates/SECURITY-HEADERS.md` obliga a inventariar recursos CSP, subdominios, topología TLS/proxy, evidencia y rollback;
-- `tests/security/HeadersTest.php` cubre defaults, HSTS opt-in, `includeSubDomains`/preload, CSP report-only/enforce, header injection y proxy spoofing/ambigüedad.
+- baseline defensivo no persistente;
+- HSTS opt-in sin `includeSubDomains`/preload por default;
+- CSP `off`/`report-only`/`enforce` por configuración explícita;
+- detección HTTPS detrás de proxy confiable limitada a IPs exactas;
+- `templates/SECURITY-HEADERS.md` y regresiones dedicadas.
 
-P0-07 no activa una CSP o HSTS reales en ningún proyecto derivado.
+P0-07 no activa CSP/HSTS reales en proyectos derivados.
 
 ## Quinta fase incremental implementada — P0-08
 
 P0-08 implementa el contrato reusable de **SEC-007** sin adelantar SEC-008/009/010:
 
-- `security/request-security.php` centraliza la detección de HTTPS directo o detrás de proxy confiable para que headers y cookies usen la misma frontera;
-- `security/session-security.php` configura cookies seguras, `session.use_strict_mode`, idle/absolute timeout, rotación de ID y destrucción efectiva;
-- `security/auth.php` conserva `startSecureSession()`, `user()`, `requireUser()` y `logout()` compatibles y añade `login()`/`elevate()` como fronteras explícitas de regeneración;
-- `login()` regenera el ID antes de adjuntar identidad autenticada;
-- `elevate()` exige sesión autenticada, conserva el mismo principal y regenera el ID después de una elevación ya autorizada por el proyecto;
-- idle/absolute expiry eliminan auth y rotan a una nueva sesión anónima;
-- `SameSite=None` solo se admite cuando HTTPS efectivo permite `Secure`;
-- `templates/SESSION-SECURITY.md` documenta cookies, fixation, expiración, logout, proxy y evidencia del proyecto;
-- `tests/security/SessionSecurityTest.php` cubre cookies, proxy spoofing/multi-hop, login/elevación, expiración exacta y logout.
+- `security/request-security.php` centraliza HTTPS directo/proxy confiable;
+- `security/session-security.php` configura cookies seguras, strict mode, idle/absolute timeout, rotación y destrucción;
+- `security/auth.php` añade `login()`/`elevate()` como fronteras explícitas de regeneración;
+- `templates/SESSION-SECURITY.md` documenta adopción/evidencia;
+- regresiones cubren cookies, proxy, fixation, expiración, elevación y logout.
 
-Defaults P0-08: idle 1800 s, absolute 43200 s, `SameSite=Lax`, cookie host-only, `path=/`, `HttpOnly=true` y `Secure` según HTTPS efectivo. Son baseline configurable y **no sustituyen la decisión/evidencia del proyecto**.
+P0-08 no implementa hashing de passwords, recuperación, MFA, no-enumeración, rate limiting de login ni autorización.
 
-P0-08 no implementa hashing de passwords, recuperación, MFA, no-enumeración, rate limiting de login ni autorización. Tampoco deriva la IP real del cliente desde headers de proxy.
+## Sexta fase incremental implementada — P0-10
 
-No se implementan todavía P0-10/P0-11/P0-12 ni P1+.
+P0-10 endurece el runner de deploy y la evidencia de fallo parcial sin automatizar restore ni rollback inseguro:
+
+- `deployment/deploy.sh` registra fases canónicas en `DEPLOY_RECORD_FILE` fuera del repo;
+- un trap de error emite `DEPLOY_RECOVERY_REQUIRED` con fase, exit code, record, runbook y rollback ref disponibles;
+- readiness y smoke pueden ejecutarse antes y después de una ventana de observación;
+- `REQUIRE_SMOKE=1` y `REQUIRE_OBSERVATION=1` permiten convertir esos contratos en gates explícitos por entorno;
+- ausencia de smoke/ventana con defaults compatibles se registra como `NOT_EVALUATED`, nunca como PASS;
+- `deployment/rollback.sh` registra únicamente `event=code_rollback` con `recovery_state=pending_verification`; el estado canónico `rolled_back` se registra después mediante `deployment/mark-deploy-recovery.sh` una vez completadas las verificaciones post-rollback del runbook;
+- `deployment/mark-deploy-recovery.sh` permite registrar `manual_recovery`/`rolled_back` después de una recuperación explícita;
+- `deployment/DEPLOY-FAILURE-RUNBOOK.md` evita reintentos/rollbacks ciegos y separa código de DB/assets/config;
+- `templates/DEPLOY-RECOVERY.md` documenta matriz código/DB/assets/config, compatibilidad, punto de no retorno, smoke, ventana, criterios y drill de staging;
+- `tests/deployment/DeployRunnerTest.sh` prueba success, fallo parcial, observación, rollback y manual recovery sobre repos Git temporales.
+
+P0-10 no ejecuta restore de DB, canary, blue-green, failover ni recuperación automática. P0-11 sigue siendo el bloque separado para RPO/RTO, restore drill y backup freshness.
+
+No se implementan todavía P0-11/P0-12 ni P1+.
 
 ## Uso en un proyecto derivado
 
@@ -93,10 +100,11 @@ No se implementan todavía P0-10/P0-11/P0-12 ni P1+.
 3. Evaluar la Checklist solo con evidencia del proyecto/entorno real.
 4. Adoptar las primitives Core que apliquen; no copiar Extensions innecesarias.
 5. Si existe una operación asíncrona/externa crítica, definir qué evidencia significa `accepted`, `confirmed`, `failed_final` y cuándo un retry es seguro.
-6. Si el CUF necesita dedupe persistente, efectos posteriores al commit o reprocesamiento seguro, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` antes de adoptar el schema P0-06.
-7. Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md` con inventario de recursos, subdominios, proxy/TLS, reportes y rollback.
-8. Si hay sesiones, completar `templates/SESSION-SECURITY.md`, migrar asignaciones directas de `$_SESSION['user']` a `Auth::login()`/`Auth::elevate()` y probar cookies/login/expiry/logout/proxy reales.
-9. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+6. Si el CUF necesita dedupe persistente, efectos posteriores al commit o reprocesamiento seguro, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` antes de adoptar P0-06.
+7. Antes de activar HSTS o promover CSP a enforcement, completar `templates/SECURITY-HEADERS.md`.
+8. Si hay sesiones, completar `templates/SESSION-SECURITY.md` y probar cookies/login/expiry/logout/proxy reales.
+9. Antes de habilitar deploy de producción, completar `templates/DEPLOY-RECOVERY.md`, definir smoke/ventana/criterios y ejecutar un drill de staging.
+10. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
@@ -113,7 +121,7 @@ El logger es una primitive, no una plataforma APM.
 
 ### Estados asíncronos y reconciliación
 
-`src/common/AsyncOperationState.php` distingue intención local, aceptación externa, resultado ambiguo, retry seguro, reconciliación y resultado autoritativo. `accepted` nunca se interpreta automáticamente como éxito final.
+`src/common/AsyncOperationState.php` distingue intención local, aceptación externa, resultado ambiguo, retry seguro, reconciliación y resultado autoritativo.
 
 ### Inbox/outbox/idempotency Extension
 
@@ -121,19 +129,21 @@ P0-06 conserva Core de estado separado de persistencia/claims opt-in. Si la fron
 
 ### Security headers
 
-P0-07 separa baseline Core no persistente, políticas HSTS/CSP configurables y evidencia Project. `Headers::build()` facilita pruebas sin emitir headers.
+P0-07 separa baseline Core no persistente, políticas HSTS/CSP configurables y evidencia Project.
 
 ### Sesiones y trusted HTTPS
 
-P0-08 comparte `RequestSecurity` entre P0-07 y P0-08 para evitar dos interpretaciones de HTTPS. `SessionSecurity` aplica cookie `HttpOnly`, `Secure` sobre HTTPS efectivo, SameSite/scope configurables, strict mode, expiración y rotación. `Auth::login()` y `Auth::elevate()` son las fronteras que evitan reutilizar IDs a través de cambios de confianza.
-
-La primitive no demuestra SEC-007 por sí sola: el proyecto debe probar cookies reales, su proxy, el login, la elevación, el timeout y el logout.
+P0-08 comparte `RequestSecurity` entre headers y sesión para evitar dos interpretaciones de HTTPS. La primitive no demuestra SEC-007 por sí sola.
 
 ### Liveness, readiness y smoke
 
-- `deployment/liveness-check.sh` confirma que el proceso/endpoint responde con el status esperado.
-- `deployment/health-check.sh` actúa como gate de readiness y puede validar body/version.
+- `deployment/liveness-check.sh` confirma que el proceso/endpoint responde.
+- `deployment/health-check.sh` actúa como readiness y puede validar body/version.
 - `tests/smoke/http-smoke.sh` comprueba una ruta funcional configurable.
+
+### Deploy/recovery
+
+P0-10 convierte el runner en una secuencia con estados visibles, record persistente, failure trap, smoke/observación configurables y recuperación explícitamente registrada. Un `DEPLOY_OK` no sustituye la evidencia real exigida por DPL-001–DPL-009.
 
 ## Regla de promoción
 

@@ -14,6 +14,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `security/HeadersTest.php`: contrato P0-07 de headers baseline, HSTS opt-in, CSP report-only/enforce y proxy HTTPS confiable.
 - `security/SessionSecurityTest.php`: contrato P0-08 de cookies, trusted HTTPS, fixation, expiración, elevación y logout.
 - `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
+- `deployment/DeployRunnerTest.sh`: regresión P0-10 con fases, fallo parcial, record persistente, smoke, ventana, rollback explícito y manual recovery.
 - `smoke/http-smoke.sh`: smoke HTTP configurable y separado de liveness/readiness.
 - `integration/`: contratos e integraciones reutilizables; incluye mailer HTTPS, HMAC de webhooks, cifrado/versionado de credenciales y persistencia P0-06 inbox/outbox/idempotency.
 - `run.sh`: punto de entrada común para pruebas que no requieren MariaDB persistente del workflow.
@@ -72,6 +73,23 @@ La prueba offline no sustituye evidencia SEC-001/002/003 del entorno real.
 - logout destruye la sesión servidor, limpia estado e invalida el ID local.
 
 Esto valida la primitive. SEC-007 sigue requiriendo evidencia HTTP del proyecto desplegado: cookie real, login, rutas protegidas, elevación, expiración, logout y configuración del proxy mediante `templates/SESSION-SECURITY.md`.
+
+## Deploy/recovery P0-10
+
+`tests/deployment/DeployRunnerTest.sh` crea repositorios Git temporales y prueba el runner sin tocar infraestructura real. Demuestra:
+
+- orden de estados `started`, `code_changed`, `migrations_applied`, `tests_passed`, `healthy`;
+- `migrations_applied status=not_applicable` cuando no hay comando de migración;
+- readiness y smoke antes y después de una ventana de observación;
+- fallo en tests con `state=failed`, `failed_phase` y exit code conservado;
+- ausencia de rollback automático inseguro tras un fallo parcial;
+- `rollback.sh` registra un evento `code_rollback` con `recovery_state=pending_verification`, sin cerrar por sí solo la recuperación;
+- `mark-deploy-recovery.sh` registra el estado canónico `rolled_back` únicamente después de la verificación post-rollback, o `manual_recovery` cuando corresponda;
+- `REQUIRE_SMOKE=1` sin contrato configurado falla antes de cambiar código.
+
+`tests/deployment/RollbackRecoveryStateTest.sh` cubre específicamente que el rollback de código no escriba `state=rolled_back` antes de verificar la recuperación y que el cierre explícito posterior sí quede registrado mediante `mark-deploy-recovery.sh`.
+
+La regresión valida el contrato del runner. No demuestra que un proyecto haya probado staging, compatibilidad de migraciones, restore, señales reales ni su CUF desplegado; esa evidencia se documenta con `templates/DEPLOY-RECOVERY.md`.
 
 ## Estados asíncronos P0-05
 
