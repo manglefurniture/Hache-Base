@@ -91,6 +91,14 @@ function withinRoot(string $root, string $relative): string
     return $candidate;
 }
 
+function stackFileRelative(string $stackRelative, string $file): string
+{
+    if ($stackRelative === '' || $stackRelative === '.') {
+        return $file;
+    }
+    return trim($stackRelative, '/') . '/' . $file;
+}
+
 /** @return array<int,string> */
 function trackedFiles(string $root): array
 {
@@ -335,6 +343,141 @@ function validComposerAudit(array $audit): bool
     return true;
 }
 
+/** @return array{0:int,1:int,2:int}|null */
+function composerNumericVersion(string $version): ?array
+{
+    $value = trim($version);
+    if (str_starts_with($value, 'v')) {
+        $value = substr($value, 1);
+    }
+    if (preg_match('/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/', $value, $matches) !== 1) {
+        return null;
+    }
+    return [(int)$matches[1], (int)($matches[2] ?? 0), (int)($matches[3] ?? 0)];
+}
+
+/** @param array{0:int,1:int,2:int} $version */
+function composerVersionString(array $version): string
+{
+    return $version[0] . '.' . $version[1] . '.' . $version[2];
+}
+
+/** @param array{0:int,1:int,2:int} $locked */
+function composerConstraintTokenSatisfied(array $locked, string $token): bool
+{
+    $token = trim(preg_replace('/@(?:dev|stable|beta|alpha|RC)$/i', '', $token) ?? $token);
+    if ($token === '' || $token === '*') {
+        return true;
+    }
+    $lockedString = composerVersionString($locked);
+
+    if (preg_match('/^([\^~])\s*v?(\d+(?:\.\d+){0,2})$/', $token, $matches) === 1) {
+        $operator = $matches[1];
+        $parts = array_map('intval', explode('.', $matches[2]));
+        $specified = count($parts);
+        $base = [$parts[0] ?? 0, $parts[1] ?? 0, $parts[2] ?? 0];
+        if (version_compare($lockedString, composerVersionString($base), '<')) {
+            return false;
+        }
+        if ($operator === '^') {
+            if ($base[0] > 0) {
+                $upper = [$base[0] + 1, 0, 0];
+            } elseif ($base[1] > 0) {
+                $upper = [0, $base[1] + 1, 0];
+            } else {
+                $upper = [0, 0, $base[2] + 1];
+            }
+        } else {
+            $upper = $specified >= 3 ? [$base[0], $base[1] + 1, 0] : [$base[0] + 1, 0, 0];
+        }
+        return version_compare($lockedString, composerVersionString($upper), '<');
+    }
+
+    if (preg_match('/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?[.](?:\*|x|X)$/', $token, $matches) === 1
+        || preg_match('/^v?(\d+)(?:\.(\d+))?\.(?:\*|x|X)$/', $token, $matches) === 1) {
+        $major = (int)$matches[1];
+        $minor = isset($matches[2]) && $matches[2] !== '' ? (int)$matches[2] : null;
+        $lower = [$major, $minor ?? 0, 0];
+        $upper = $minor === null ? [$major + 1, 0, 0] : [$major, $minor + 1, 0];
+        return version_compare($lockedString, composerVersionString($lower), '>=')
+            && version_compare($lockedString, composerVersionString($upper), '<');
+    }
+
+    if (preg_match('/^(<=|>=|<|>|!=|=)?\s*v?(\d+(?:\.\d+){0,2})$/', $token, $matches) === 1) {
+        $operator = $matches[1] !== '' ? $matches[1] : '=';
+        $target = composerNumericVersion($matches[2]);
+        return $target !== null && version_compare($lockedString, composerVersionString($target), $operator);
+    }
+
+    return false;
+}
+
+function composerVersionSatisfies(string $version, string $constraint): bool
+{
+    $constraint = trim($constraint);
+    if ($constraint === '' || $constraint === '*') {
+        return true;
+    }
+    $locked = composerNumericVersion($version);
+    if ($locked === null) {
+        return trim($version) === $constraint;
+    }
+
+    $branches = preg_split('/\s*\|\|?\s*/', $constraint);
+    if (!is_array($branches)) {
+        return false;
+    }
+    foreach ($branches as $branch) {
+        $branch = trim($branch);
+        if ($branch === '') {
+            continue;
+        }
+        if (preg_match('/^v?(\d+(?:\.\d+){0,2})\s+-\s+v?(\d+(?:\.\d+){0,2})$/', $branch, $range) === 1) {
+            $lower = composerNumericVersion($range[1]);
+            $upper = composerNumericVersion($range[2]);
+            if ($lower !== null && $upper !== null
+                && version_compare(composerVersionString($locked), composerVersionString($lower), '>=')
+                && version_compare(composerVersionString($locked), composerVersionString($upper), '<=')) {
+                return true;
+            }
+            continue;
+        }
+        $tokens = preg_split('/(?:\s*,\s*|\s+)/', $branch);
+        if (!is_array($tokens) || $tokens === []) {
+            continue;
+        }
+        $all = true;
+        foreach ($tokens as $token) {
+            if ($token === '') {
+                continue;
+            }
+            if (!composerConstraintTokenSatisfied($locked, $token)) {
+                $all = false;
+                break;
+            }
+        }
+        if ($all) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @param array<string,mixed> $packages */
+function npmLockContainsPackage(array $packages, string $dependencyName): bool
+{
+    $needle = 'node_modules/' . $dependencyName;
+    foreach ($packages as $path => $data) {
+        if (!is_string($path) || !is_array($data)) {
+            continue;
+        }
+        if ($path === $needle || str_ends_with($path, '/' . $needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** @param array<string,mixed> $manifest */
 function validNpmLock(array $lock, array $manifest): bool
 {
@@ -376,15 +519,32 @@ function validNpmLock(array $lock, array $manifest): bool
                 return false;
             }
         }
+        if ($path !== '' && (($data['link'] ?? false) !== true) && (!isset($data['version']) || trim((string)$data['version']) === '')) {
+            return false;
+        }
         if (isset($data['license'])) {
             if (is_string($data['license'])) {
-                continue;
+                // valid scalar license
+            } elseif (!is_array($data['license'])) {
+                return false;
+            } else {
+                foreach ($data['license'] as $license) {
+                    if (!is_string($license)) {
+                        return false;
+                    }
+                }
             }
-            if (!is_array($data['license'])) {
+        }
+        foreach (['dependencies', 'devDependencies', 'optionalDependencies'] as $section) {
+            $dependencies = $data[$section] ?? [];
+            if (!is_array($dependencies)) {
                 return false;
             }
-            foreach ($data['license'] as $license) {
-                if (!is_string($license)) {
+            foreach ($dependencies as $name => $constraint) {
+                if (!is_string($name) || trim($name) === '' || !is_string($constraint) || trim($constraint) === '') {
+                    return false;
+                }
+                if (!npmLockContainsPackage($lock['packages'], $name)) {
                     return false;
                 }
             }
@@ -414,33 +574,50 @@ function validComposerLock(array $lock, array $manifest): bool
         return false;
     }
 
-    $prodNames = [];
-    $devNames = [];
-    foreach ([['packages', &$prodNames], ['packages-dev', &$devNames]] as &$sectionConfig) {
-        [$section, &$names] = $sectionConfig;
-        foreach ($lock[$section] as $package) {
-            if (!is_array($package)
-                || !isset($package['name'], $package['version'])
-                || !is_string($package['name'])
-                || trim($package['name']) === ''
-                || !is_string($package['version'])
-                || trim($package['version']) === '') {
+    $prodVersions = [];
+    $devVersions = [];
+    foreach ($lock['packages'] as $package) {
+        if (!is_array($package)
+            || !isset($package['name'], $package['version'])
+            || !is_string($package['name'])
+            || trim($package['name']) === ''
+            || !is_string($package['version'])
+            || trim($package['version']) === '') {
+            return false;
+        }
+        $prodVersions[$package['name']] = $package['version'];
+        if (isset($package['license'])) {
+            if (!is_array($package['license'])) {
                 return false;
             }
-            $names[$package['name']] = true;
-            if (isset($package['license'])) {
-                if (!is_array($package['license'])) {
+            foreach ($package['license'] as $license) {
+                if (!is_string($license) || trim($license) === '') {
                     return false;
-                }
-                foreach ($package['license'] as $license) {
-                    if (!is_string($license) || trim($license) === '') {
-                        return false;
-                    }
                 }
             }
         }
     }
-    unset($sectionConfig, $names);
+    foreach ($lock['packages-dev'] as $package) {
+        if (!is_array($package)
+            || !isset($package['name'], $package['version'])
+            || !is_string($package['name'])
+            || trim($package['name']) === ''
+            || !is_string($package['version'])
+            || trim($package['version']) === '') {
+            return false;
+        }
+        $devVersions[$package['name']] = $package['version'];
+        if (isset($package['license'])) {
+            if (!is_array($package['license'])) {
+                return false;
+            }
+            foreach ($package['license'] as $license) {
+                if (!is_string($license) || trim($license) === '') {
+                    return false;
+                }
+            }
+        }
+    }
 
     foreach (['require', 'require-dev'] as $section) {
         $requirements = $manifest[$section] ?? [];
@@ -457,8 +634,10 @@ function validComposerLock(array $lock, array $manifest): bool
             if (composerPlatformRequirement($name)) {
                 continue;
             }
-            $present = isset($prodNames[$name]) || ($section === 'require-dev' && isset($devNames[$name]));
-            if (!$present) {
+            $lockedVersion = $section === 'require'
+                ? ($prodVersions[$name] ?? null)
+                : ($devVersions[$name] ?? $prodVersions[$name] ?? null);
+            if (!is_string($lockedVersion) || !composerVersionSatisfies($lockedVersion, $constraint)) {
                 return false;
             }
         }
@@ -652,7 +831,7 @@ $disableExternalSca = envValue('SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA', '0') === '1'
 $secretRules = [
     'private_key' => '~-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----~',
     'aws_access_key' => '~\bAKIA[0-9A-Z]{16}\b~',
-    'github_token' => '~\bgh[pousr]_[A-Za-z0-9]{20,}\b~',
+    'github_token' => '~\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{40,})\b~',
     'slack_token' => '~\bxox[baprs]-[A-Za-z0-9-]{20,}\b~',
     'openai_key' => '~\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b~',
     'stripe_live_secret' => '~\bsk_live_[A-Za-z0-9]{16,}\b~',
@@ -669,8 +848,10 @@ $checks = [
     'sca' => [],
     'licenses' => [],
 ];
+$trackedPaths = trackedFiles($root);
+$trackedFileSet = array_fill_keys($trackedPaths, true);
 
-foreach (trackedFiles($root) as $relativePath) {
+foreach ($trackedPaths as $relativePath) {
     $fullPath = $root . DIRECTORY_SEPARATOR . $relativePath;
     if (!is_file($fullPath)) {
         continue;
@@ -750,19 +931,29 @@ foreach ($stackRoots as $stackRelative) {
     if (is_file($stackDir . '/composer.json')) {
         $composerManifest = loadJsonFile($stackDir . '/composer.json');
         $lockPath = $stackDir . '/composer.lock';
-        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => is_file($lockPath) ? 'composer.lock' : null];
-        if (!is_file($lockPath)) {
+        $lockRelative = stackFileRelative($stackRelative, 'composer.lock');
+        $lockOnDisk = is_file($lockPath);
+        $lockTracked = $lockOnDisk && isset($trackedFileSet[$lockRelative]);
+        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => $lockOnDisk ? 'composer.lock' : null, 'lockfile_tracked' => $lockTracked];
+        if (!$lockOnDisk) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', 'composer_lock_missing', 'high', $displayRoot . '/composer.json', 'composer', 'composer.json is tracked without composer.lock.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => null, 'status' => 'not_evaluated', 'packages_checked' => null];
             addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/composer.json', 'composer:missing-lock', 'License inventory is NOT EVALUATED because composer.lock is missing.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => null, 'status' => 'not_evaluated'];
             addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.json', 'composer:missing-lock', 'SCA is NOT EVALUATED because composer.lock is missing.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+        } elseif (!$lockTracked) {
+            $checks['lockfiles']['status'] = 'findings';
+            addFinding($findings, 'lockfile', 'composer_lock_untracked', 'high', $displayRoot . '/composer.lock', 'composer', 'composer.lock exists locally but is not tracked by the reviewed Git commit; reproducible evidence cannot be attributed to HEAD.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/composer.lock', 'composer:untracked-lock', 'License inventory is NOT EVALUATED because composer.lock is untracked.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/composer.lock', 'composer:untracked-lock', 'SCA is NOT EVALUATED because composer.lock is untracked.', $level, $mode, $policy, $licensePolicy, $riskConfig);
         } else {
             $lock = loadJsonFile($lockPath);
             if (!validComposerLock($lock, $composerManifest)) {
                 $checks['lockfiles']['status'] = 'findings';
-                addFinding($findings, 'lockfile', 'composer_lock_invalid_format', 'high', $displayRoot . '/composer.lock', 'composer', 'composer.lock is structurally invalid or does not cover direct non-platform requirements from composer.json; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+                addFinding($findings, 'lockfile', 'composer_lock_invalid_format', 'high', $displayRoot . '/composer.lock', 'composer', 'composer.lock is structurally invalid or its locked direct versions do not satisfy composer.json; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
                 $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated', 'packages_checked' => null];
                 addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/composer.lock', 'composer:invalid-lock', 'License inventory is NOT EVALUATED because composer.lock is invalid or mismatched to composer.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
                 $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'composer', 'lockfile' => 'composer.lock', 'status' => 'not_evaluated'];
@@ -818,7 +1009,9 @@ foreach ($stackRoots as $stackRelative) {
 
     if (is_file($stackDir . '/package.json')) {
         $resolved = resolveNodeLock($stackDir);
-        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'node', 'package_manager' => $resolved['manager'], 'lockfile' => $resolved['lock']];
+        $resolvedLockRelative = $resolved['lock'] !== null ? stackFileRelative($stackRelative, (string)$resolved['lock']) : null;
+        $resolvedLockTracked = $resolvedLockRelative !== null && isset($trackedFileSet[$resolvedLockRelative]);
+        $stackSummaries[] = ['root' => $displayRoot, 'stack' => 'node', 'package_manager' => $resolved['manager'], 'lockfile' => $resolved['lock'], 'lockfile_tracked' => $resolvedLockTracked];
         if ($resolved['error'] !== null) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', $resolved['error'], 'high', $displayRoot . '/package.json', 'node', 'Node lockfile is missing, ambiguous, unsupported, or does not match packageManager.', $level, $mode, $policy, $licensePolicy, $riskConfig);
@@ -830,6 +1023,16 @@ foreach ($stackRoots as $stackRelative) {
         }
 
         $nodeLockName = (string)$resolved['lock'];
+        $nodeLockRelative = stackFileRelative($stackRelative, $nodeLockName);
+        if (!isset($trackedFileSet[$nodeLockRelative])) {
+            $checks['lockfiles']['status'] = 'findings';
+            addFinding($findings, 'lockfile', 'node_lock_untracked', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'Node lockfile exists locally but is not tracked by the reviewed Git commit; reproducible evidence cannot be attributed to HEAD.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:untracked-lock', 'License inventory is NOT EVALUATED because the Node lockfile is untracked.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated'];
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:untracked-lock', 'SCA is NOT EVALUATED because the Node lockfile is untracked.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            continue;
+        }
         if (!in_array($nodeLockName, ['package-lock.json', 'npm-shrinkwrap.json'], true)) {
             $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
             addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED for this lockfile; provide project-specific evidence.', $level, $mode, $policy, $licensePolicy, $riskConfig);
@@ -842,11 +1045,11 @@ foreach ($stackRoots as $stackRelative) {
         $lock = loadJsonFile($nodeLockPath);
         if (!validNpmLock($lock, $resolved['manifest'])) {
             $checks['lockfiles']['status'] = 'findings';
-            addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported, structurally invalid, or does not match the manifest dependency sets; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported, structurally invalid, truncated, or does not match the manifest dependency sets; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
-            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED because the npm lockfile format is invalid, unsupported, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED because the npm lockfile format is invalid, unsupported, truncated, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated'];
-            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED because the npm lockfile format is invalid, unsupported, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED because the npm lockfile format is invalid, unsupported, truncated, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             continue;
         }
         $licenseCount = 0;
