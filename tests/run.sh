@@ -33,6 +33,7 @@ bash "$ROOT/tests/deployment/DeployRunnerReviewHardeningTest.sh"
 bash "$ROOT/tests/deployment/DeployRecordUniquenessTest.sh"
 bash "$ROOT/tests/deployment/DeploySignalHandlingTest.sh"
 bash "$ROOT/tests/deployment/RollbackRecoveryStateTest.sh"
+bash "$ROOT/tests/deployment/BackupRecoveryTest.sh"
 
 if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
   bash "$ROOT/tests/smoke/http-smoke.sh" "$SMOKE_BASE_URL"
