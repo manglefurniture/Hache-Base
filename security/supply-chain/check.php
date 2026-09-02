@@ -1250,9 +1250,18 @@ $root = realpath($rootRaw);
 if ($root === false || !is_dir($root)) {
     configError("invalid_root path={$rootRaw}");
 }
-$policy = loadJsonFile((string)envValue('SUPPLY_CHAIN_POLICY_FILE', $root . '/security/supply-chain/policy.json'));
-$licensePolicy = loadJsonFile((string)envValue('SUPPLY_CHAIN_LICENSE_POLICY_FILE', $root . '/security/supply-chain/license-policy.json'));
-$riskConfig = loadJsonFile((string)envValue('SUPPLY_CHAIN_ACCEPTED_RISK_FILE', $root . '/security/supply-chain/accepted-risk.json'));
+$policyOverride = envValue('SUPPLY_CHAIN_POLICY_FILE');
+$policy = $policyOverride === null || $policyOverride === ''
+    ? loadJsonFromHead($root, 'security/supply-chain/policy.json')
+    : loadJsonFile($policyOverride);
+$licensePolicyOverride = envValue('SUPPLY_CHAIN_LICENSE_POLICY_FILE');
+$licensePolicy = $licensePolicyOverride === null || $licensePolicyOverride === ''
+    ? loadJsonFromHead($root, 'security/supply-chain/license-policy.json')
+    : loadJsonFile($licensePolicyOverride);
+$riskOverride = envValue('SUPPLY_CHAIN_ACCEPTED_RISK_FILE');
+$riskConfig = $riskOverride === null || $riskOverride === ''
+    ? loadJsonFromHead($root, 'security/supply-chain/accepted-risk.json')
+    : loadJsonFile($riskOverride);
 $reportFile = (string)envValue('SUPPLY_CHAIN_REPORT_FILE', sys_get_temp_dir() . '/hache-supply-chain-report.json');
 $disableExternalSca = envValue('SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA', '0') === '1';
 

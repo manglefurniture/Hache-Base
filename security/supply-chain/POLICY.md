@@ -93,6 +93,8 @@ El reporte conserva solo `rule`, archivo y línea. Nunca persiste el valor detec
 
 `secret-scan.allowlist` solo puede usarse para fixtures falsos deliberados. Cada entrada debe ser una **ruta exacta** bajo `tests/` o `fixtures/` y una regla exacta reconocida; no se permiten globs, `*` ni rutas de runtime como `src/`. La allowlist predeterminada se lee del blob versionado en `HEAD`, no del working tree. `SUPPLY_CHAIN_SECRET_ALLOWLIST_FILE` es el único override explícito para aportar una allowlist externa.
 
+La política de supply-chain, la política de licencias y el registro de accepted-risk predeterminados también se leen de sus blobs versionados en `HEAD`. `SUPPLY_CHAIN_POLICY_FILE`, `SUPPLY_CHAIN_LICENSE_POLICY_FILE` y `SUPPLY_CHAIN_ACCEPTED_RISK_FILE` son overrides explícitos para evidencia/configuración externa; un working tree sucio no cambia silenciosamente la política atribuida al SHA revisado.
+
 Formato:
 
 ```text
