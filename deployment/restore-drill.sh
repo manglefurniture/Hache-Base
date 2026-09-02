@@ -103,6 +103,14 @@ fail_drill() {
   exit "$code"
 }
 
+checksum_manifest_complete() {
+  local dir="$1"
+  local sums="$dir/SHA256SUMS"
+
+  grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]commit\.txt$' "$sums" &&
+    grep -Eq '^[[:xdigit:]]{64}[[:space:]][ *]database\.sql$' "$sums"
+}
+
 [[ -d "$BACKUP_DIR" ]] || fail_drill "backup_directory_missing" "backup directory not found: $BACKUP_DIR"
 [[ -f "$BACKUP_DIR/BACKUP_COMPLETE" ]] || fail_drill "backup_incomplete" "backup is not marked complete"
 [[ -f "$BACKUP_DIR/backup-manifest.env" ]] || fail_drill "backup_manifest_missing" "backup manifest missing"
@@ -122,10 +130,14 @@ created_at_epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$BACK
 
 backup_age_seconds=$(( RESTORE_NOW_EPOCH - created_at_epoch ))
 
+if ! checksum_manifest_complete "$BACKUP_DIR"; then
+  fail_drill "checksum_manifest_incomplete" "backup checksum manifest does not cover required files"
+fi
+
 result_reason="checksum_failed"
 if ! (
   cd "$BACKUP_DIR"
-  sha256sum -c SHA256SUMS >/dev/null 2>&1
+  sha256sum --check --strict SHA256SUMS >/dev/null 2>&1
 ); then
   fail_drill "checksum_failed" "backup checksum validation failed"
 fi
