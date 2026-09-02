@@ -169,4 +169,3 @@ No promover un release ocultando `sca_unavailable` o `license_not_evaluated`; au
 - Un audit npm/Composer pre-generado solo cuenta como evidencia si incluye `hache_lock_sha256` y ese SHA-256 coincide con el blob del lockfile revisado. Un reporte sin vínculo o con hash distinto queda `NOT EVALUATED`.
 - Cuando el checker ejecuta `npm audit` o `composer audit`, materializa temporalmente desde `HEAD` únicamente el manifest y lockfile revisados, ejecuta allí la herramienta y elimina el temporal al terminar.
 - `composer.lock` reconoce dependencias virtuales satisfechas mediante `provide`/`replace`; la validación de rangos conserva la semántica abreviada soportada por Composer, incluido `1.0 - 2.0`.
-
