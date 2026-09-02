@@ -49,17 +49,24 @@ latest_seen_epoch=-1
 latest_seen_backup=""
 latest_seen_valid=0
 latest_seen_reason=""
-invalid_timestamp_backup=""
+unrankable_invalid_backup=""
+unrankable_invalid_reason=""
 
 shopt -s nullglob
 for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   [[ -d "$candidate" ]] || continue
   [[ -f "$candidate/BACKUP_COMPLETE" ]] || continue
-  [[ -f "$candidate/backup-manifest.env" ]] || continue
+
+  if [[ ! -f "$candidate/backup-manifest.env" ]]; then
+    unrankable_invalid_backup="$candidate"
+    unrankable_invalid_reason="missing_manifest"
+    continue
+  fi
 
   epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$candidate/backup-manifest.env")"
   if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
-    invalid_timestamp_backup="$candidate"
+    unrankable_invalid_backup="$candidate"
+    unrankable_invalid_reason="invalid_created_at_epoch"
     continue
   fi
 
@@ -108,9 +115,9 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
 done
 shopt -u nullglob
 
-if [[ -n "$invalid_timestamp_backup" ]]; then
-  echo "BACKUP_FRESHNESS status=invalid_backup backup=$invalid_timestamp_backup reason=invalid_created_at_epoch age_seconds=unknown rpo_seconds=$RPO_SECONDS" >&2
-  alert "invalid_backup" "$invalid_timestamp_backup" "unknown"
+if [[ -n "$unrankable_invalid_backup" ]]; then
+  echo "BACKUP_FRESHNESS status=invalid_backup backup=$unrankable_invalid_backup reason=$unrankable_invalid_reason age_seconds=unknown rpo_seconds=$RPO_SECONDS" >&2
+  alert "invalid_backup" "$unrankable_invalid_backup" "unknown"
   exit 1
 fi
 
