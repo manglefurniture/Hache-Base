@@ -1,6 +1,6 @@
 # Runbook de fallo parcial de despliegue — P0-10
 
-Este runbook se usa cuando `deployment/deploy.sh` termina con `DEPLOY_RECOVERY_REQUIRED` o cuando health/smoke/observación degradan después de cambiar código.
+Este runbook se usa cuando `deployment/deploy.sh` termina con `DEPLOY_RECOVERY_REQUIRED`, recibe una interrupción manejable (`SIGTERM`/`SIGINT`) o cuando health/smoke/observación degradan después de cambiar código.
 
 ## Principio
 
@@ -10,8 +10,10 @@ Un fallo de deploy no autoriza un rollback ciego. Código, base de datos, assets
 
 1. No reintentar el deploy automáticamente.
 2. Conservar el `DEPLOY_RECORD_FILE`, `ROLLBACK_REF`, target y salida del runner.
-3. Identificar `failed_phase` y el último `DEPLOY_STATE` exitoso.
+3. Identificar `failed_phase`, el último `DEPLOY_STATE` exitoso y, cuando aplique, la señal que interrumpió el runner.
 4. Si existe riesgo de corrupción, duplicación, exposición de seguridad o escritura incompatible, detener primero las mutaciones/tráfico afectado según la infraestructura del proyecto.
+
+`deploy.sh` convierte `SIGTERM` en exit code 143 y `SIGINT` en 130, registra `state=failed` y emite `DEPLOY_RECOVERY_REQUIRED` antes de salir. `SIGKILL` y una caída abrupta del host no pueden ser interceptados por un proceso; en esos casos el operador debe tratar un record sin estado terminal como despliegue potencialmente parcial y reconciliarlo con commit, gates e infraestructura reales.
 
 ## 2. Clasificar qué cambió
 
