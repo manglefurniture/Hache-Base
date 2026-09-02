@@ -1,0 +1,139 @@
+# P0-12 — Supply-chain policy
+
+Este paquete implementa el baseline reusable de P0-12 sin convertir Hache Base en un proveedor de SCA ni imponer decisiones legales universales.
+
+## Alcance
+
+P0-12 cubre:
+
+- guardrail de lockfiles para stacks declarados;
+- secret scan de firmas de alta confianza sobre archivos actualmente trackeados;
+- SCA para Composer y npm cuando existe lockfile compatible y hay herramienta/evidencia disponible;
+- inventario de licencias desde lockfiles compatibles;
+- modos `report`, `baseline` y `block`;
+- registro explícito de mitigaciones/riesgo aceptado con owner, aprobación y expiración;
+- SLA de triage versionado.
+
+No cubre SBOM/provenance, pinning de GitHub Actions/containers por digest ni scans históricos exhaustivos; eso pertenece a madurez posterior/P2-06 o a tooling específico del proyecto.
+
+## Relación normativa
+
+- **SEC-013**: los secretos no pueden quedar versionados ni expuestos. El scanner de P0-12 busca únicamente patrones de alta confianza y nunca imprime el valor detectado. Un hit real no se “acepta”: se revoca/rota y se elimina del árbol/historia según corresponda.
+- **SEC-014**: en niveles B/C una vulnerabilidad crítica/alta explotable no se libera sin actualización, mitigación equivalente o aislamiento documentado y aprobado. El gate puede bloquear `critical/high` en `block`; en A se reporta y requiere triage, sin elevar automáticamente la severidad normativa.
+
+La mera existencia de `check.php` o un reporte sin hallazgos **no demuestra** que SEC-013/SEC-014 estén PASS en un proyecto si el alcance de scan/SCA no cubre su stack real.
+
+## Modos
+
+### `report`
+
+Genera evidencia y siempre deja los findings como no bloqueantes. Se usa para primera adopción y baseline.
+
+### `baseline`
+
+Bloquea solo las categorías de baja ambigüedad configuradas en `policy.json`: por default `secret` y `lockfile`. SCA y licencias se registran sin bloquear para permitir triage inicial.
+
+### `block`
+
+Aplica toda la política:
+
+- secretos y manifests sin lockfile bloquean;
+- SCA crítico/alto bloquea en B/C salvo mitigación aprobada vigente;
+- ausencia de SCA para un stack con lockfile bloquea en B/C porque el control queda `NOT EVALUATED`, no PASS;
+- licencias solo bloquean según `license-policy.json` del proyecto.
+
+## Stacks
+
+`SUPPLY_CHAIN_STACK_ROOTS` acepta raíces relativas separadas por coma, por ejemplo:
+
+```bash
+SUPPLY_CHAIN_STACK_ROOTS=".,frontend" php security/supply-chain/check.php
+```
+
+Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`package.json` + lockfile). El parser SCA/licencias integrado cubre `composer.lock`, `package-lock.json` y `npm-shrinkwrap.json`. `pnpm-lock.yaml`/`yarn.lock` cuentan como lockfiles de reproducibilidad, pero requieren evidencia SCA/licencias específica del proyecto y nunca se tratan como PASS por defecto.
+
+## SCA
+
+Para ejecución real:
+
+- Composer: `composer audit --locked --format=json --no-interaction`;
+- npm: `npm audit --package-lock-only --json`.
+
+Si la herramienta no existe, falla la red, el JSON no es interpretable o el lockfile no tiene parser integrado, el resultado es `sca_unavailable`: **NOT EVALUATED**.
+
+Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE` existen para fixtures/evidencia pre-generada; no son un bypass de producción.
+
+## Secret scan
+
+El baseline analiza el árbol trackeado actual mediante firmas de alta confianza: private keys, AWS access keys, GitHub tokens, Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
+
+El reporte conserva solo `rule`, archivo y línea. Nunca persiste el valor detectado.
+
+`secret-scan.allowlist` solo puede usarse para fixtures/documentación con valores falsos deliberados. Formato:
+
+```text
+ruta/o/glob rule
+```
+
+Un secreto real requiere revocación/rotación y remoción; no debe silenciarse.
+
+El scan actual no equivale a un scan exhaustivo del historial Git. Si un proyecto pudo haber versionado secretos previamente, debe añadir evidencia de history scan/rotación con tooling especializado.
+
+## Riesgo aceptado / mitigación SEC-014
+
+`accepted-risk.json` admite excepciones por `finding_id`. Para ser vigentes deben contener:
+
+- `owner`;
+- `approval_ref`;
+- `mitigation`;
+- `expires_at` (`YYYY-MM-DD`).
+
+Una excepción incompleta o expirada no desactiva el bloqueo. Este mecanismo representa mitigación/aislamiento aprobado; no autoriza secretos reales.
+
+Ejemplo:
+
+```json
+{
+  "finding_id": "<id-del-reporte>",
+  "owner": "security-owner",
+  "approval_ref": "INC-123/PR-456",
+  "mitigation": "feature disabled and dependency unreachable from production CUF",
+  "expires_at": "2026-09-15"
+}
+```
+
+## SLA de triage
+
+Baseline versionado en `policy.json`:
+
+- critical: 24 h;
+- high: 72 h;
+- medium: 14 días;
+- low: 30 días.
+
+El reloj parte de la primera detección real del proyecto. CI incluye el SLA aplicable en cada finding, pero no inventa la fecha de primera detección; esa evidencia vive en el registro de triage.
+
+## Licencias
+
+`license-policy.json` empieza sin denylist universal. Hache Base no toma decisiones legales por todos los proyectos.
+
+- `report_missing=true`: metadata de licencia ausente se reporta para revisión humana;
+- `denied`: lista explícita de identificadores/licencias que el proyecto decidió no aceptar;
+- `block_denied=true`: coincidencias con esa lista bloquean en modo `block`;
+- `block_missing=false` por default: ausencia de metadata no se convierte automáticamente en conclusión legal.
+
+## Exit codes
+
+- `0`: ejecución válida sin blockers aplicados por el modo actual;
+- `1`: existen findings bloqueantes bajo el modo/nivel actual;
+- `2`: configuración/entrada inválida y no hay evidencia confiable.
+
+## Promoción recomendada
+
+1. `report` para inventario inicial;
+2. resolver falsos positivos/stack roots y documentar riesgos;
+3. `baseline` para secretos + lockfiles;
+4. probar SCA/licencias con el stack real;
+5. `block` en B/C cuando el equipo pueda sostener triage/SLA y mitigaciones explícitas.
+
+No promover a `block` ocultando `sca_unavailable`; ausencia de evidencia sigue siendo ausencia de evidencia.
