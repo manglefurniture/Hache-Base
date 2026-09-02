@@ -52,15 +52,21 @@ Un exit code 0 con `not_evaluated > 0` no significa Production Ready: el proyect
 SUPPLY_CHAIN_STACK_ROOTS=".,frontend" php security/supply-chain/check.php
 ```
 
-Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`package.json` + lockfile). En Node, si `package.json` declara `packageManager`, el lockfile debe corresponder a ese manager:
+Cada raíz puede declarar Composer (`composer.json` + `composer.lock`) o Node (`package.json` + lockfile). El inventario de manifests y lockfiles se atribuye al **árbol de `HEAD`**, no al índice ni a archivos generados localmente. Un lockfile creado o añadido con `git add` pero todavía ausente del commit revisado no constituye evidencia reproducible de ese SHA y se trata como lock no comprometido/NOT EVALUATED para SCA y licencias.
+
+En Node, si `package.json` declara `packageManager`, el lockfile debe corresponder a ese manager:
 
 - `npm` → `package-lock.json` o `npm-shrinkwrap.json`;
 - `yarn` → `yarn.lock`;
 - `pnpm` → `pnpm-lock.yaml`.
 
-Combinaciones ambiguas con más de un lockfile se rechazan. Si `packageManager` no existe, se admite exactamente uno de los lockfiles reconocidos; el proyecto sigue siendo responsable de fijar su toolchain de forma reproducible.
+Combinaciones ambiguas con más de un lockfile en `HEAD` se rechazan. Si `packageManager` no existe, se admite exactamente uno de los lockfiles reconocidos; el proyecto sigue siendo responsable de fijar su toolchain de forma reproducible.
 
-Para npm, el lock soportado debe tener `lockfileVersion` 2/3, una entrada raíz válida y conjuntos de dependencias coherentes con `package.json`. Para Composer, `composer.lock` debe contener `packages`/`packages-dev` válidos y cubrir los requisitos directos no-plataforma declarados por `composer.json`. Un lock ausente, inválido o desalineado deja SCA y licencias explícitamente **NOT EVALUATED**; no puede producir `evidence_complete=true`.
+Para npm, el lock soportado debe tener `lockfileVersion` 2/3, una entrada raíz válida y conjuntos de dependencias coherentes con `package.json`. Además, cada dependencia directa o transitiva declarada por un paquete debe resolverse desde ubicaciones alcanzables por la resolución jerárquica de Node; una copia anidada bajo un paquete hermano no satisface el requisito. Un grafo truncado queda inválido.
+
+Para Composer, `composer.lock` debe contener `packages`/`packages-dev` válidos, cubrir los requisitos directos no-plataforma de `composer.json` y mantener cerrado el grafo transitivo declarado por los `require` de los paquetes bloqueados. Las versiones bloqueadas deben satisfacer las restricciones Composer que el checker puede evaluar; si una restricción no puede evaluarse de forma confiable, el lock no se eleva a evidencia completa.
+
+Un lock ausente, no comprometido, inválido, truncado o desalineado deja SCA y licencias explícitamente **NOT EVALUATED**; no puede producir `evidence_complete=true`.
 
 El parser SCA/licencias integrado cubre `composer.lock`, `package-lock.json` y `npm-shrinkwrap.json`. `pnpm-lock.yaml`/`yarn.lock` cuentan como lockfiles de reproducibilidad, pero SCA y licencias quedan explícitamente `NOT EVALUATED` hasta aportar evidencia específica del proyecto.
 
@@ -77,9 +83,11 @@ Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE`
 
 ## Secret scan
 
-El baseline analiza línea por línea todos los archivos de texto trackeados, sin omitir silenciosamente archivos grandes, mediante firmas de alta confianza: private keys, AWS access keys, GitHub tokens, Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
+El baseline analiza línea por línea los archivos de texto pertenecientes al árbol trackeado de `HEAD`, sin omitir silenciosamente archivos grandes, mediante firmas de alta confianza: private keys, AWS access keys, tokens GitHub clásicos y fine-grained (`github_pat_...`), Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
 
-Los archivos binarios se contabilizan aparte (`binary_skipped`) y el alcance declarado es `tracked_text_tree`; no se afirma que contenido binario sea evaluado como texto. Si un archivo de texto no puede leerse, `secret_scan.status` pasa a `not_evaluated`.
+Los archivos binarios se contabilizan aparte (`binary_skipped`) y el alcance declarado es `tracked_text_tree`; no se afirma que contenido binario sea evaluado como texto. Si un archivo de texto regular no puede leerse, `secret_scan` conserva evidencia incompleta/NOT EVALUATED aunque posteriormente encuentre otros secretos.
+
+Los symlinks trackeados **no se dereferencian**. Se analiza el contenido del blob del enlace almacenado en `HEAD` (la ruta objetivo versionada), nunca el contenido del archivo externo al que apunte el working tree. El reporte contabiliza esos enlaces mediante `symlink_blobs_scanned`.
 
 El reporte conserva solo `rule`, archivo y línea. Nunca persiste el valor detectado.
 
