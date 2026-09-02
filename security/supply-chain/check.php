@@ -335,7 +335,8 @@ function validComposerAudit(array $audit): bool
     return true;
 }
 
-function validNpmLock(array $lock): bool
+/** @param array<string,mixed> $manifest */
+function validNpmLock(array $lock, array $manifest): bool
 {
     if (!isset($lock['lockfileVersion'])
         || !is_int($lock['lockfileVersion'])
@@ -345,6 +346,26 @@ function validNpmLock(array $lock): bool
         || !array_key_exists('', $lock['packages'])
         || !is_array($lock['packages'][''])) {
         return false;
+    }
+    $rootPackage = $lock['packages'][''];
+    foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $section) {
+        $manifestDependencies = $manifest[$section] ?? [];
+        $lockDependencies = $rootPackage[$section] ?? [];
+        if (!is_array($manifestDependencies) || !is_array($lockDependencies)) {
+            return false;
+        }
+        foreach ([$manifestDependencies, $lockDependencies] as $dependencies) {
+            foreach ($dependencies as $name => $constraint) {
+                if (!is_string($name) || trim($name) === '' || !is_string($constraint) || trim($constraint) === '') {
+                    return false;
+                }
+            }
+        }
+        ksort($manifestDependencies);
+        ksort($lockDependencies);
+        if ($manifestDependencies !== $lockDependencies) {
+            return false;
+        }
     }
     foreach ($lock['packages'] as $path => $data) {
         if (!is_string($path) || !is_array($data)) {
@@ -431,10 +452,13 @@ function composerVulnerabilities(array $audit): array
             if (!is_array($entry)) {
                 continue;
             }
+            $advisoryId = isset($entry['advisoryId']) && is_string($entry['advisoryId']) ? trim($entry['advisoryId']) : '';
+            $cve = isset($entry['cve']) && is_string($entry['cve']) ? trim($entry['cve']) : '';
+            $advisory = $advisoryId !== '' ? $advisoryId : ($cve !== '' ? $cve : ('composer:' . $package));
             $result[] = [
                 'package' => (string)($entry['packageName'] ?? $package),
                 'severity' => normalizeSeverity((string)($entry['severity'] ?? 'unknown')),
-                'advisory' => (string)($entry['advisoryId'] ?? $entry['cve'] ?? ('composer:' . $package)),
+                'advisory' => $advisory,
                 'title' => (string)($entry['title'] ?? 'composer audit finding'),
                 'url' => (string)($entry['link'] ?? ''),
             ];
@@ -709,13 +733,13 @@ foreach ($stackRoots as $stackRelative) {
 
         $nodeLockPath = $stackDir . '/' . $nodeLockName;
         $lock = loadJsonFile($nodeLockPath);
-        if (!validNpmLock($lock)) {
+        if (!validNpmLock($lock, $resolved['manifest'])) {
             $checks['lockfiles']['status'] = 'findings';
-            addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported or structurally invalid; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported, structurally invalid, or does not match the manifest dependency sets; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];
-            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED because the npm lockfile format is invalid or unsupported.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'license', 'license_not_evaluated', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'License inventory is NOT EVALUATED because the npm lockfile format is invalid, unsupported, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['sca'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated'];
-            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED because the npm lockfile format is invalid or unsupported.', $level, $mode, $policy, $licensePolicy, $riskConfig);
+            addFinding($findings, 'sca', 'sca_unavailable', 'unknown', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'SCA is NOT EVALUATED because the npm lockfile format is invalid, unsupported, or mismatched to package.json.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             continue;
         }
         $licenseCount = 0;
