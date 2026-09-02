@@ -1,0 +1,47 @@
+name: P0-12 self-review hardening
+
+on:
+  push:
+    branches:
+      - feat/production-readiness-p0-12-supply-chain-20260902
+    paths:
+      - tools/p0-12-self-review-hardening.py
+      - .github/workflows/p0-12-self-review-hardening.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-readiness-p0-12-supply-chain-20260902
+          fetch-depth: 0
+      - name: Apply self-review hardening
+        run: python3 tools/p0-12-self-review-hardening.py
+      - name: Targeted supply-chain regressions
+        run: |
+          php -l security/supply-chain/check.php
+          bash tests/security/SupplyChainReviewRound2RegressionTest.sh
+          bash tests/security/SupplyChainReviewRegressionTest.sh
+          bash tests/security/SupplyChainEvidenceScopeRegressionTest.sh
+          bash tests/security/SupplyChainFinalReviewRegressionTest.sh
+          bash tests/security/SupplyChainHeadEvidenceRegressionTest.sh
+          bash tests/security/SupplyChainConfigHeadRegressionTest.sh
+          bash tests/security/SupplyChainPolicyTest.sh
+      - name: Full suite
+        run: bash tests/run.sh
+      - name: Whitespace
+        run: git diff --check
+      - name: Commit hardened files
+        run: |
+          git config user.name 'Hache Interactive'
+          git config user.email 'manglefurniture@gmail.com'
+          git add security/supply-chain/check.php security/supply-chain/policy.json security/supply-chain/POLICY.md tests/security/SupplyChainReviewRound2RegressionTest.sh
+          git diff --cached --quiet && exit 1
+          git commit -m 'Harden supply-chain audit evidence validation'
+          git push origin HEAD:feat/production-readiness-p0-12-supply-chain-20260902
