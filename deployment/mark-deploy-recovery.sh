@@ -28,7 +28,7 @@ target_commit="$(sed -n '1s/.* target_commit=\([^ ]*\).*/\1/p' "$DEPLOY_RECORD_F
 [[ -n "$target_commit" ]] || target_commit="${TARGET_COMMIT:-unknown}"
 
 current_commit="unknown"
-if [[ -n "${APP_ROOT:-}" && -d "$APP_ROOT/.git" ]]; then
+if [[ -n "${APP_ROOT:-}" ]] && git -C "$APP_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   current_commit="$(git -C "$APP_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown')"
 fi
 
