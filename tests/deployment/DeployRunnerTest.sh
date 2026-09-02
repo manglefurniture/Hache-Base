@@ -170,7 +170,12 @@ ROLLBACK_REF="$(sed -n 's/^ROLLBACK_REF=//p' "$SUCCESS_OUT" | tail -n1)"
 [[ -n "$ROLLBACK_REF" ]] || fail "rollback ref missing"
 DEPLOY_RECORD_FILE="$SUCCESS_RECORD" APP_ROOT="$APP" bash "$APP/deployment/rollback.sh" "$ROLLBACK_REF" >"$TMP/rollback.out" 2>&1
 [[ "$(git -C "$APP" rev-parse HEAD)" == "$PREVIOUS" ]] || fail "rollback must restore previous code commit"
+assert_contains "$SUCCESS_RECORD" "event=code_rollback status=passed"
+assert_contains "$SUCCESS_RECORD" "recovery_state=pending_verification"
+assert_not_contains "$SUCCESS_RECORD" "state=rolled_back status=passed"
+DEPLOY_RECORD_FILE="$SUCCESS_RECORD" APP_ROOT="$APP" ROLLBACK_REF="$ROLLBACK_REF" bash "$APP/deployment/mark-deploy-recovery.sh" rolled_back post_recovery_gates_verified >"$TMP/rollback-verified.out" 2>&1
 assert_contains "$SUCCESS_RECORD" "state=rolled_back status=passed"
+assert_contains "$SUCCESS_RECORD" "detail=post_recovery_gates_verified"
 
 # Backward-compatible defaults stay visible as NOT_EVALUATED in the persistent record.
 make_fixture optional-gates
