@@ -395,6 +395,7 @@ function validNpmAudit(array $audit): bool
 {
     if (!isset($audit['auditReportVersion'])
         || !is_int($audit['auditReportVersion'])
+        || $audit['auditReportVersion'] !== 2
         || !array_key_exists('vulnerabilities', $audit)
         || !is_array($audit['vulnerabilities'])
         || isset($audit['error'])) {
@@ -438,7 +439,7 @@ function validNpmAudit(array $audit): bool
 
 function validComposerAudit(array $audit): bool
 {
-    if (!array_key_exists('advisories', $audit) || !is_array($audit['advisories'])) {
+    if (isset($audit['error']) || !array_key_exists('advisories', $audit) || !is_array($audit['advisories'])) {
         return false;
     }
     foreach ($audit['advisories'] as $package => $items) {

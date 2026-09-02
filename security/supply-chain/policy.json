@@ -8,7 +8,7 @@
     "low": 720
   },
   "notes": {
-    "secret_scan_scope": "tracked_current_tree",
+    "secret_scan_scope": "tracked_head_text_tree",
     "sec_014": "critical/high vulnerabilities block levels B/C in block mode unless a valid accepted-risk mitigation exists",
     "rollout": "report -> baseline -> block"
   }

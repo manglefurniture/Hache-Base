@@ -7,7 +7,7 @@ Este paquete implementa el baseline reusable de P0-12 sin convertir Hache Base e
 P0-12 cubre:
 
 - guardrail de lockfiles para stacks declarados;
-- secret scan de firmas de alta confianza sobre archivos de texto actualmente trackeados;
+- secret scan de firmas de alta confianza sobre blobs de texto trackeados del árbol de `HEAD`;
 - SCA para Composer y npm cuando existe lockfile compatible y hay herramienta/evidencia disponible;
 - inventario de licencias desde lockfiles compatibles;
 - modos `report`, `baseline` y `block`;
@@ -85,7 +85,7 @@ Las variables `SUPPLY_CHAIN_COMPOSER_AUDIT_FILE` y `SUPPLY_CHAIN_NPM_AUDIT_FILE`
 
 El baseline analiza línea por línea los archivos de texto pertenecientes al árbol trackeado de `HEAD`, sin omitir silenciosamente archivos grandes, mediante firmas de alta confianza: private keys, AWS access keys, tokens GitHub clásicos y fine-grained (`github_pat_...`), Slack tokens, OpenAI keys, Stripe live secrets y Google API keys.
 
-Los archivos binarios se contabilizan aparte (`binary_skipped`) y el alcance declarado es `tracked_text_tree`; no se afirma que contenido binario sea evaluado como texto. Si un archivo de texto regular no puede leerse, `secret_scan` conserva evidencia incompleta/NOT EVALUATED aunque posteriormente encuentre otros secretos.
+Los archivos binarios se contabilizan aparte (`binary_skipped`) y el alcance declarado es `tracked_head_text_tree`; no se afirma que contenido binario sea evaluado como texto. Si un archivo de texto regular no puede leerse, `secret_scan` conserva evidencia incompleta/NOT EVALUATED aunque posteriormente encuentre otros secretos.
 
 Los symlinks trackeados **no se dereferencian**. Se analiza el contenido del blob del enlace almacenado en `HEAD` (la ruta objetivo versionada), nunca el contenido del archivo externo al que apunte el working tree. El reporte contabiliza esos enlaces mediante `symlink_blobs_scanned`.
 
