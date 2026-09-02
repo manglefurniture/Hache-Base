@@ -15,6 +15,10 @@ BACKUP_ALERT_COMMAND="${BACKUP_ALERT_COMMAND:-}"
   echo "BACKUP_CHECK_NOW_EPOCH must be an integer epoch" >&2
   exit 2
 }
+command -v sha256sum >/dev/null 2>&1 || {
+  echo "sha256sum is required" >&2
+  exit 1
+}
 
 alert() {
   local status="$1"
@@ -31,8 +35,12 @@ alert() {
   fi
 }
 
-latest_epoch=-1
-latest_backup=""
+latest_valid_epoch=-1
+latest_valid_backup=""
+latest_seen_epoch=-1
+latest_seen_backup=""
+latest_seen_valid=0
+latest_seen_reason=""
 
 shopt -s nullglob
 for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
@@ -43,30 +51,77 @@ for candidate in "${BACKUP_ROOT%/}"/deploy-*; do
   epoch="$(awk -F= '$1 == "created_at_epoch" { print $2; exit }' "$candidate/backup-manifest.env")"
   [[ "$epoch" =~ ^[0-9]+$ ]] || continue
 
-  if (( epoch > latest_epoch )); then
-    latest_epoch="$epoch"
-    latest_backup="$candidate"
+  candidate_valid=1
+  candidate_reason=""
+  manifest_status="$(awk -F= '$1 == "backup_status" { print $2; exit }' "$candidate/backup-manifest.env")"
+
+  if [[ "$manifest_status" != "complete" ]]; then
+    candidate_valid=0
+    candidate_reason="manifest_status"
+  elif [[ ! -f "$candidate/commit.txt" ]]; then
+    candidate_valid=0
+    candidate_reason="missing_commit"
+  elif [[ ! -s "$candidate/database.sql" ]]; then
+    candidate_valid=0
+    candidate_reason="missing_database_sql"
+  elif [[ ! -f "$candidate/SHA256SUMS" ]]; then
+    candidate_valid=0
+    candidate_reason="missing_checksums"
+  elif ! (
+    cd "$candidate"
+    sha256sum -c SHA256SUMS >/dev/null 2>&1
+  ); then
+    candidate_valid=0
+    candidate_reason="checksum_failed"
+  fi
+
+  if (( epoch > latest_seen_epoch )); then
+    latest_seen_epoch="$epoch"
+    latest_seen_backup="$candidate"
+    latest_seen_valid="$candidate_valid"
+    latest_seen_reason="$candidate_reason"
+  elif (( epoch == latest_seen_epoch && candidate_valid == 0 )); then
+    latest_seen_backup="$candidate"
+    latest_seen_valid=0
+    latest_seen_reason="$candidate_reason"
+  fi
+
+  if (( candidate_valid == 1 && epoch > latest_valid_epoch )); then
+    latest_valid_epoch="$epoch"
+    latest_valid_backup="$candidate"
   fi
 done
 shopt -u nullglob
 
-if [[ -z "$latest_backup" ]]; then
+if [[ -z "$latest_seen_backup" ]]; then
   echo "BACKUP_FRESHNESS status=missing backup=none age_seconds=unknown rpo_seconds=$RPO_SECONDS"
   alert "missing" "none" "unknown"
   exit 1
 fi
 
-if (( latest_epoch > BACKUP_CHECK_NOW_EPOCH )); then
-  echo "BACKUP_FRESHNESS status=invalid_future_timestamp backup=$latest_backup created_at_epoch=$latest_epoch now_epoch=$BACKUP_CHECK_NOW_EPOCH rpo_seconds=$RPO_SECONDS" >&2
-  alert "invalid_future_timestamp" "$latest_backup" "unknown"
+if (( latest_seen_valid == 0 && latest_seen_epoch >= latest_valid_epoch )); then
+  echo "BACKUP_FRESHNESS status=invalid_backup backup=$latest_seen_backup reason=$latest_seen_reason created_at_epoch=$latest_seen_epoch rpo_seconds=$RPO_SECONDS" >&2
+  alert "invalid_backup" "$latest_seen_backup" "unknown"
   exit 1
 fi
 
-age_seconds=$(( BACKUP_CHECK_NOW_EPOCH - latest_epoch ))
+if [[ -z "$latest_valid_backup" ]]; then
+  echo "BACKUP_FRESHNESS status=missing backup=none age_seconds=unknown rpo_seconds=$RPO_SECONDS"
+  alert "missing" "none" "unknown"
+  exit 1
+fi
+
+if (( latest_valid_epoch > BACKUP_CHECK_NOW_EPOCH )); then
+  echo "BACKUP_FRESHNESS status=invalid_future_timestamp backup=$latest_valid_backup created_at_epoch=$latest_valid_epoch now_epoch=$BACKUP_CHECK_NOW_EPOCH rpo_seconds=$RPO_SECONDS" >&2
+  alert "invalid_future_timestamp" "$latest_valid_backup" "unknown"
+  exit 1
+fi
+
+age_seconds=$(( BACKUP_CHECK_NOW_EPOCH - latest_valid_epoch ))
 if (( age_seconds > RPO_SECONDS )); then
-  echo "BACKUP_FRESHNESS status=stale backup=$latest_backup age_seconds=$age_seconds rpo_seconds=$RPO_SECONDS"
-  alert "stale" "$latest_backup" "$age_seconds"
+  echo "BACKUP_FRESHNESS status=stale backup=$latest_valid_backup age_seconds=$age_seconds rpo_seconds=$RPO_SECONDS"
+  alert "stale" "$latest_valid_backup" "$age_seconds"
   exit 1
 fi
 
-echo "BACKUP_FRESHNESS status=fresh backup=$latest_backup age_seconds=$age_seconds rpo_seconds=$RPO_SECONDS"
+echo "BACKUP_FRESHNESS status=fresh backup=$latest_valid_backup age_seconds=$age_seconds rpo_seconds=$RPO_SECONDS"
