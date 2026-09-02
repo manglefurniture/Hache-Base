@@ -150,7 +150,7 @@ cat > "$secret_repo/security/supply-chain/accepted-risk.json" <<JSON
 }
 JSON
 set +e
-run_check "$secret_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$secret_repo/risk-attempt.txt" 2>&1
+run_check "$secret_repo" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$secret_repo/security/supply-chain/accepted-risk.json" > "$secret_repo/risk-attempt.txt" 2>&1
 secret_risk_rc=$?
 set -e
 [[ "$secret_risk_rc" -eq 1 ]]
@@ -227,7 +227,7 @@ cat > "$audit_repo/security/supply-chain/accepted-risk.json" <<JSON
   }]
 }
 JSON
-run_check "$audit_repo" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$audit_repo/npm-audit.json" > "$audit_repo/accepted.txt"
+run_check "$audit_repo" SUPPLY_CHAIN_MODE=block SUPPLY_CHAIN_LEVEL=B SUPPLY_CHAIN_NPM_AUDIT_FILE="$audit_repo/npm-audit.json" SUPPLY_CHAIN_ACCEPTED_RISK_FILE="$audit_repo/security/supply-chain/accepted-risk.json" > "$audit_repo/accepted.txt"
 grep -q 'accepted_risks=1' "$audit_repo/accepted.txt"
 grep -q 'enforced_blockers=0' "$audit_repo/accepted.txt"
 
