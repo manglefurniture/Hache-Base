@@ -124,7 +124,42 @@ grep -q 'RESTORE_DRILL_WARNING cleanup_failed database=restore_cleanup_fail_db' 
 grep -q 'RESTORE_DRILL status=failed reason=cleanup_failed' <<<"$cleanup_output"
 ! grep -q 'RESTORE_DRILL status=passed' <<<"$cleanup_output"
 grep -q '^RESTORE_DRILL status=failed reason=cleanup_failed$' "$cleanup_report"
+grep -q '^cleanup_status=failed$' "$cleanup_report"
+grep -q '^pre_cleanup_reason=verified$' "$cleanup_report"
 grep -q 'CREATE DATABASE `restore_cleanup_fail_db`' "$mysql_log"
 grep -q 'DROP DATABASE IF EXISTS `restore_cleanup_fail_db`' "$mysql_log"
+
+# Cleanup failure must remain visible even when the drill was already failing
+# for another reason, such as an RPO miss. Preserve that prior reason as evidence.
+combined_report="$TMP/reports/rpo-and-cleanup-failure.txt"
+: > "$mysql_log"
+
+set +e
+combined_output="$(
+  FAKE_DROP_FAIL_DB=restore_cleanup_rpo_fail_db \
+  BACKUP_DIR="$CLEANUP_ROOT" \
+  RESTORE_DB_HOST=staging-db \
+  RESTORE_DB_NAME=restore_cleanup_rpo_fail_db \
+  RESTORE_DB_USER=restore_user \
+  RESTORE_DB_PASSWORD=fixture-secret \
+  RESTORE_CONFIRM_ISOLATED=1 \
+  RESTORE_VERIFY_COMMAND=true \
+  RESTORE_DRILL_REPORT_FILE="$combined_report" \
+  RPO_SECONDS=50 \
+  RTO_SECONDS=30 \
+  RESTORE_NOW_EPOCH=1000 \
+  bash "$ROOT/deployment/restore-drill.sh" 2>&1
+)"
+combined_rc=$?
+set -e
+
+[[ "$combined_rc" -ne 0 ]]
+grep -q 'RESTORE_DRILL status=failed reason=recovery_objective_missed' <<<"$combined_output"
+grep -q 'RESTORE_DRILL_WARNING cleanup_failed database=restore_cleanup_rpo_fail_db' <<<"$combined_output"
+grep -q 'RESTORE_DRILL status=failed reason=cleanup_failed pre_cleanup_reason=recovery_objective_missed' <<<"$combined_output"
+grep -q '^RESTORE_DRILL status=failed reason=cleanup_failed$' "$combined_report"
+grep -q '^cleanup_status=failed$' "$combined_report"
+grep -q '^pre_cleanup_reason=recovery_objective_missed$' "$combined_report"
+grep -q 'DROP DATABASE IF EXISTS `restore_cleanup_rpo_fail_db`' "$mysql_log"
 
 echo "BACKUP_RECOVERY_NUMERIC_CLEANUP_TEST_OK"
