@@ -17,6 +17,7 @@ previous_commit=""
 rollback_branch=""
 rollback_branch_candidate=""
 deploy_record=""
+deploy_id=""
 
 sanitize_field() {
   local value="$1"
@@ -142,19 +143,20 @@ current_phase="deploy_record"
 # Re-resolve after preflight so existing/symlinked path components are checked physically.
 validate_record_root_outside_worktree
 stamp="$(date -u +%Y%m%d-%H%M%S)"
-deploy_record="$DEPLOY_RECORD_ROOT/deploy-${stamp}-$$.log"
-(
+deploy_record="$(
   umask 077
   install -d -m 700 "$DEPLOY_RECORD_ROOT"
-  : > "$deploy_record"
-  chmod 600 "$deploy_record"
-  printf '%s\n' "$started_line" > "$deploy_record"
-)
+  mktemp "$DEPLOY_RECORD_ROOT/deploy-${stamp}-XXXXXX.log"
+)"
+chmod 600 "$deploy_record"
+printf '%s\n' "$started_line" > "$deploy_record"
+deploy_file="${deploy_record##*/}"
+deploy_id="${deploy_file%.log}"
 printf 'DEPLOY_RECORD_FILE=%s\n' "$deploy_record"
 
 current_phase="rollback_ref"
 previous_commit="$(git rev-parse HEAD)"
-rollback_branch_candidate="rollback/pre-deploy-${stamp}-$$"
+rollback_branch_candidate="rollback/pre-${deploy_id}"
 git branch "$rollback_branch_candidate" "$previous_commit"
 rollback_branch="$rollback_branch_candidate"
 printf 'ROLLBACK_REF=%s\n' "$rollback_branch"
