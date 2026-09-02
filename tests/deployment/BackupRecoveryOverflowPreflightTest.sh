@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/reports"
 
 make_backup_fixture() {
   local dir="$1"
