@@ -5,14 +5,16 @@ Hache-Base adopta un despliegue verificable, observable y recuperable. El runner
 ## Scripts
 
 - `preflight.sh`: requisitos, repo limpio y capacidad de backup.
-- `backup.sh`: commit + dump MariaDB + snapshot local de entorno protegido.
+- `backup.sh`: commit + dump MariaDB + snapshot local de entorno protegido; P0-11 añade manifest y marcador de backup completo.
+- `backup-freshness-check.sh`: comprueba que exista un backup completo dentro del RPO y devuelve fallo/alert hook cuando falta o está stale.
+- `restore-drill.sh`: restore aislado con checksum, verificación específica y reporte medido RPO/RTO; nunca restaura automáticamente producción.
 - `deploy.sh`: commit fijado, rollback ref, backup, migraciones configurables, pruebas, readiness, smoke y ventana de observación P0-10.
 - `liveness-check.sh`: confirma que el proceso/endpoint responde; no afirma que el servicio esté listo para tráfico.
 - `health-check.sh`: nombre compatible del gate de **readiness**; valida status y puede exigir body/version.
 - `rollback.sh`: reversión explícita de código; registra un evento `code_rollback` con `recovery_state=pending_verification` sin convertir un fallo de logging en fallo del rollback ya ejecutado.
 - `mark-deploy-recovery.sh`: registra explícitamente `manual_recovery` o `rolled_back` solo después de la recuperación y sus verificaciones correspondientes.
 - `DEPLOY-FAILURE-RUNBOOK.md`: respuesta mínima ante fallo parcial.
-- `BACKUP-ROLLBACK.md`: política y límites de recuperación.
+- `BACKUP-ROLLBACK.md`: política y límites de recuperación, incluidos P0-11 freshness y restore drill.
 
 El smoke funcional vive en `tests/smoke/http-smoke.sh` para mantener separado el recorrido desplegado de liveness/readiness.
 
@@ -39,6 +41,48 @@ Las líneas `DEPLOY_STATE` registran fases/resultados del deploy. Las líneas `D
 El runner se detiene ante errores. El trap emite `DEPLOY_RECOVERY_REQUIRED` con `failed_phase`, exit code, runbook, record y rollback ref disponibles. Preflight, creación del record, rollback ref, backup y cambio de código tienen fases diferenciadas, además de migraciones/tests/gates. **No ejecuta automáticamente un rollback de base de datos ni un rollback ciego de código**: después de migraciones una reversión automática puede dejar esquema/código incompatibles.
 
 Completar `templates/DEPLOY-RECOVERY.md` por proyecto para declarar la matriz código/DB/assets/config, punto de no retorno, smoke, ventana, señales y criterio exacto de rollback.
+
+## Backup y restore P0-11
+
+P0-11 no convierte el backup en un restore automático. Añade evidencia reutilizable para **DB-006/DB-007**:
+
+1. `backup.sh` crea un directorio único y solo al terminar dump + checksum escribe `backup-manifest.env` y `BACKUP_COMPLETE`.
+2. `backup-freshness-check.sh` usa `RPO_SECONDS` y el `created_at_epoch` del último backup completo. Las carpetas incompletas no cuentan.
+3. El backup job y el freshness check deben estar conectados al monitor real del proyecto; exit code distinto de cero debe generar alerta. `BACKUP_ALERT_COMMAND` es un hook local opcional, no un proveedor universal.
+4. `restore-drill.sh` exige una DB target aislada, verifica checksums, ejecuta `RESTORE_VERIFY_COMMAND` y mide edad del backup contra RPO y duración del drill contra RTO.
+5. `RESTORE_DRILL_REPORT_FILE` persiste la evidencia del drill. `RESTORE_CLEANUP=1` elimina por default la DB aislada al finalizar.
+
+Guardas importantes:
+
+- `RESTORE_CONFIRM_ISOLATED=1` es obligatorio;
+- `RESTORE_DB_NAME` debe ser un identificador simple y no puede coincidir con `database_name` del manifest;
+- no hay selección automática del backup a restaurar;
+- no se ejecuta restore sobre producción ni failover;
+- un script disponible no equivale a cumplimiento: cada proyecto debe aportar su RPO/RTO real, alerta demostrada y drill vigente en `templates/BACKUP-RESTORE.md`.
+
+Ejemplo de freshness:
+
+```bash
+BACKUP_ROOT=/ruta/protegida \
+RPO_SECONDS=86400 \
+bash deployment/backup-freshness-check.sh
+```
+
+Ejemplo de drill:
+
+```bash
+BACKUP_DIR=/ruta/backup-completo \
+RESTORE_DB_HOST=staging-db \
+RESTORE_DB_NAME=app_restore_drill \
+RESTORE_DB_USER=restore_user \
+RESTORE_DB_PASSWORD="$SECRET" \
+RESTORE_CONFIRM_ISOLATED=1 \
+RESTORE_VERIFY_COMMAND='php tests/verify-restored-data.php' \
+RESTORE_DRILL_REPORT_FILE=/ruta/evidencia/restore-drill.txt \
+RPO_SECONDS=86400 \
+RTO_SECONDS=1800 \
+bash deployment/restore-drill.sh
+```
 
 ## Smoke post-release
 
@@ -140,6 +184,7 @@ Antes de declarar Production Ready, definir además:
 - smoke aplicable y si debe exigirse con `REQUIRE_SMOKE=1`;
 - `OBSERVATION_SECONDS` y `REQUIRE_OBSERVATION=1` cuando la ventana sea obligatoria;
 - matriz y criterios en `templates/DEPLOY-RECOVERY.md`;
-- staging drill de fallo y recuperación.
+- staging drill de fallo y recuperación;
+- RPO/RTO, monitor de backup/freshness y restore drill en `templates/BACKUP-RESTORE.md` cuando DB-006/DB-007 apliquen.
 
-Probar el runner primero en staging antes de habilitar CI/CD hacia producción.
+Probar el runner y los drills primero en staging/entorno aislado antes de habilitar automatizaciones de producción.

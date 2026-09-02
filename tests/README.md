@@ -15,6 +15,7 @@ Suite base para proyectos construidos sobre Hache-Base.
 - `security/SessionSecurityTest.php`: contrato P0-08 de cookies, trusted HTTPS, fixation, expiración, elevación y logout.
 - `deployment/HealthCheckTest.sh`: regresiones offline de liveness/readiness/smoke, incluido body/version incorrecto.
 - `deployment/DeployRunnerTest.sh`: regresión P0-10 con fases, fallo parcial, record persistente, smoke, ventana, rollback explícito y manual recovery.
+- `deployment/BackupRecoveryTest.sh`: regresión P0-11 de backup freshness, alert hook, guardas de restore aislado y objetivos RPO/RTO.
 - `smoke/http-smoke.sh`: smoke HTTP configurable y separado de liveness/readiness.
 - `integration/`: contratos e integraciones reutilizables; incluye mailer HTTPS, HMAC de webhooks, cifrado/versionado de credenciales y persistencia P0-06 inbox/outbox/idempotency.
 - `run.sh`: punto de entrada común para pruebas que no requieren MariaDB persistente del workflow.
@@ -89,7 +90,21 @@ Esto valida la primitive. SEC-007 sigue requiriendo evidencia HTTP del proyecto 
 
 `tests/deployment/RollbackRecoveryStateTest.sh` cubre específicamente que el rollback de código no escriba `state=rolled_back` antes de verificar la recuperación y que el cierre explícito posterior sí quede registrado mediante `mark-deploy-recovery.sh`.
 
-La regresión valida el contrato del runner. No demuestra que un proyecto haya probado staging, compatibilidad de migraciones, restore, señales reales ni su CUF desplegado; esa evidencia se documenta con `templates/DEPLOY-RECOVERY.md`.
+La regresión P0-10 valida el contrato del runner. No demuestra que un proyecto haya probado staging, compatibilidad de migraciones, restore, señales reales ni su CUF desplegado; esa evidencia se documenta con `templates/DEPLOY-RECOVERY.md`.
+
+## Backup/restore P0-11
+
+`tests/deployment/BackupRecoveryTest.sh` usa fixtures locales y un cliente `mysql` falso; no toca una DB real. Demuestra que:
+
+- solo un backup con `BACKUP_COMPLETE` + manifest válido participa en freshness;
+- un backup dentro de `RPO_SECONDS` devuelve `status=fresh`;
+- backup stale o ausencia de backup válido devuelven fallo;
+- el hook `BACKUP_ALERT_COMMAND` recibe un evento stale;
+- el restore drill rechaza usar como target la misma DB declarada como fuente;
+- un restore aislado exitoso genera reporte `status=passed` y ejecuta cleanup;
+- un restore técnicamente exitoso sigue fallando la evidencia si la edad del backup excede RPO.
+
+Estas regresiones validan el contrato reusable, no un restore real del proyecto. DB-006/DB-007 siguen necesitando scheduler/storage/alerta reales y un drill aislado contra MariaDB del entorno, con `RESTORE_VERIFY_COMMAND` específico y RPO/RTO medidos mediante `templates/BACKUP-RESTORE.md`.
 
 ## Estados asíncronos P0-05
 
