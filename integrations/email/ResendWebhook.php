@@ -44,11 +44,14 @@ final class ResendWebhook
         if ($messageId === '' || $timestampRaw === '' || $signatureHeader === '') {
             return false;
         }
-        if (!preg_match('/^[0-9]+$/', $timestampRaw)) {
+        if (!preg_match('/^[0-9]{1,12}$/', $timestampRaw)) {
             return false;
         }
 
         $timestamp = (int) $timestampRaw;
+        if ($timestamp <= 0) {
+            return false;
+        }
         $now ??= time();
         if (abs($now - $timestamp) > $toleranceSeconds) {
             return false;
@@ -167,8 +170,11 @@ final class ResendWebhook
 
     private static function assertTimestamp(string $value): void
     {
-        if ($value === '') {
-            throw new InvalidArgumentException('El webhook de correo no contiene created_at.');
+        if (!preg_match(
+            '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/',
+            $value,
+        )) {
+            throw new InvalidArgumentException('created_at del webhook de correo no tiene formato ISO-8601 esperado.');
         }
         try {
             new \DateTimeImmutable($value);
