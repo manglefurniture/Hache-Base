@@ -103,7 +103,21 @@ P0-11 añade primitives y evidencia reusable para **DB-006 / DB-007** sin conver
 
 P0-11 **no** agenda backups por sí solo, no configura storage/cifrado/provider, no restaura producción automáticamente, no hace failover y no permite marcar DB-006/DB-007 sin evidencia real del proyecto. El job de backup y el freshness check deben integrarse con el monitor/alerta del entorno real.
 
-No se implementan todavía P0-12 ni P1+.
+## Octava fase incremental implementada — P0-12
+
+P0-12 cierra el baseline P0 con una política reusable de supply chain, manteniendo separación explícita entre evidencia disponible y evidencia realmente evaluada:
+
+- `security/supply-chain/` versiona política, checker, allowlist de fixtures, configuración de licencias y accepted risk;
+- el baseline bloquea secretos de alta confianza y manifests sin lockfile, y mantiene SCA/licencias en adopción controlada;
+- Composer y npm validan lockfiles/grafos soportados contra el árbol de `HEAD`, incluidos workspaces npm y `provide`/`replace` de Composer;
+- evidencia SCA ausente o no vinculable queda `NOT EVALUATED`, nunca se convierte en PASS;
+- accepted risk solo aplica a vulnerabilidades SCA elegibles con owner, aprobación, mitigación y expiración válida;
+- `templates/SUPPLY-CHAIN-TRIAGE.md` documenta stacks, findings, SLA, mitigaciones y evidencia por proyecto;
+- regresiones offline cubren secretos, lockfiles, SCA, licencias, workspaces y bordes de evidencia reproducible.
+
+P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
+
+**Estado del roadmap:** P0-01 a P0-12 están implementados en Hache Base. El trabajo futuro comienza en P1; disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 
@@ -117,7 +131,8 @@ No se implementan todavía P0-12 ni P1+.
 8. Si hay sesiones, completar `templates/SESSION-SECURITY.md` y probar cookies/login/expiry/logout/proxy reales.
 9. Antes de habilitar deploy de producción, completar `templates/DEPLOY-RECOVERY.md`, definir smoke/ventana/criterios y ejecutar un drill de staging.
 10. Cuando DB-006/DB-007 apliquen, completar `templates/BACKUP-RESTORE.md`, conectar backup/freshness a monitoreo y ejecutar un restore drill aislado con RPO/RTO medidos.
-11. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+11. Cuando P0-12 aplique, completar `templates/SUPPLY-CHAIN-TRIAGE.md`, declarar stacks y conservar `NOT EVALUATED` cuando SCA/licencias no tengan evidencia suficiente.
+12. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
@@ -161,6 +176,10 @@ P0-10 convierte el runner en una secuencia con estados visibles, record persiste
 ### Backup freshness y restore drill
 
 P0-11 separa tres evidencias: backup **completo**, freshness dentro del RPO y restore aislado verificado dentro del RTO. Los scripts entregan el contrato y la evidencia técnica mínima; el scheduler, storage, cifrado, alertas reales, credenciales y drill operativo pertenecen al proyecto/entorno.
+
+### Supply chain baseline
+
+P0-12 aporta un gate reproducible para secretos/lockfiles y evidencia controlada de SCA/licencias. Un resultado técnico limpio no sustituye la evaluación contextual del proyecto ni autoriza convertir `NOT EVALUATED` en PASS.
 
 ## Regla de promoción
 
