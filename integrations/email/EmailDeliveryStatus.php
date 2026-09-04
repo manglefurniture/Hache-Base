@@ -9,18 +9,39 @@ use RuntimeException;
 
 final class EmailDeliveryStatus
 {
+    public const REQUESTED = 'requested';
     public const ACCEPTED = 'accepted';
-    public const DELIVERED = 'delivered';
     public const DELAYED = 'delayed';
+    public const DELIVERED = 'delivered';
     public const BOUNCED = 'bounced';
     public const FAILED = 'failed';
+    public const SUPPRESSED = 'suppressed';
 
     private const ALLOWED = [
+        self::REQUESTED,
         self::ACCEPTED,
-        self::DELIVERED,
         self::DELAYED,
+        self::DELIVERED,
         self::BOUNCED,
         self::FAILED,
+        self::SUPPRESSED,
+    ];
+
+    private const TERMINAL = [
+        self::DELIVERED,
+        self::BOUNCED,
+        self::FAILED,
+        self::SUPPRESSED,
+    ];
+
+    private const PROGRESS_RANK = [
+        self::REQUESTED => 0,
+        self::ACCEPTED => 1,
+        self::DELAYED => 2,
+        self::DELIVERED => 3,
+        self::BOUNCED => 3,
+        self::FAILED => 3,
+        self::SUPPRESSED => 3,
     ];
 
     public static function assertValid(string $status): void
@@ -30,13 +51,20 @@ final class EmailDeliveryStatus
         }
     }
 
+    public static function isTerminal(string $status): bool
+    {
+        self::assertValid($status);
+        return in_array($status, self::TERMINAL, true);
+    }
+
     /**
      * Decide si un evento debe reemplazar la proyección actual.
      *
      * La fecha usada es la fecha del evento declarada por el proveedor, no la hora
-     * local de recepción. Un evento anterior no degrada la proyección. Dos estados
-     * distintos con exactamente la misma marca temporal se consideran ambiguos y
-     * requieren reconciliación en lugar de elegir una prioridad inventada.
+     * local de recepción. Un evento anterior no degrada la proyección. Estados
+     * terminales distintos nunca se pisan automáticamente: requieren reconciliación.
+     * Tampoco se permite volver de delayed a accepted/requested solo porque el
+     * proveedor entregó los webhooks fuera de orden.
      *
      * @return array{status:string,occurred_at:string,applied:bool,reason:string}
      */
@@ -53,30 +81,23 @@ final class EmailDeliveryStatus
         $incomingTs = self::parseTimestamp($incomingOccurredAt);
 
         if ($incomingTs < $currentTs) {
-            return [
-                'status' => $currentStatus,
-                'occurred_at' => $currentOccurredAt,
-                'applied' => false,
-                'reason' => 'stale_event',
-            ];
+            return self::unchanged($currentStatus, $currentOccurredAt, 'stale_event');
+        }
+
+        if ($incomingStatus === $currentStatus) {
+            return self::unchanged($currentStatus, $currentOccurredAt, 'duplicate_state');
         }
 
         if ($incomingTs === $currentTs) {
-            if ($incomingStatus === $currentStatus) {
-                return [
-                    'status' => $currentStatus,
-                    'occurred_at' => $currentOccurredAt,
-                    'applied' => false,
-                    'reason' => 'duplicate_state',
-                ];
-            }
+            return self::unchanged($currentStatus, $currentOccurredAt, 'same_timestamp_conflict');
+        }
 
-            return [
-                'status' => $currentStatus,
-                'occurred_at' => $currentOccurredAt,
-                'applied' => false,
-                'reason' => 'same_timestamp_conflict',
-            ];
+        if (self::isTerminal($currentStatus)) {
+            return self::unchanged($currentStatus, $currentOccurredAt, 'terminal_conflict');
+        }
+
+        if (self::PROGRESS_RANK[$incomingStatus] < self::PROGRESS_RANK[$currentStatus]) {
+            return self::unchanged($currentStatus, $currentOccurredAt, 'state_regression');
         }
 
         return [
@@ -84,6 +105,17 @@ final class EmailDeliveryStatus
             'occurred_at' => $incomingOccurredAt,
             'applied' => true,
             'reason' => 'newer_event',
+        ];
+    }
+
+    /** @return array{status:string,occurred_at:string,applied:bool,reason:string} */
+    private static function unchanged(string $status, string $occurredAt, string $reason): array
+    {
+        return [
+            'status' => $status,
+            'occurred_at' => $occurredAt,
+            'applied' => false,
+            'reason' => $reason,
         ];
     }
 
