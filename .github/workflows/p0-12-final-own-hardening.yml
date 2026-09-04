@@ -1,0 +1,53 @@
+name: P0-12 Final Own Hardening
+
+on:
+  push:
+    branches:
+      - feat/production-readiness-p0-12-supply-chain-20260902
+    paths:
+      - .github/workflows/p0-12-final-own-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/production-readiness-p0-12-supply-chain-20260902
+          fetch-depth: 0
+
+      - name: Install PHP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli php-mbstring
+
+      - name: Apply hardening
+        run: python3 tools/p0-12-final-own-hardening.py
+
+      - name: Directed regression
+        run: |
+          php -l security/supply-chain/check.php
+          bash -n tests/security/SupplyChainReviewRound3RegressionTest.sh
+          bash tests/security/SupplyChainReviewRound3RegressionTest.sh
+
+      - name: Full regression suite
+        run: bash tests/run.sh
+
+      - name: Whitespace check
+        run: git diff --check
+
+      - name: Commit hardening
+        run: |
+          git config user.name "Hache Interactive"
+          git config user.email "manglefurniture@gmail.com"
+          git add security/supply-chain/check.php tests/security/SupplyChainReviewRound3RegressionTest.sh
+          if git diff --cached --quiet; then
+            echo "No hardening changes to commit"
+            exit 1
+          fi
+          git commit -m "Harden P0-12 workspace and dependency evidence"
+          git push origin HEAD:feat/production-readiness-p0-12-supply-chain-20260902
