@@ -29,7 +29,9 @@ function normalizeEndpoint(endpoint) {
       || endpoint.startsWith('//')
       || endpoint.includes('?')
       || endpoint.includes('#')
-      || endpoint.includes('://')) {
+      || endpoint.includes('://')
+      || endpoint.includes('\\')
+      || /[\u0000-\u0020\u007f]/.test(endpoint)) {
     configError('endpoint_must_be_same_origin_path_without_query_or_fragment');
   }
   return endpoint;
@@ -129,7 +131,7 @@ export function createFetchTransport({fetchImpl = globalThis.fetch} = {}) {
         headers: {'content-type': 'application/json'},
         body: JSON.stringify(payload),
       });
-      return response?.ok !== false;
+      return response?.ok === true;
     } catch {
       return false;
     }

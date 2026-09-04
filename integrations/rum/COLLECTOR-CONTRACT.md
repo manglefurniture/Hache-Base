@@ -45,6 +45,10 @@ Si un proyecto decide lo contrario por un requisito real, deja de cumplir este c
 - registrar solo contadores/códigos de rechazo de baja cardinalidad;
 - aplicar límites de tamaño y rate limit antes de parsear o persistir cuando la infraestructura lo permita.
 
+## Ventana de medición
+
+El payload del navegador no incluye timestamp para reducir superficie y evitar confiar en el reloj del cliente. El collector puede añadir una marca de recepción o bucket temporal generado en servidor, separado de los campos del cliente, únicamente para seleccionar la ventana de agregación. `field-p75.mjs` espera que el proyecto le entregue muestras ya acotadas a una ventana y registra esa ventana como metadata del reporte.
+
 ## Retención y agregación
 
 El proyecto define y documenta:

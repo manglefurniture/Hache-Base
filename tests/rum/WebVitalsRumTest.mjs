@@ -76,6 +76,28 @@ assert.throws(
   }),
   /endpoint_must_be_same_origin_path_without_query_or_fragment/,
 );
+assert.throws(
+  () => createRumReporter({
+    endpoint: '/\\evil.example/rum',
+    routeGroup: 'home',
+    buildId: 'build',
+    formFactor: 'desktop',
+  }),
+  /endpoint_must_be_same_origin_path_without_query_or_fragment/,
+);
+assert.throws(
+  () => createRumReporter({
+    endpoint: '/rum path',
+    routeGroup: 'home',
+    buildId: 'build',
+    formFactor: 'desktop',
+  }),
+  /endpoint_must_be_same_origin_path_without_query_or_fragment/,
+);
+const failedFetchTransport = createFetchTransport({
+  fetchImpl: async () => ({ok: false}),
+});
+assert.equal(await failedFetchTransport('/__rum/web-vitals', payload), false);
 
 let sendCount = 0;
 const disabledReporter = createRumReporter({
