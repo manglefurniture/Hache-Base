@@ -75,6 +75,9 @@ Completar también `PERMISSION-MATRIX.md`.
 - correo:
 - mensajería:
 - APIs externas:
+- Inventario de terceros completado en `THIRD-PARTY-INVENTORY.md`: sí / no / no aplica
+- Terceros críticos previstos:
+- ¿Algún tercero participa en camino crítico de un CUF?: sí / no / por revisar
 
 ## SEO / superficie pública
 
