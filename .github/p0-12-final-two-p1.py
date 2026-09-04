@@ -55,11 +55,43 @@ if old_workspace not in text:
     raise SystemExit('workspace target not found')
 text = text.replace(old_workspace, new_workspace, 1)
 
+old_workspace_setup = '''    $workspacePatterns = npmWorkspacePatterns($manifest);
+    if ($workspacePatterns === null) {
+        return false;
+    }
+    if ($workspacePatterns !== []) {
+        $expectedWorkspaces = [];
+'''
+new_workspace_setup = '''    $workspacePatterns = npmWorkspacePatterns($manifest);
+    if ($workspacePatterns === null) {
+        return false;
+    }
+    $expectedWorkspaces = [];
+    if ($workspacePatterns !== []) {
+'''
+if old_workspace_setup not in text:
+    raise SystemExit('workspace setup target not found')
+text = text.replace(old_workspace_setup, new_workspace_setup, 1)
+
 old_workspace_name = "            $workspaceName = trim($workspaceData['name']);\n"
 new_workspace_name = "            $workspaceName = $manifestName;\n"
 if old_workspace_name not in text:
     raise SystemExit('workspace name target not found')
 text = text.replace(old_workspace_name, new_workspace_name, 1)
+
+old_version_guard = '''        if ($path !== '' && (($data['link'] ?? false) !== true) && (!isset($data['version']) || trim((string)$data['version']) === '')) {
+            return false;
+        }
+'''
+new_version_guard = '''        $workspaceEntry = $path !== '' && array_key_exists(trim($path, '/'), $expectedWorkspaces);
+        if ($path !== '' && !$workspaceEntry && (($data['link'] ?? false) !== true)
+            && (!isset($data['version']) || trim((string)$data['version']) === '')) {
+            return false;
+        }
+'''
+if old_version_guard not in text:
+    raise SystemExit('workspace version guard target not found')
+text = text.replace(old_version_guard, new_version_guard, 1)
 
 old_composer = '''    if (array_intersect_key($prodVersions, $devVersions) !== []) {
         return false;
