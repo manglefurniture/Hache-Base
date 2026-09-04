@@ -8,6 +8,7 @@ HOST="127.0.0.1"
 PORT="$(php -r '$s=stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr); if (!$s) { exit(1); } $name=stream_socket_get_name($s, false); echo substr(strrchr($name, ":"), 1); fclose($s);')"
 BASE="http://$HOST:$PORT"
 SERVER_PID=""
+CACHE_VERSION_FILE="$TMP/cache-version.txt"
 
 cleanup() {
   if [[ -n "$SERVER_PID" ]]; then
@@ -51,8 +52,9 @@ request() {
 
 command -v curl >/dev/null 2>&1 || fail "curl_not_available"
 [[ -n "$PORT" && "$PORT" =~ ^[0-9]+$ ]] || fail "invalid_dynamic_port=$PORT"
+printf 'v1\n' > "$CACHE_VERSION_FILE"
 
-php -S "$HOST:$PORT" "$ROUTER" >"$TMP/server.log" 2>&1 &
+HB_CACHE_VERSION_FILE="$CACHE_VERSION_FILE" php -S "$HOST:$PORT" "$ROUTER" >"$TMP/server.log" 2>&1 &
 SERVER_PID=$!
 
 ready=0
@@ -92,6 +94,52 @@ code="$(request cache-private /cache/private)"
 [[ "$code" == "200" ]] || fail "cache_private_status=$code"
 assert_header "$TMP/cache-private.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0$'
 assert_header "$TMP/cache-private.headers" '^Pragma:[[:space:]]*no-cache$'
+
+# P1-06 / PERF-011 cache matrix fixture.
+code="$(request cache-html-v1 /cache/html)"
+[[ "$code" == "200" ]] || fail "cache_html_v1_status=$code"
+assert_header "$TMP/cache-html-v1.headers" '^Cache-Control:[[:space:]]*no-cache$'
+assert_header "$TMP/cache-html-v1.headers" '^ETag:[[:space:]]*"hb-v1"$'
+[[ "$(cat "$TMP/cache-html-v1.body")" == "html cache fixture v1" ]] || fail "cache_html_v1_body_mismatch"
+
+code="$(request cache-html-304 /cache/html -H 'If-None-Match: "hb-v1"')"
+[[ "$code" == "304" ]] || fail "cache_html_revalidation_status=$code"
+assert_header "$TMP/cache-html-304.headers" '^Cache-Control:[[:space:]]*no-cache$'
+assert_header "$TMP/cache-html-304.headers" '^ETag:[[:space:]]*"hb-v1"$'
+[[ ! -s "$TMP/cache-html-304.body" ]] || fail "cache_html_304_has_body"
+
+printf 'v2\n' > "$CACHE_VERSION_FILE"
+code="$(request cache-html-v2 /cache/html -H 'If-None-Match: "hb-v1"')"
+[[ "$code" == "200" ]] || fail "cache_html_invalidation_status=$code"
+assert_header "$TMP/cache-html-v2.headers" '^Cache-Control:[[:space:]]*no-cache$'
+assert_header "$TMP/cache-html-v2.headers" '^ETag:[[:space:]]*"hb-v2"$'
+[[ "$(cat "$TMP/cache-html-v2.body")" == "html cache fixture v2" ]] || fail "cache_html_v2_body_mismatch"
+
+code="$(request cache-hashed-asset /assets/app.abc123.js)"
+[[ "$code" == "200" ]] || fail "cache_hashed_asset_status=$code"
+assert_header "$TMP/cache-hashed-asset.headers" '^Cache-Control:[[:space:]]*public, max-age=31536000, immutable$'
+
+code="$(request cache-unversioned-asset /assets/app.js)"
+[[ "$code" == "200" ]] || fail "cache_unversioned_asset_status=$code"
+assert_header "$TMP/cache-unversioned-asset.headers" '^Cache-Control:[[:space:]]*no-cache$'
+assert_no_header "$TMP/cache-unversioned-asset.headers" '^Cache-Control:.*immutable'
+
+code="$(request cache-public-api /api/public)"
+[[ "$code" == "200" ]] || fail "cache_public_api_status=$code"
+assert_header "$TMP/cache-public-api.headers" '^Cache-Control:[[:space:]]*public, max-age=60$'
+assert_no_header "$TMP/cache-public-api.headers" '^Set-Cookie:'
+
+code="$(request cache-private-api /api/private)"
+[[ "$code" == "200" ]] || fail "cache_private_api_status=$code"
+assert_header "$TMP/cache-private-api.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0$'
+assert_header "$TMP/cache-private-api.headers" '^Pragma:[[:space:]]*no-cache$'
+assert_no_header "$TMP/cache-private-api.headers" '^Cache-Control:.*public'
+
+code="$(request cache-private-html /account)"
+[[ "$code" == "200" ]] || fail "cache_private_html_status=$code"
+assert_header "$TMP/cache-private-html.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0$'
+assert_header "$TMP/cache-private-html.headers" '^Pragma:[[:space:]]*no-cache$'
+assert_no_header "$TMP/cache-private-html.headers" '^Cache-Control:.*public'
 
 code="$(request compressed /compressed -H 'Accept-Encoding: gzip')"
 [[ "$code" == "200" ]] || fail "compressed_status=$code"
