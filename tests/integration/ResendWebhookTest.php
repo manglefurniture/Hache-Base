@@ -124,6 +124,20 @@ assert($thrown === true);
 
 $thrown = false;
 try {
+    $invalidCalendarPayload = $payloadFor('email.delivered', true, '2026-02-31T00:00:00Z');
+    ResendWebhook::verifyAndNormalize(
+        $invalidCalendarPayload,
+        $headersFor($invalidCalendarPayload),
+        $signingSecret,
+        $timestamp,
+    );
+} catch (InvalidArgumentException) {
+    $thrown = true;
+}
+assert($thrown === true);
+
+$thrown = false;
+try {
     ResendWebhook::verifyAndNormalize($payload, $headers, 'whsec_' . base64_encode('wrong'), $timestamp);
 } catch (RuntimeException) {
     $thrown = true;
