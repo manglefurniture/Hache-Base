@@ -13,7 +13,7 @@ $signingSecret = 'whsec_' . base64_encode($secretBytes);
 $eventId = 'msg_fixture_event_001';
 $timestamp = 1788566400;
 
-$payloadFor = static function (string $type, bool $includeMessageId = true): string {
+$payloadFor = static function (string $type, bool $includeMessageId = true, string $createdAt = '2026-09-04T23:00:00.123456Z'): string {
     $data = [
         'to' => ['person@example.test'],
         'subject' => 'Sensitive fixture subject',
@@ -25,7 +25,7 @@ $payloadFor = static function (string $type, bool $includeMessageId = true): str
 
     return json_encode([
         'type' => $type,
-        'created_at' => '2026-09-04T23:00:00.123456Z',
+        'created_at' => $createdAt,
         'data' => $data,
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 };
@@ -76,6 +76,11 @@ assert(ResendWebhook::verify($payload . ' ', $headers, $signingSecret, $timestam
 assert(ResendWebhook::verify($payload, $headers, 'bad-secret', $timestamp) === false);
 assert(ResendWebhook::verify($payload, $headers, $signingSecret, $timestamp + 301, 300) === false);
 assert(ResendWebhook::verify($payload, ['Svix-Id' => $eventId], $signingSecret, $timestamp) === false);
+assert(ResendWebhook::verify($payload, [
+    'Svix-Id' => $eventId,
+    'Svix-Timestamp' => str_repeat('9', 20),
+    'Svix-Signature' => 'v1,anything',
+], $signingSecret, $timestamp) === false);
 
 $unsupportedPayload = $payloadFor('email.opened', false);
 $unsupported = ResendWebhook::verifyAndNormalize(
@@ -94,6 +99,20 @@ try {
     ResendWebhook::verifyAndNormalize(
         $missingIdPayload,
         $headersFor($missingIdPayload),
+        $signingSecret,
+        $timestamp,
+    );
+} catch (InvalidArgumentException) {
+    $thrown = true;
+}
+assert($thrown === true);
+
+$thrown = false;
+try {
+    $relativeDatePayload = $payloadFor('email.delivered', true, 'tomorrow');
+    ResendWebhook::verifyAndNormalize(
+        $relativeDatePayload,
+        $headersFor($relativeDatePayload),
         $signingSecret,
         $timestamp,
     );
