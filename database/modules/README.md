@@ -39,6 +39,22 @@ Incluye:
 
 No crea workers, cron, Redis ni colas. Antes de adoptarla, completar `templates/INBOX-OUTBOX-IDEMPOTENCY.md` y leer `integrations/async/README.md`. El proyecto debe definir retención, PII, cleanup, backoff, recuperación de claims y reconciliación.
 
+## `email-delivery-status.sql`
+
+Extensión opt-in P1-08 para proyectos que necesitan distinguir aceptación del proveedor de la entrega real de correo.
+
+Incluye una proyección mínima `email_delivery_messages` con:
+
+- identidad estable `(provider, provider_message_id)`;
+- estados `accepted`, `delivered`, `delayed`, `bounced` y `failed`;
+- timestamp del evento del proveedor y timestamps por estado;
+- referencia local opcional y request/correlation IDs;
+- sin destinatario, asunto, body ni raw webhook obligatorios.
+
+El historial/dedupe/reprocess de eventos entrantes se apoya en `integration_inbox` de P0-06 en vez de duplicar otra tabla de eventos. El reprocess reutiliza la misma fila/`external_event_id`; no equivale a reenviar el correo. No existe FK obligatoria entre inbox y esta proyección para tolerar la carrera en la que el webhook llega antes de que se persista la aceptación local.
+
+Antes de adoptarla, leer `integrations/email/README.md`, definir retención/PII y diseñar el worker/transacción concreta del proyecto.
+
 ## Selección
 
 Un restaurante, por ejemplo, podría reutilizar organizaciones, sedes, usuarios y clientes pero reemplazar inscripciones/sesiones por mesas, órdenes e inventario. Un SPA podría reutilizar sedes, clientes, servicios, pagos y adaptar horarios a citas.
