@@ -20,6 +20,7 @@ Todo archivo de esta carpeta debe:
 - `DEPLOY-RECOVERY.md`: adopción P0-10 con matriz código/DB/assets/config, punto de no retorno, smoke, observación, criterios y drill de recovery.
 - `BACKUP-RESTORE.md`: adopción P0-11 con RPO/RTO, freshness/alertas y evidencia de restore aislado.
 - `SUPPLY-CHAIN-TRIAGE.md`: adopción P0-12 con stacks/lockfiles, secret scan, SCA, triage/SLA, mitigaciones SEC-014 y revisión de licencias.
+- `THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010 con owner, propósito, datos compartidos, timeout/fallback, coste medido y criterio de retiro por tercero.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
 - `PERFORMANCE-BUDGET.md`: presupuesto de performance.
 - `staging.env.example`: referencia de configuración de staging.
