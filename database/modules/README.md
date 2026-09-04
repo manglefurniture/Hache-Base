@@ -41,15 +41,19 @@ No crea workers, cron, Redis ni colas. Antes de adoptarla, completar `templates/
 
 ## `email-delivery-status.sql`
 
-Extensión opt-in P1-08 para proyectos que necesitan distinguir aceptación del proveedor de la entrega real de correo.
+Extensión opt-in P1-08 para proyectos que necesitan distinguir intención, aceptación del proveedor y entrega real de correo.
 
-Incluye una proyección mínima `email_delivery_messages` con:
+Incluye una proyección `email_delivery_messages` alineada con COM-001/COM-002:
 
-- identidad estable `(provider, provider_message_id)`;
-- estados `accepted`, `delivered`, `delayed`, `bounced` y `failed`;
-- timestamp del evento del proveedor y timestamps por estado;
-- referencia local opcional y request/correlation IDs;
-- sin destinatario, asunto, body ni raw webhook obligatorios.
+- canal y `local_message_key` estable para dedupe local;
+- `business_operation_id`;
+- template y versión;
+- destinatario normalizado (PII que exige retención/acceso definidos por proyecto);
+- provider message ID nullable mientras el estado es `requested`;
+- estados `requested`, `accepted`, `delayed`, `delivered`, `bounced`, `failed` y `suppressed`;
+- `attempt_count` de envío y timestamps por estado;
+- request/correlation IDs;
+- sin body, variables de plantilla ni raw webhook obligatorios.
 
 El historial/dedupe/reprocess de eventos entrantes se apoya en `integration_inbox` de P0-06 en vez de duplicar otra tabla de eventos. El reprocess reutiliza la misma fila/`external_event_id`; no equivale a reenviar el correo. No existe FK obligatoria entre inbox y esta proyección para tolerar la carrera en la que el webhook llega antes de que se persista la aceptación local.
 
