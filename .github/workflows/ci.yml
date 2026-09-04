@@ -72,12 +72,18 @@ jobs:
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/payment-gateway-credentials.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/async-inbox-outbox.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/email-delivery-status.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
 
       - name: Async inbox/outbox idempotency regression
         env:
           MYSQL_PWD: root
         run: bash tests/integration/InboxOutboxMariaDbTest.sh
+
+      - name: Email delivery webhook/reprocess regression
+        env:
+          MYSQL_PWD: root
+        run: bash tests/integration/EmailDeliveryMariaDbTest.sh
 
       - name: Historical credential immutability regression
         env:
@@ -104,6 +110,7 @@ jobs:
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/recurring-operations.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/payment-gateway-credentials.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/async-inbox-outbox.sql
+          mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/email-delivery-status.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
 
   browser_audit:
