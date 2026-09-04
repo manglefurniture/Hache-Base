@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "tool": {
+    "package": "@lhci/cli",
+    "version": "0.15.1"
+  },
+  "profile": {
+    "name": "mobile-simulated",
+    "number_of_runs": 3
+  },
+  "urls": [
+    "/index.html",
+    "/form-error.html"
+  ],
+  "assertions": {
+    "categories:accessibility": {
+      "level": "error",
+      "minScore": 1,
+      "aggregationMethod": "pessimistic"
+    },
+    "categories:performance": {
+      "level": "warn",
+      "minScore": 0.9,
+      "aggregationMethod": "median-run"
+    },
+    "largest-contentful-paint": {
+      "level": "error",
+      "maxNumericValue": 2500,
+      "aggregationMethod": "median-run"
+    },
+    "cumulative-layout-shift": {
+      "level": "error",
+      "maxNumericValue": 0.1,
+      "aggregationMethod": "median-run"
+    },
+    "total-blocking-time": {
+      "level": "error",
+      "maxNumericValue": 300,
+      "aggregationMethod": "median-run"
+    }
+  }
+}
