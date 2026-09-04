@@ -36,3 +36,5 @@ Thumbs.db
 coverage/
 tmp/
 .cache/
+.lighthouseci/
+artifacts/lighthouse/

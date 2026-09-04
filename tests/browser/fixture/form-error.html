@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Estado de error accesible para el fixture P1-03 de Hache Base.">
+  <title>Hache Base — Estado de formulario con error</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido principal</a>
+  <header class="site-header">
+    <div class="shell">
+      <p class="brand" aria-label="Hache Base">Hache Base</p>
+      <nav aria-label="Principal">
+        <a href="/index.html">Inicio</a>
+        <a href="/form-error.html" aria-current="page">Formulario</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="contenido" class="shell">
+    <section aria-labelledby="titulo">
+      <p class="eyebrow">CUF fixture · estado de validación</p>
+      <h1 id="titulo">Corrige el correo antes de continuar</h1>
+      <p id="form-help">El formulario conserva el contexto y explica el error sin depender únicamente del color.</p>
+
+      <form action="/form-error.html" method="get" aria-describedby="form-help" novalidate>
+        <div class="field">
+          <label for="email">Correo electrónico</label>
+          <input id="email" name="email" type="email" value="correo-incompleto" autocomplete="email" aria-invalid="true" aria-describedby="email-error">
+          <p id="email-error" class="error" role="alert">Escribe un correo completo, por ejemplo nombre@dominio.com.</p>
+        </div>
+        <button class="button" type="submit">Revisar y continuar</button>
+      </form>
+
+      <p><a href="/index.html">Volver al inicio del fixture</a></p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <p>La automatización complementa, pero no sustituye, pruebas manuales de teclado, zoom, reflow y lector de pantalla.</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -105,3 +105,50 @@ jobs:
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/payment-gateway-credentials.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/modules/async-inbox-outbox.sql
           mariadb -h 127.0.0.1 -uroot hache_base_test < database/migrations/0001_audit_events.sql
+
+  browser_audit:
+    name: P1-03 browser audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve Chrome and runtime versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          chrome_path="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$chrome_path"
+          echo "CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
+          node --version
+          npm --version
+          "$chrome_path" --version
+
+      - name: Install pinned Lighthouse CI
+        run: npm install --global @lhci/cli@0.15.1
+
+      - name: Validate versioned browser contract
+        run: node tests/browser/config-contract.mjs
+
+      - name: Run Lighthouse and accessibility budgets
+        env:
+          NO_UPDATE_NOTIFIER: 1
+        run: lhci autorun --config=tests/browser/lighthouserc.cjs
+
+      - name: Upload browser audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p1-03-lighthouse-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .lighthouseci/
+            artifacts/lighthouse/
+          if-no-files-found: warn
+          retention-days: 14
