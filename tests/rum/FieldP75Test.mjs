@@ -69,6 +69,22 @@ assert.equal(noUniversalFloor.minimum_sample_count, null);
 assert.equal(noUniversalFloor.groups[0].meets_project_sample_floor, null);
 assert.equal(noUniversalFloor.production_readiness_state, 'NOT EVALUATED');
 
+const justOver = summarizeP75([
+  sample('LCP', 2500.4),
+  sample('INP', 200.4),
+  sample('CLS', 0.10004),
+], {
+  windowLabel: 'precision-boundary',
+  minimumSampleCount: 1,
+});
+const justOverByMetric = new Map(justOver.groups.map((group) => [group.metric, group]));
+assert.equal(justOverByMetric.get('LCP').p75, 2500.4);
+assert.equal(justOverByMetric.get('LCP').within_target, false);
+assert.equal(justOverByMetric.get('INP').p75, 200.4);
+assert.equal(justOverByMetric.get('INP').within_target, false);
+assert.equal(justOverByMetric.get('CLS').p75, 0.10004);
+assert.equal(justOverByMetric.get('CLS').within_target, false);
+
 assert.throws(
   () => summarizeP75([{...sample('LCP', 1000), user_id: '42'}], {windowLabel: 'bad'}),
   /unknown_sample_field=user_id/,
