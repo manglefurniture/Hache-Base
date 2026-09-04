@@ -173,4 +173,36 @@ set -e
 [[ "$composer_duplicate_rc" -eq 1 ]]
 grep -q 'rule=composer_lock_invalid_format' "$composer_duplicate/out.txt"
 
+
+workspace_npm11="$(new_repo npm11-workspace-lock-shape)"
+mkdir -p "$workspace_npm11/packages/a"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.4.2","workspaces":["packages/*"]}' > "$workspace_npm11/package.json"
+printf '%s\n' '{"name":"a","version":"1.0.0"}' > "$workspace_npm11/packages/a/package.json"
+cat > "$workspace_npm11/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"},"node_modules/a":{"resolved":"packages/a","link":true},"packages/a":{"version":"1.0.0"}}}
+JSON
+commit_all "$workspace_npm11"
+raw_check "$workspace_npm11" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$workspace_npm11/out.txt"
+! grep -q 'rule=node_lock_invalid_format' "$workspace_npm11/out.txt"
+
+workspace_private="$(new_repo npm11-private-workspace-lock-shape)"
+mkdir -p "$workspace_private/packages/a"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.4.2","workspaces":["packages/*"]}' > "$workspace_private/package.json"
+printf '%s\n' '{"name":"a","private":true}' > "$workspace_private/packages/a/package.json"
+cat > "$workspace_private/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"},"node_modules/a":{"resolved":"packages/a","link":true},"packages/a":{}}}
+JSON
+commit_all "$workspace_private"
+raw_check "$workspace_private" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$workspace_private/out.txt"
+! grep -q 'rule=node_lock_invalid_format' "$workspace_private/out.txt"
+
+composer_root_replace="$(new_repo composer-root-replace-self-version)"
+printf '%s\n' '{"name":"fixture/app","version":"1.2.3","replace":{"vendor/virtual":"self.version"},"require":{"vendor/a":"^1.0"}}' > "$composer_root_replace/composer.json"
+cat > "$composer_root_replace/composer.lock" <<'JSON'
+{"packages":[{"name":"vendor/a","version":"1.0.0","require":{"vendor/virtual":"^1.0"}}],"packages-dev":[]}
+JSON
+commit_all "$composer_root_replace"
+raw_check "$composer_root_replace" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_root_replace/out.txt"
+! grep -q 'rule=composer_lock_invalid_format' "$composer_root_replace/out.txt"
+
 echo "SUPPLY_CHAIN_REVIEW_ROUND3_REGRESSION_OK"

@@ -953,8 +953,8 @@ function validNpmLock(array $lock, array $manifest, array $workspaceManifests = 
     if ($workspacePatterns === null) {
         return false;
     }
+    $expectedWorkspaces = [];
     if ($workspacePatterns !== []) {
-        $expectedWorkspaces = [];
         foreach ($workspaceManifests as $workspacePath => $workspaceManifest) {
             if (!is_string($workspacePath) || !is_array($workspaceManifest)) {
                 return false;
@@ -985,19 +985,31 @@ function validNpmLock(array $lock, array $manifest, array $workspaceManifests = 
         }
         foreach ($expectedWorkspaces as $workspacePath => $workspaceManifest) {
             $workspaceData = $lock['packages'][$workspacePath] ?? null;
-            if (!is_array($workspaceData)
-                || !isset($workspaceData['name'], $workspaceData['version'])
-                || !is_string($workspaceData['name']) || trim($workspaceData['name']) === ''
-                || !is_string($workspaceData['version']) || trim($workspaceData['version']) === '') {
+            if (!is_array($workspaceData)) {
                 return false;
             }
             $manifestName = $workspaceManifest['name'] ?? null;
-            if (!is_string($manifestName) || trim($manifestName) === '' || trim($manifestName) !== trim($workspaceData['name'])) {
+            if (!is_string($manifestName) || trim($manifestName) === '') {
                 return false;
             }
-            if (array_key_exists('version', $workspaceManifest)) {
-                if (!is_string($workspaceManifest['version']) || trim($workspaceManifest['version']) === ''
-                    || trim($workspaceManifest['version']) !== trim($workspaceData['version'])) {
+            $manifestName = trim($manifestName);
+            if (array_key_exists('name', $workspaceData)) {
+                if (!is_string($workspaceData['name']) || trim($workspaceData['name']) === ''
+                    || trim($workspaceData['name']) !== $manifestName) {
+                    return false;
+                }
+            }
+            $manifestVersion = $workspaceManifest['version'] ?? null;
+            if (array_key_exists('version', $workspaceManifest)
+                && (!is_string($manifestVersion) || trim($manifestVersion) === '')) {
+                return false;
+            }
+            if (array_key_exists('version', $workspaceData)) {
+                if (!is_string($workspaceData['version']) || trim($workspaceData['version']) === '') {
+                    return false;
+                }
+                if (is_string($manifestVersion) && trim($manifestVersion) !== ''
+                    && trim($workspaceData['version']) !== trim($manifestVersion)) {
                     return false;
                 }
             }
@@ -1010,7 +1022,7 @@ function validNpmLock(array $lock, array $manifest, array $workspaceManifests = 
                 || $workspaceOptionalPeers !== $lockWorkspaceOptionalPeers) {
                 return false;
             }
-            $workspaceName = trim($workspaceData['name']);
+            $workspaceName = $manifestName;
             $linkPath = 'node_modules/' . $workspaceName;
             $linkData = $lock['packages'][$linkPath] ?? null;
             if (!is_array($linkData) || ($linkData['link'] ?? false) !== true
@@ -1036,7 +1048,9 @@ function validNpmLock(array $lock, array $manifest, array $workspaceManifests = 
                 return false;
             }
         }
-        if ($path !== '' && (($data['link'] ?? false) !== true) && (!isset($data['version']) || trim((string)$data['version']) === '')) {
+        $workspaceEntry = $path !== '' && array_key_exists(trim($path, '/'), $expectedWorkspaces);
+        if ($path !== '' && !$workspaceEntry && (($data['link'] ?? false) !== true)
+            && (!isset($data['version']) || trim((string)$data['version']) === '')) {
             return false;
         }
         if (($data['link'] ?? false) === true && (!isset($data['resolved']) || !is_string($data['resolved']) || trim($data['resolved']) === '')) {
@@ -1162,6 +1176,32 @@ function validComposerLock(array $lock, array $manifest): bool
     }
     if (array_intersect_key($prodVersions, $devVersions) !== []) {
         return false;
+    }
+
+    $rootVersion = null;
+    if (array_key_exists('version', $manifest)) {
+        if (!is_string($manifest['version']) || trim($manifest['version']) === '') {
+            return false;
+        }
+        $rootVersion = trim($manifest['version']);
+    }
+    foreach (['provide', 'replace'] as $relation) {
+        if (isset($manifest[$relation]) && !is_array($manifest[$relation])) {
+            return false;
+        }
+        foreach (($manifest[$relation] ?? []) as $virtual => $provided) {
+            if (!is_string($virtual) || trim($virtual) === '' || !is_string($provided) || trim($provided) === '') {
+                return false;
+            }
+            $provided = trim($provided);
+            if (strcasecmp($provided, 'self.version') === 0) {
+                if ($rootVersion === null) {
+                    return false;
+                }
+                $provided = $rootVersion;
+            }
+            $prodProviders[trim($virtual)][] = $provided;
+        }
     }
 
     $allVersions = $prodVersions + $devVersions;
