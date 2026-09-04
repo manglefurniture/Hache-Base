@@ -114,6 +114,9 @@ Completar también `PERMISSION-MATRIX.md`.
 ## Presupuesto visual y de performance
 
 - Presupuesto completado en `PERFORMANCE-BUDGET.md`: sí / no
+- Política de caché completada en `CACHE-POLICY.md`: sí / no
+- Owner de caché/CDN/proxy:
+- Invalidation/revalidation drill de `PERF-011` completado: sí / no / no aplica
 - LCP objetivo/resultados:
 - INP objetivo/resultados:
 - CLS objetivo/resultados:
