@@ -393,7 +393,7 @@ function readinessMarkdown(array $report): string
             return '';
         }
         $text = is_bool($value) ? ($value ? 'Sí' : 'No') : (string) $value;
-        return str_replace(["\r", "\n", '|'], [' ', ' ', '\\|'], $text);
+        return str_replace(["\r", "\n", '\\', '|'], [' ', ' ', '\\\\', '\\|'], $text);
     };
 
     $summary = $report['summary'];
