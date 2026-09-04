@@ -102,7 +102,13 @@ $render = static function (
     if ($errors !== []) {
         $items = '';
         foreach ($errors as $field => $error) {
-            $items .= '<li><a href="#' . $escape((string)$field) . '">' . $escape((string)$error) . '</a></li>';
+            $field = (string)$field;
+            $errorText = $escape((string)$error);
+            if (in_array($field, ['name', 'email', 'message'], true)) {
+                $items .= '<li><a href="#' . $escape($field) . '">' . $errorText . '</a></li>';
+            } else {
+                $items .= '<li>' . $errorText . '</li>';
+            }
         }
         $errorSummary = '<div id="form-errors" role="alert" tabindex="-1"><h2>Revisa el formulario</h2><ul>' . $items . '</ul></div>';
     }
