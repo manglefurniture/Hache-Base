@@ -61,10 +61,11 @@ final class EmailDeliveryStatus
      * Decide si un evento debe reemplazar la proyección actual.
      *
      * La fecha usada es la fecha del evento declarada por el proveedor, no la hora
-     * local de recepción. Un evento anterior no degrada la proyección. Estados
-     * terminales distintos nunca se pisan automáticamente: requieren reconciliación.
-     * Tampoco se permite volver de delayed a accepted/requested solo porque el
-     * proveedor entregó los webhooks fuera de orden.
+     * local de recepción. Los DATETIME(6) persistidos por la Extension se interpretan
+     * explícitamente como UTC; timestamps con offset conservan su offset real.
+     * Un evento anterior no degrada la proyección. Estados terminales distintos nunca
+     * se pisan automáticamente: requieren reconciliación. Tampoco se permite volver
+     * de delayed a accepted/requested por entrega fuera de orden.
      *
      * @return array{status:string,occurred_at:string,applied:bool,reason:string}
      */
@@ -126,10 +127,23 @@ final class EmailDeliveryStatus
             throw new InvalidArgumentException('La fecha del evento de correo no puede estar vacía.');
         }
 
-        try {
-            $date = new \DateTimeImmutable($value);
-        } catch (\Throwable $e) {
-            throw new InvalidArgumentException('La fecha del evento de correo no es válida.', 0, $e);
+        $date = null;
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?$/', $value, $parts)) {
+            $micros = str_pad($parts[3] ?? '', 6, '0');
+            $normalized = $parts[1] . ' ' . $parts[2] . '.' . $micros;
+            $date = \DateTimeImmutable::createFromFormat(
+                '!Y-m-d H:i:s.u',
+                $normalized,
+                new \DateTimeZone('UTC'),
+            );
+            self::assertNoDateParseErrors($date);
+        } else {
+            try {
+                $date = new \DateTimeImmutable($value);
+            } catch (\Throwable $e) {
+                throw new InvalidArgumentException('La fecha del evento de correo no es válida.', 0, $e);
+            }
+            self::assertNoDateParseErrors($date);
         }
 
         $seconds = (float) $date->format('U.u');
@@ -138,5 +152,14 @@ final class EmailDeliveryStatus
         }
 
         return $seconds;
+    }
+
+    private static function assertNoDateParseErrors(\DateTimeImmutable|false $date): void
+    {
+        $errors = \DateTimeImmutable::getLastErrors();
+        if ($date === false
+            || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            throw new InvalidArgumentException('La fecha del evento de correo no es válida.');
+        }
     }
 }
