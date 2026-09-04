@@ -29,7 +29,7 @@ const payload = createRumPayload(
 assert.deepEqual(payload, {
   schema_version: 1,
   metric: 'LCP',
-  value: 1835,
+  value: 1834.6,
   route_group: 'registration',
   build_id: '20260904.1',
   form_factor: 'mobile',
@@ -149,7 +149,7 @@ assert.deepEqual(
 assert.deepEqual(sentPayload, {
   schema_version: 1,
   metric: 'INP',
-  value: 200,
+  value: 199.7,
   route_group: 'checkout',
   build_id: 'abc123',
   form_factor: 'mobile',

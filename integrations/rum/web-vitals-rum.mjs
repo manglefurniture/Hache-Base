@@ -48,10 +48,7 @@ function normalizeValue(metricName, value) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     configError(`metric_value_must_be_nonnegative_finite=${metricName}`);
   }
-  if (metricName === 'CLS') {
-    return Math.round(value * 10000) / 10000;
-  }
-  return Math.round(value);
+  return value;
 }
 
 export function coarseFormFactor(viewportWidth, breakpoint = 768) {
