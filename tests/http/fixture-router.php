@@ -91,6 +91,7 @@ switch ($path) {
         }
 
         $etag = '"hb-' . $version . '"';
+        header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: no-cache');
         header('ETag: ' . $etag);
         $ifNoneMatch = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
@@ -98,7 +99,7 @@ switch ($path) {
             http_response_code(304);
             return true;
         }
-        $plain("html cache fixture {$version}\n");
+        echo "<!doctype html><html lang=\"en\"><body>html cache fixture {$version}</body></html>\n";
         return true;
 
     case '/assets/app.abc123.js':
@@ -125,9 +126,10 @@ switch ($path) {
         return true;
 
     case '/account':
+        header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: private, no-store, max-age=0');
         header('Pragma: no-cache');
-        $plain("private html fixture\n");
+        echo "<!doctype html><html lang=\"en\"><body>private html fixture</body></html>\n";
         return true;
 
     case '/compressed':
