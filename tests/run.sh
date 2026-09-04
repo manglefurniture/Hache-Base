@@ -36,6 +36,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/security/SessionPreA
 bash "$ROOT/tests/security/SessionCookieScopeHttpTest.sh"
 bash "$ROOT/tests/http/ProductionReadinessHttpTest.sh"
 bash "$ROOT/tests/http/CacheHtmlContentTypeRegressionTest.sh"
+bash "$ROOT/tests/form-b/ProductionReadinessFormBTest.sh"
 bash "$ROOT/tests/security/SupplyChainPolicyTest.sh"
 bash "$ROOT/tests/security/SupplyChainReviewRegressionTest.sh"
 bash "$ROOT/tests/security/SupplyChainEvidenceScopeRegressionTest.sh"
