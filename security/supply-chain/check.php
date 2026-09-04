@@ -873,22 +873,11 @@ function npmWorkspacePatternMatches(string $pattern, string $path): bool
     return preg_match('~^' . $regex . '$~D', $path) === 1;
 }
 
-/** @param array<string,mixed> $manifest @param array<int,string> $workspacePackagePaths */
-function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths = []): bool
+function npmDependencySectionsMatch(array $manifest, array $lockPackage): bool
 {
-    if (!isset($lock['lockfileVersion'])
-        || !is_int($lock['lockfileVersion'])
-        || !in_array($lock['lockfileVersion'], [2, 3], true)
-        || !array_key_exists('packages', $lock)
-        || !is_array($lock['packages'])
-        || !array_key_exists('', $lock['packages'])
-        || !is_array($lock['packages'][''])) {
-        return false;
-    }
-    $rootPackage = $lock['packages'][''];
     foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $section) {
         $manifestDependencies = $manifest[$section] ?? [];
-        $lockDependencies = $rootPackage[$section] ?? [];
+        $lockDependencies = $lockPackage[$section] ?? [];
         if (!is_array($manifestDependencies) || !is_array($lockDependencies)) {
             return false;
         }
@@ -905,6 +894,60 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
             return false;
         }
     }
+    return true;
+}
+
+/** @return array<string,bool>|null */
+function npmOptionalPeers(array $package): ?array
+{
+    $peers = $package['peerDependencies'] ?? [];
+    $meta = $package['peerDependenciesMeta'] ?? [];
+    if (!is_array($peers) || !is_array($meta)) {
+        return null;
+    }
+    $optional = [];
+    foreach ($meta as $peerName => $metadata) {
+        if (!is_string($peerName) || trim($peerName) === '' || !is_array($metadata)
+            || !array_key_exists($peerName, $peers)) {
+            return null;
+        }
+        foreach (array_keys($metadata) as $metadataKey) {
+            if ($metadataKey !== 'optional') {
+                return null;
+            }
+        }
+        if (array_key_exists('optional', $metadata) && !is_bool($metadata['optional'])) {
+            return null;
+        }
+        if (($metadata['optional'] ?? false) === true) {
+            $optional[$peerName] = true;
+        }
+    }
+    ksort($optional);
+    return $optional;
+}
+
+/** @param array<string,mixed> $manifest @param array<string,array<string,mixed>> $workspaceManifests */
+function validNpmLock(array $lock, array $manifest, array $workspaceManifests = []): bool
+{
+    if (!isset($lock['lockfileVersion'])
+        || !is_int($lock['lockfileVersion'])
+        || !in_array($lock['lockfileVersion'], [2, 3], true)
+        || !array_key_exists('packages', $lock)
+        || !is_array($lock['packages'])
+        || !array_key_exists('', $lock['packages'])
+        || !is_array($lock['packages'][''])) {
+        return false;
+    }
+    $rootPackage = $lock['packages'][''];
+    if (!npmDependencySectionsMatch($manifest, $rootPackage)) {
+        return false;
+    }
+    $manifestOptionalPeers = npmOptionalPeers($manifest);
+    $rootOptionalPeers = npmOptionalPeers($rootPackage);
+    if ($manifestOptionalPeers === null || $rootOptionalPeers === null || $manifestOptionalPeers !== $rootOptionalPeers) {
+        return false;
+    }
 
     $workspacePatterns = npmWorkspacePatterns($manifest);
     if ($workspacePatterns === null) {
@@ -912,8 +955,8 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
     }
     if ($workspacePatterns !== []) {
         $expectedWorkspaces = [];
-        foreach ($workspacePackagePaths as $workspacePath) {
-            if (!is_string($workspacePath)) {
+        foreach ($workspaceManifests as $workspacePath => $workspaceManifest) {
+            if (!is_string($workspacePath) || !is_array($workspaceManifest)) {
                 return false;
             }
             $workspacePath = trim(str_replace('\\', '/', $workspacePath), '/');
@@ -923,7 +966,7 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
             }
             foreach ($workspacePatterns as $pattern) {
                 if (npmWorkspacePatternMatches($pattern, $workspacePath)) {
-                    $expectedWorkspaces[$workspacePath] = true;
+                    $expectedWorkspaces[$workspacePath] = $workspaceManifest;
                     break;
                 }
             }
@@ -940,12 +983,31 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
                 return false;
             }
         }
-        foreach (array_keys($expectedWorkspaces) as $workspacePath) {
+        foreach ($expectedWorkspaces as $workspacePath => $workspaceManifest) {
             $workspaceData = $lock['packages'][$workspacePath] ?? null;
             if (!is_array($workspaceData)
                 || !isset($workspaceData['name'], $workspaceData['version'])
                 || !is_string($workspaceData['name']) || trim($workspaceData['name']) === ''
                 || !is_string($workspaceData['version']) || trim($workspaceData['version']) === '') {
+                return false;
+            }
+            $manifestName = $workspaceManifest['name'] ?? null;
+            if (!is_string($manifestName) || trim($manifestName) === '' || trim($manifestName) !== trim($workspaceData['name'])) {
+                return false;
+            }
+            if (array_key_exists('version', $workspaceManifest)) {
+                if (!is_string($workspaceManifest['version']) || trim($workspaceManifest['version']) === ''
+                    || trim($workspaceManifest['version']) !== trim($workspaceData['version'])) {
+                    return false;
+                }
+            }
+            if (!npmDependencySectionsMatch($workspaceManifest, $workspaceData)) {
+                return false;
+            }
+            $workspaceOptionalPeers = npmOptionalPeers($workspaceManifest);
+            $lockWorkspaceOptionalPeers = npmOptionalPeers($workspaceData);
+            if ($workspaceOptionalPeers === null || $lockWorkspaceOptionalPeers === null
+                || $workspaceOptionalPeers !== $lockWorkspaceOptionalPeers) {
                 return false;
             }
             $workspaceName = trim($workspaceData['name']);
@@ -992,17 +1054,9 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
                 }
             }
         }
-        $peerMeta = $data['peerDependenciesMeta'] ?? [];
-        if (!is_array($peerMeta)) {
+        $optionalPeers = npmOptionalPeers($data);
+        if ($optionalPeers === null) {
             return false;
-        }
-        foreach ($peerMeta as $peerName => $metadata) {
-            if (!is_string($peerName) || trim($peerName) === '' || !is_array($metadata)) {
-                return false;
-            }
-            if (array_key_exists('optional', $metadata) && !is_bool($metadata['optional'])) {
-                return false;
-            }
         }
         foreach (['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as $section) {
             $dependencies = $data[$section] ?? [];
@@ -1014,10 +1068,7 @@ function validNpmLock(array $lock, array $manifest, array $workspacePackagePaths
                     return false;
                 }
                 $resolved = npmLockResolvedPackage($lock['packages'], $path, $name);
-                $optionalPeer = $section === 'peerDependencies'
-                    && isset($peerMeta[$name])
-                    && is_array($peerMeta[$name])
-                    && (($peerMeta[$name]['optional'] ?? false) === true);
+                $optionalPeer = $section === 'peerDependencies' && isset($optionalPeers[$name]);
                 if ($resolved === null) {
                     if ($optionalPeer) {
                         continue;
@@ -1068,6 +1119,9 @@ function validComposerLock(array $lock, array $manifest): bool
             }
             $name = trim($package['name']);
             $version = trim($package['version']);
+            if (array_key_exists($name, $versions)) {
+                return false;
+            }
             $versions[$name] = $version;
 
             if (isset($package['license'])) {
@@ -1104,6 +1158,9 @@ function validComposerLock(array $lock, array $manifest): bool
 
     if (!$indexPackages($lock['packages'], $prodVersions, $prodProviders)
         || !$indexPackages($lock['packages-dev'], $devVersions, $devProviders)) {
+        return false;
+    }
+    if (array_intersect_key($prodVersions, $devVersions) !== []) {
         return false;
     }
 
@@ -1672,7 +1729,7 @@ foreach ($stackRoots as $stackRelative) {
             continue;
         }
         $lock = loadJsonFromHead($root, $nodeLockRelative);
-        $workspacePackagePaths = [];
+        $workspaceManifests = [];
         $stackPrefix = $stackRelative === '.' ? '' : rtrim($stackRelative, '/') . '/';
         foreach ($trackedPaths as $trackedPath) {
             if ($stackPrefix !== '' && !str_starts_with($trackedPath, $stackPrefix)) {
@@ -1686,9 +1743,9 @@ foreach ($stackRoots as $stackRelative) {
             if ($workspacePath === '' || str_contains('/' . $workspacePath . '/', '/node_modules/')) {
                 continue;
             }
-            $workspacePackagePaths[] = $workspacePath;
+            $workspaceManifests[$workspacePath] = loadJsonFromHead($root, $trackedPath);
         }
-        if (!validNpmLock($lock, $resolved['manifest'], $workspacePackagePaths)) {
+        if (!validNpmLock($lock, $resolved['manifest'], $workspaceManifests)) {
             $checks['lockfiles']['status'] = 'findings';
             addFinding($findings, 'lockfile', 'node_lock_invalid_format', 'high', $displayRoot . '/' . $nodeLockName, 'node:' . $nodeLockName, 'npm lockfile format is unsupported, structurally invalid, truncated, or does not match package.json; reproducible dependency evidence is not established.', $level, $mode, $policy, $licensePolicy, $riskConfig);
             $checks['licenses'][] = ['root' => $displayRoot, 'stack' => 'node', 'lockfile' => $nodeLockName, 'status' => 'not_evaluated', 'packages_checked' => null];

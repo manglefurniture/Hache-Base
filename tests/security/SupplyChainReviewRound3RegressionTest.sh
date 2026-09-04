@@ -131,4 +131,46 @@ grep -q 'rule=private_key' "$encrypted/out.txt"
 ! grep -q 'NOT_REAL_KEY_MATERIAL' "$encrypted/out.txt"
 ! grep -q 'NOT_REAL_KEY_MATERIAL' "$encrypted/report.json"
 
+
+workspace_drift="$(new_repo npm-workspace-manifest-drift)"
+mkdir -p "$workspace_drift/packages/a"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","workspaces":["packages/*"]}' > "$workspace_drift/package.json"
+printf '%s\n' '{"name":"a","version":"1.0.0","dependencies":{"b":"^1.0.0"}}' > "$workspace_drift/packages/a/package.json"
+cat > "$workspace_drift/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0"},"node_modules/a":{"resolved":"packages/a","link":true},"packages/a":{"name":"a","version":"1.0.0","license":"MIT"}}}
+JSON
+commit_all "$workspace_drift"
+set +e
+raw_check "$workspace_drift" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$workspace_drift/out.txt" 2>&1
+workspace_drift_rc=$?
+set -e
+[[ "$workspace_drift_rc" -eq 1 ]]
+grep -q 'rule=node_lock_invalid_format' "$workspace_drift/out.txt"
+
+root_peer_meta="$(new_repo npm-root-peer-meta-drift)"
+printf '%s\n' '{"name":"fixture","private":true,"packageManager":"npm@11.0.0","peerDependencies":{"peer":"1.0.0"}}' > "$root_peer_meta/package.json"
+cat > "$root_peer_meta/package-lock.json" <<'JSON'
+{"name":"fixture","lockfileVersion":3,"packages":{"":{"name":"fixture","version":"1.0.0","peerDependencies":{"peer":"1.0.0"},"peerDependenciesMeta":{"peer":{"optional":true}}}}}
+JSON
+commit_all "$root_peer_meta"
+set +e
+raw_check "$root_peer_meta" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$root_peer_meta/out.txt" 2>&1
+root_peer_meta_rc=$?
+set -e
+[[ "$root_peer_meta_rc" -eq 1 ]]
+grep -q 'rule=node_lock_invalid_format' "$root_peer_meta/out.txt"
+
+composer_duplicate="$(new_repo composer-duplicate-package)"
+printf '%s\n' '{"name":"fixture/app","require":{"vendor/a":"^1.0"}}' > "$composer_duplicate/composer.json"
+cat > "$composer_duplicate/composer.lock" <<'JSON'
+{"packages":[{"name":"vendor/a","version":"1.0.0"}],"packages-dev":[{"name":"vendor/a","version":"1.1.0"}]}
+JSON
+commit_all "$composer_duplicate"
+set +e
+raw_check "$composer_duplicate" SUPPLY_CHAIN_MODE=baseline SUPPLY_CHAIN_LEVEL=A > "$composer_duplicate/out.txt" 2>&1
+composer_duplicate_rc=$?
+set -e
+[[ "$composer_duplicate_rc" -eq 1 ]]
+grep -q 'rule=composer_lock_invalid_format' "$composer_duplicate/out.txt"
+
 echo "SUPPLY_CHAIN_REVIEW_ROUND3_REGRESSION_OK"
