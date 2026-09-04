@@ -29,7 +29,7 @@ jobs:
         run: python3 .github/p0-12-final-two-p1.py
 
       - name: Targeted regression
-        run: bash tests/security/SupplyChainReviewRound3RegressionTest.sh
+        run: bash -x tests/security/SupplyChainReviewRound3RegressionTest.sh
 
       - name: Full test suite
         run: bash tests/run.sh
