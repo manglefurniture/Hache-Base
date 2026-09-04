@@ -16,6 +16,7 @@ final class ResendWebhook
         'email.delivery_delayed' => EmailDeliveryStatus::DELAYED,
         'email.bounced' => EmailDeliveryStatus::BOUNCED,
         'email.failed' => EmailDeliveryStatus::FAILED,
+        'email.suppressed' => EmailDeliveryStatus::SUPPRESSED,
     ];
 
     /**
