@@ -61,6 +61,7 @@ jobs:
         env:
           SEO_MODE: public
           SEO_EXPECT_INDEXABLE: 1
+          SEO_REQUIRE_CANONICAL: 1
         run: node seo/tests/seo-static.mjs seo/tests/fixtures/public-site
 
       - name: Validate reusable schemas on MariaDB
