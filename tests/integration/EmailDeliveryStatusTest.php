@@ -119,6 +119,20 @@ assert($suppressed['status'] === EmailDeliveryStatus::SUPPRESSED);
 assert($suppressed['applied'] === true);
 assert(EmailDeliveryStatus::isTerminal($suppressed['status']) === true);
 
+// DATETIME(6) from MariaDB has no timezone. It is a UTC persistence contract and must
+// not depend on PHP's project timezone.
+$previousTimezone = date_default_timezone_get();
+date_default_timezone_set('America/Cancun');
+$utcPersisted = EmailDeliveryStatus::apply(
+    EmailDeliveryStatus::ACCEPTED,
+    '2026-09-04 12:00:00.000000',
+    EmailDeliveryStatus::DELIVERED,
+    '2026-09-04T12:02:00.000000Z',
+);
+assert($utcPersisted['status'] === EmailDeliveryStatus::DELIVERED);
+assert($utcPersisted['applied'] === true);
+date_default_timezone_set($previousTimezone);
+
 $thrown = false;
 try {
     EmailDeliveryStatus::apply(
@@ -126,6 +140,19 @@ try {
         'not-a-date',
         EmailDeliveryStatus::DELIVERED,
         '2026-09-04T12:02:00Z',
+    );
+} catch (InvalidArgumentException) {
+    $thrown = true;
+}
+assert($thrown === true);
+
+$thrown = false;
+try {
+    EmailDeliveryStatus::apply(
+        EmailDeliveryStatus::ACCEPTED,
+        '2026-02-31 12:00:00.000000',
+        EmailDeliveryStatus::DELIVERED,
+        '2026-03-01T12:02:00Z',
     );
 } catch (InvalidArgumentException) {
     $thrown = true;
