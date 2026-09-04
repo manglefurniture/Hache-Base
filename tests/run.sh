@@ -12,6 +12,8 @@ bash "$ROOT/tests/ui/backend-relief.sh"
 node "$ROOT/tests/ui/design-system.mjs"
 node "$ROOT/tests/ui/design-system-review-regressions.mjs"
 node "$ROOT/tests/ui/reuse-hardening-regression.mjs"
+node "$ROOT/tests/rum/WebVitalsRumTest.mjs"
+node "$ROOT/tests/rum/FieldP75Test.mjs"
 
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/audit/AuditSanitizerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/CommonTest.php"
