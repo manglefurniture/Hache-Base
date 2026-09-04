@@ -177,10 +177,20 @@ final class ResendWebhook
         )) {
             throw new InvalidArgumentException('created_at del webhook de correo no tiene formato ISO-8601 esperado.');
         }
+
         try {
-            new \DateTimeImmutable($value);
+            $date = new \DateTimeImmutable($value);
         } catch (\Throwable $e) {
             throw new InvalidArgumentException('created_at del webhook de correo no es válido.', 0, $e);
+        }
+
+        $errors = \DateTimeImmutable::getLastErrors();
+        if ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+            throw new InvalidArgumentException('created_at del webhook de correo contiene una fecha calendario inválida.');
+        }
+
+        if ($date->format('Y-m-d') !== substr($value, 0, 10)) {
+            throw new InvalidArgumentException('created_at del webhook de correo no conserva la fecha declarada.');
         }
     }
 }
