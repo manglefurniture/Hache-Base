@@ -15,6 +15,11 @@ assert(is_string($template));
 assert(is_string($profile));
 assert(is_string($templatesReadme));
 
+function requireFragment(string $haystack, string $fragment): void
+{
+    assert(str_contains($haystack, $fragment), 'missing P1-05 contract fragment: ' . $fragment);
+}
+
 $requiredTemplateFragments = [
     'P1-05 / PERF-010',
     '## 3. Estado cero — no hay terceros',
@@ -49,20 +54,16 @@ $requiredTemplateFragments = [
 ];
 
 foreach ($requiredTemplateFragments as $fragment) {
-    assert(str_contains($template, $fragment), 'missing third-party inventory contract fragment: ' . $fragment);
+    requireFragment($template, $fragment);
 }
 
-assert(str_contains(
+requireFragment(
     $profile,
     '- Inventario de terceros completado en `THIRD-PARTY-INVENTORY.md`: sí / no / no aplica'
-));
-assert(str_contains($profile, '- Terceros críticos previstos:'));
-assert(str_contains($profile, '- ¿Algún tercero participa en camino crítico de un CUF?: sí / no / por revisar'));
-
-assert(str_contains(
-    $templatesReadme,
-    '`THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010'
-));
+);
+requireFragment($profile, '- Terceros críticos previstos:');
+requireFragment($profile, '- ¿Algún tercero participa en camino crítico de un CUF?: sí / no / por revisar');
+requireFragment($templatesReadme, '`THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010');
 
 assert(!str_contains($template, 'api_key='));
 assert(!str_contains($template, 'password='));
