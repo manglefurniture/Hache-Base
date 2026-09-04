@@ -98,12 +98,14 @@ assert_header "$TMP/cache-private.headers" '^Pragma:[[:space:]]*no-cache$'
 # P1-06 / PERF-011 cache matrix fixture.
 code="$(request cache-html-v1 /cache/html)"
 [[ "$code" == "200" ]] || fail "cache_html_v1_status=$code"
+assert_header "$TMP/cache-html-v1.headers" '^Content-Type:[[:space:]]*text/html;[[:space:]]*charset=utf-8$'
 assert_header "$TMP/cache-html-v1.headers" '^Cache-Control:[[:space:]]*no-cache$'
 assert_header "$TMP/cache-html-v1.headers" '^ETag:[[:space:]]*"hb-v1"$'
-[[ "$(cat "$TMP/cache-html-v1.body")" == "html cache fixture v1" ]] || fail "cache_html_v1_body_mismatch"
+[[ "$(cat "$TMP/cache-html-v1.body")" == '<!doctype html><html lang="en"><body>html cache fixture v1</body></html>' ]] || fail "cache_html_v1_body_mismatch"
 
 code="$(request cache-html-304 /cache/html -H 'If-None-Match: "hb-v1"')"
 [[ "$code" == "304" ]] || fail "cache_html_revalidation_status=$code"
+assert_header "$TMP/cache-html-304.headers" '^Content-Type:[[:space:]]*text/html;[[:space:]]*charset=utf-8$'
 assert_header "$TMP/cache-html-304.headers" '^Cache-Control:[[:space:]]*no-cache$'
 assert_header "$TMP/cache-html-304.headers" '^ETag:[[:space:]]*"hb-v1"$'
 [[ ! -s "$TMP/cache-html-304.body" ]] || fail "cache_html_304_has_body"
@@ -111,9 +113,10 @@ assert_header "$TMP/cache-html-304.headers" '^ETag:[[:space:]]*"hb-v1"$'
 printf 'v2\n' > "$CACHE_VERSION_FILE"
 code="$(request cache-html-v2 /cache/html -H 'If-None-Match: "hb-v1"')"
 [[ "$code" == "200" ]] || fail "cache_html_invalidation_status=$code"
+assert_header "$TMP/cache-html-v2.headers" '^Content-Type:[[:space:]]*text/html;[[:space:]]*charset=utf-8$'
 assert_header "$TMP/cache-html-v2.headers" '^Cache-Control:[[:space:]]*no-cache$'
 assert_header "$TMP/cache-html-v2.headers" '^ETag:[[:space:]]*"hb-v2"$'
-[[ "$(cat "$TMP/cache-html-v2.body")" == "html cache fixture v2" ]] || fail "cache_html_v2_body_mismatch"
+[[ "$(cat "$TMP/cache-html-v2.body")" == '<!doctype html><html lang="en"><body>html cache fixture v2</body></html>' ]] || fail "cache_html_v2_body_mismatch"
 
 code="$(request cache-hashed-asset /assets/app.abc123.js)"
 [[ "$code" == "200" ]] || fail "cache_hashed_asset_status=$code"
@@ -137,9 +140,11 @@ assert_no_header "$TMP/cache-private-api.headers" '^Cache-Control:.*public'
 
 code="$(request cache-private-html /account)"
 [[ "$code" == "200" ]] || fail "cache_private_html_status=$code"
+assert_header "$TMP/cache-private-html.headers" '^Content-Type:[[:space:]]*text/html;[[:space:]]*charset=utf-8$'
 assert_header "$TMP/cache-private-html.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0$'
 assert_header "$TMP/cache-private-html.headers" '^Pragma:[[:space:]]*no-cache$'
 assert_no_header "$TMP/cache-private-html.headers" '^Cache-Control:.*public'
+[[ "$(cat "$TMP/cache-private-html.body")" == '<!doctype html><html lang="en"><body>private html fixture</body></html>' ]] || fail "cache_private_html_body_mismatch"
 
 code="$(request compressed /compressed -H 'Accept-Encoding: gzip')"
 [[ "$code" == "200" ]] || fail "compressed_status=$code"
