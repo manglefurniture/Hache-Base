@@ -282,8 +282,22 @@ function readinessEvaluation(string $id, array $control, ?array $provided): arra
     ];
 }
 
+function readinessSourceLabel(string $standardPath, string $root): string
+{
+    $realStandard = realpath($standardPath);
+    $realRoot = realpath($root);
+    if ($realStandard !== false && $realRoot !== false) {
+        $prefix = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (str_starts_with($realStandard, $prefix)) {
+            return str_replace(DIRECTORY_SEPARATOR, '/', substr($realStandard, strlen($prefix)));
+        }
+    }
+
+    return $realStandard !== false ? $realStandard : $standardPath;
+}
+
 /** @return array<string,mixed> */
-function readinessBuildReport(string $level, string $standardPath, array $registry, array $evidence): array
+function readinessBuildReport(string $level, string $standardPath, string $standardSource, array $registry, array $evidence): array
 {
     $controls = [];
     $stateCounts = array_fill_keys(READINESS_STATES, 0);
@@ -292,6 +306,11 @@ function readinessBuildReport(string $level, string $standardPath, array $regist
     $outOfLevelCount = 0;
     $blockingUnresolved = 0;
     $humanPending = 0;
+
+    $validatedProvided = [];
+    foreach ($evidence['controls'] as $id => $provided) {
+        $validatedProvided[$id] = readinessEvaluation($id, $registry[$id], $provided);
+    }
 
     foreach ($registry as $id => $control) {
         $applicable = readinessAppliesToLevel($control['min_level'], $level);
@@ -315,7 +334,7 @@ function readinessBuildReport(string $level, string $standardPath, array $regist
         }
 
         $effectiveSeverity = readinessEffectiveSeverity($control['severity'], $level);
-        $evaluation = readinessEvaluation($id, $control, $evidence['controls'][$id] ?? null);
+        $evaluation = $validatedProvided[$id] ?? readinessEvaluation($id, $control, null);
         $applicableCount++;
         $stateCounts[$evaluation['state']]++;
         $severityCounts[$effectiveSeverity]++;
@@ -347,7 +366,7 @@ function readinessBuildReport(string $level, string $standardPath, array $regist
     return [
         'schema_version' => 1,
         'source' => [
-            'standard' => 'docs/production-readiness/PRODUCTION-READINESS-STANDARD.md',
+            'standard' => $standardSource,
             'sha256' => hash_file('sha256', $standardPath),
             'canonical_control_count' => count($registry),
         ],
@@ -383,6 +402,7 @@ function readinessMarkdown(array $report): string
         '',
         '> **No es una declaración de Production Ready.** Proyecta el registro canónico y evidencia explícita; no auto-aprueba controles ni sustituye revisión humana.',
         '',
+        '- Standard: `' . $escape($report['source']['standard']) . '`',
         '- Standard SHA-256: `' . $report['source']['sha256'] . '`',
         '- Controles canónicos: ' . $report['source']['canonical_control_count'],
         '- Aplicables por nivel: ' . $summary['applicable_controls'],
@@ -402,8 +422,8 @@ function readinessMarkdown(array $report): string
     $lines[] = '';
     $lines[] = '## Controles aplicables';
     $lines[] = '';
-    $lines[] = '| ID | Severidad efectiva | Condición | Auto | Humana | Estado | Evidencia |';
-    $lines[] = '| --- | --- | --- | --- | --- | --- | --- |';
+    $lines[] = '| ID | Severidad efectiva | Condición | Auto | Humana | Estado | Evidencia | Nota | Justificación | Revisado por | Fecha revisión |';
+    $lines[] = '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |';
     foreach ($report['controls'] as $control) {
         if ($control['scope'] !== 'applicable') {
             continue;
@@ -415,7 +435,11 @@ function readinessMarkdown(array $report): string
             . ' | ' . $escape($control['automatable'])
             . ' | ' . $escape($control['human_required'])
             . ' | ' . $escape($evaluation['state'])
-            . ' | ' . $escape(implode(', ', $evaluation['evidence'])) . ' |';
+            . ' | ' . $escape(implode(', ', $evaluation['evidence']))
+            . ' | ' . $escape($evaluation['note'])
+            . ' | ' . $escape($evaluation['justification'])
+            . ' | ' . $escape($evaluation['reviewed_by'])
+            . ' | ' . $escape($evaluation['reviewed_at']) . ' |';
     }
 
     return implode(PHP_EOL, $lines) . PHP_EOL;
@@ -441,14 +465,16 @@ function readinessWrite(?string $path, string $content): void
 
 $options = readinessOptions($argv);
 $root = dirname(__DIR__, 2);
-$standardPath = $options['standard'] ?? ($root . '/docs/production-readiness/PRODUCTION-READINESS-STANDARD.md');
+$defaultStandardPath = $root . '/docs/production-readiness/PRODUCTION-READINESS-STANDARD.md';
+$standardPath = $options['standard'] ?? $defaultStandardPath;
 if (!is_string($standardPath) || !is_file($standardPath)) {
     readinessFail('standard_not_found=' . (string) $standardPath);
 }
+$standardSource = readinessSourceLabel($standardPath, $root);
 
 $registry = readinessCanonicalRegistry($standardPath);
 $evidence = readinessEvidence(is_string($options['evidence']) ? $options['evidence'] : null, $registry);
-$report = readinessBuildReport((string) $options['level'], $standardPath, $registry, $evidence);
+$report = readinessBuildReport((string) $options['level'], $standardPath, $standardSource, $registry, $evidence);
 $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 if (!is_string($json)) {
     readinessFail('json_encode_failed');

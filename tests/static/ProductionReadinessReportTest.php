@@ -60,6 +60,7 @@ assert($rcA === 0, $stderrA);
 $reportA = json_decode($stdoutA, true, 512, JSON_THROW_ON_ERROR);
 assert($reportA['schema_version'] === 1);
 assert($reportA['level'] === 'A');
+assert($reportA['source']['standard'] === 'docs/production-readiness/PRODUCTION-READINESS-STANDARD.md');
 assert($reportA['source']['canonical_control_count'] === 126);
 assert($reportA['summary']['applicable_controls'] + $reportA['summary']['out_of_level_controls'] === 126);
 assert($reportA['decision'] === 'NOT_A_PRODUCTION_READY_DECLARATION');
@@ -105,6 +106,7 @@ file_put_contents($validEvidence, json_encode([
         'GOV-001' => [
             'state' => 'PASS',
             'evidence' => ['docs/project-profile.md'],
+            'note' => 'Perfil aprobado para el fixture.',
             'reviewed_by' => 'fixture-reviewer',
             'reviewed_at' => '2026-09-04',
         ],
@@ -139,6 +141,10 @@ assert(str_contains($markdown, 'No es una declaración de Production Ready'));
 assert(str_contains($markdown, 'Standard SHA-256'));
 assert(str_contains($markdown, '| GOV-001 | BLOCKER |'));
 assert(str_contains($markdown, '| PASS | 1 |'));
+assert(str_contains($markdown, 'Perfil aprobado para el fixture.'));
+assert(str_contains($markdown, 'No existe todavía tráfico de campo suficiente; se usa PERF-002.'));
+assert(str_contains($markdown, 'fixture-reviewer'));
+assert(str_contains($markdown, '2026-09-04'));
 
 $missingHuman = $tmp . '/missing-human.json';
 file_put_contents($missingHuman, json_encode([
@@ -160,11 +166,42 @@ file_put_contents($missingNa, json_encode([
 assert($rcMissingNa === 2);
 assert(str_contains($errMissingNa, 'na_requires_justification_and_evidence=PERF-001'));
 
+$outOfLevelInvalid = $tmp . '/out-of-level-invalid.json';
+file_put_contents($outOfLevelInvalid, json_encode([
+    'controls' => [
+        'SEC-004' => ['state' => 'BANANA'],
+    ],
+]));
+[$rcOutOfLevelInvalid, , $errOutOfLevelInvalid] = runReadinessReport($reporter, ['--level', 'A', '--evidence', $outOfLevelInvalid]);
+assert($rcOutOfLevelInvalid === 2);
+assert(str_contains($errOutOfLevelInvalid, 'invalid_state=SEC-004:BANANA'));
+
+$outOfLevelMissingReview = $tmp . '/out-of-level-missing-review.json';
+file_put_contents($outOfLevelMissingReview, json_encode([
+    'controls' => [
+        'SEC-004' => ['state' => 'PASS', 'evidence' => ['tests/sec-004.md']],
+    ],
+]));
+[$rcOutOfLevelMissingReview, , $errOutOfLevelMissingReview] = runReadinessReport($reporter, ['--level', 'A', '--evidence', $outOfLevelMissingReview]);
+assert($rcOutOfLevelMissingReview === 2);
+assert(str_contains($errOutOfLevelMissingReview, 'human_pass_or_na_requires_reviewer_and_date=SEC-004'));
+
 $unknown = $tmp . '/unknown.json';
 file_put_contents($unknown, json_encode(['controls' => ['NOPE-999' => ['state' => 'NOT EVALUATED']]]));
 [$rcUnknown, , $errUnknown] = runReadinessReport($reporter, ['--level', 'A', '--evidence', $unknown]);
 assert($rcUnknown === 2);
 assert(str_contains($errUnknown, 'unknown_evidence_control=NOPE-999'));
+
+$overrideStandard = $tmp . '/PRODUCTION-READINESS-STANDARD.override.md';
+assert(copy($root . '/docs/production-readiness/PRODUCTION-READINESS-STANDARD.md', $overrideStandard));
+[$rcOverride, $stdoutOverride, $stderrOverride] = runReadinessReport($reporter, [
+    '--level', 'A',
+    '--standard', $overrideStandard,
+]);
+assert($rcOverride === 0, $stderrOverride);
+$reportOverride = json_decode($stdoutOverride, true, 512, JSON_THROW_ON_ERROR);
+assert($reportOverride['source']['standard'] === realpath($overrideStandard));
+assert($reportOverride['source']['sha256'] === hash_file('sha256', $overrideStandard));
 
 [$rcInvalidLevel, , $errInvalidLevel] = runReadinessReport($reporter, ['--level', 'D']);
 assert($rcInvalidLevel === 2);
