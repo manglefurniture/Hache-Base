@@ -18,7 +18,7 @@ $require = static function (string $haystack, string $fragment): void {
 foreach ([
     'Csrf::validate',
     'data-form-state="',
-    "'loading'",
+    'f.dataset.formState="loading"',
     "'success'",
     "'error'",
     'company_website',
