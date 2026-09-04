@@ -1,0 +1,112 @@
+<?php
+
+declare(strict_types=1);
+
+use HacheBase\Security\Headers;
+use HacheBase\Security\SessionSecurity;
+
+require_once dirname(__DIR__, 2) . '/security/headers.php';
+require_once dirname(__DIR__, 2) . '/security/session-security.php';
+
+$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+if (!is_string($path)) {
+    $path = '/';
+}
+
+$plain = static function (string $body, int $status = 200): void {
+    http_response_code($status);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo $body;
+};
+
+switch ($path) {
+    case '/health':
+        header('Cache-Control: no-store');
+        $plain("ok\n");
+        return true;
+
+    case '/headers':
+        Headers::apply([
+            'csp' => [
+                'mode' => 'report-only',
+                'directives' => [
+                    'default-src' => ["'self'"],
+                    'object-src' => ["'none'"],
+                    'base-uri' => ["'self'"],
+                ],
+            ],
+        ], $_SERVER);
+        header('Cache-Control: no-store');
+        $plain("headers fixture\n");
+        return true;
+
+    case '/cookie':
+        $cookie = SessionSecurity::buildCookieParams([], $_SERVER);
+        setcookie('HB_HTTP_FIXTURE', '1', [
+            'expires' => 0,
+            'path' => $cookie['path'],
+            'domain' => $cookie['domain'],
+            'secure' => $cookie['secure'],
+            'httponly' => $cookie['httponly'],
+            'samesite' => $cookie['samesite'],
+        ]);
+        header('Cache-Control: no-store');
+        $plain("cookie fixture\n");
+        return true;
+
+    case '/cache/public':
+        header('Cache-Control: public, max-age=60');
+        $plain("public cache fixture\n");
+        return true;
+
+    case '/cache/private':
+        header('Cache-Control: private, no-store, max-age=0');
+        header('Pragma: no-cache');
+        $plain("private cache fixture\n");
+        return true;
+
+    case '/compressed':
+        $body = "compressed fixture\n";
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Vary: Accept-Encoding');
+        $acceptEncoding = $_SERVER['HTTP_ACCEPT_ENCODING'] ?? '';
+        if (is_string($acceptEncoding) && preg_match('/(?:^|,)\s*gzip(?:\s*;[^,]*)?(?:,|$)/i', $acceptEncoding) === 1) {
+            $encoded = gzencode($body, 6);
+            if (!is_string($encoded)) {
+                http_response_code(500);
+                header('Cache-Control: no-store');
+                echo "Internal Server Error\n";
+                return true;
+            }
+            header('Content-Encoding: gzip');
+            header('Content-Length: ' . strlen($encoded));
+            echo $encoded;
+            return true;
+        }
+        echo $body;
+        return true;
+
+    case '/redirect':
+        header('Cache-Control: no-store');
+        header('Location: /target', true, 302);
+        return true;
+
+    case '/target':
+        $plain("redirect target\n");
+        return true;
+
+    case '/status/204':
+        http_response_code(204);
+        header('Cache-Control: no-store');
+        return true;
+
+    case '/error':
+        header('Cache-Control: no-store');
+        $plain("Internal Server Error\n", 500);
+        return true;
+
+    default:
+        header('Cache-Control: no-store');
+        $plain("Not Found\n", 404);
+        return true;
+}
