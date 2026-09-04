@@ -1,0 +1,8 @@
+{
+  "schema": "hache-license-policy-v1",
+  "denied": [],
+  "block_denied": true,
+  "report_missing": true,
+  "block_missing": false,
+  "note": "Hache Base does not make a universal legal license decision. Projects may define denied SPDX identifiers after legal/owner review."
+}

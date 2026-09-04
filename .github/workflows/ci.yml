@@ -46,6 +46,14 @@ jobs:
           find deployment integrations tests seo -type f -name '*.sh' -print0 \
             | xargs -0 -r -n1 bash -n
 
+      - name: Supply-chain baseline
+        env:
+          SUPPLY_CHAIN_MODE: baseline
+          SUPPLY_CHAIN_LEVEL: A
+          SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA: 1
+          SUPPLY_CHAIN_REPORT_FILE: ${{ runner.temp }}/hache-supply-chain-report.json
+        run: php security/supply-chain/check.php
+
       - name: PHP and unit checks
         run: bash tests/run.sh
 
