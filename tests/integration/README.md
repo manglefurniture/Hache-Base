@@ -14,10 +14,13 @@ Cada proyecto debe añadir casos concretos para sus flujos críticos. La base ex
 ## Cobertura base de integraciones
 
 - `ResendMailerTest.php`: contrato offline del transporte HTTPS.
-- `WebhookHmacTest.php`: parsing y verificación HMAC-SHA256.
+- `EmailDeliveryStatusTest.php`: orden de eventos del proveedor, stale/duplicate/conflict y vocabulario P1-08.
+- `ResendWebhookTest.php`: firma Svix offline, raw body, tolerancia temporal, mapping Resend y minimización de PII.
+- `EmailDeliveryMariaDbTest.sh`: dedupe por evento, proyección que no retrocede y reprocess de la misma inbox sin reenviar.
+- `WebhookHmacTest.php`: parsing y verificación HMAC-SHA256 genérica para integraciones que usan ese formato.
 - `CredentialCipherTest.php`: AES-256-GCM, manipulación/wrong-key y invariantes mínimas de la plantilla de credenciales versionadas.
 
-Estas pruebas no sustituyen las pruebas sandbox/staging específicas de cada proveedor.
+Estas pruebas no sustituyen las pruebas sandbox/staging específicas de cada proveedor ni una entrega real hacia un buzón controlado del proyecto.
 
 ## Regla de datos
 
