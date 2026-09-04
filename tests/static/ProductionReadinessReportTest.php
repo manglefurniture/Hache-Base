@@ -106,7 +106,7 @@ file_put_contents($validEvidence, json_encode([
         'GOV-001' => [
             'state' => 'PASS',
             'evidence' => ['docs/project-profile.md'],
-            'note' => 'Perfil aprobado para el fixture.',
+            'note' => 'Perfil aprobado para el fixture. regex \\| fallback.',
             'reviewed_by' => 'fixture-reviewer',
             'reviewed_at' => '2026-09-04',
         ],
@@ -145,6 +145,24 @@ assert(str_contains($markdown, 'Perfil aprobado para el fixture.'));
 assert(str_contains($markdown, 'No existe todavía tráfico de campo suficiente; se usa PERF-002.'));
 assert(str_contains($markdown, 'fixture-reviewer'));
 assert(str_contains($markdown, '2026-09-04'));
+
+$govRow = null;
+foreach (explode(PHP_EOL, $markdown) as $line) {
+    if (str_starts_with($line, '| GOV-001 |')) {
+        $govRow = $line;
+        break;
+    }
+}
+assert(is_string($govRow));
+$regexStart = strpos($govRow, 'regex ');
+assert($regexStart !== false);
+$innerPipe = strpos($govRow, '|', $regexStart + strlen('regex '));
+assert($innerPipe !== false);
+$backslashesBeforePipe = 0;
+for ($i = $innerPipe - 1; $i >= 0 && $govRow[$i] === '\\'; $i--) {
+    $backslashesBeforePipe++;
+}
+assert($backslashesBeforePipe === 3);
 
 $missingHuman = $tmp . '/missing-human.json';
 file_put_contents($missingHuman, json_encode([
