@@ -17,7 +17,7 @@ $require = static function (string $haystack, string $fragment): void {
 
 foreach ([
     'Csrf::validate',
-    "'data-form-state=\"'",
+    'data-form-state="',
     "'loading'",
     "'success'",
     "'error'",
@@ -43,6 +43,6 @@ $require($test, 'honeypot_status');
 $require($test, 'duplicate_status');
 $require($test, 'rate_blocked_status');
 
-assert(!preg_match('/https?:\/\/[^\s\"\']*(?:recaptcha|hcaptcha|turnstile)/i', $router));
+assert(preg_match('/https?:\/\/[^\s"\x27]*(?:recaptcha|hcaptcha|turnstile)/i', $router) !== 1);
 
 print "FORM_B_FIXTURE_CONTRACT_OK\n";
