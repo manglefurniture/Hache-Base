@@ -28,12 +28,12 @@ fail() {
 
 assert_header() {
   local file="$1" pattern="$2"
-  grep -Eiq "$pattern" "$file" || fail "missing_header pattern=$pattern file=$file"
+  tr -d '\r' < "$file" | grep -Eiq "$pattern" || fail "missing_header pattern=$pattern file=$file"
 }
 
 assert_no_header() {
   local file="$1" pattern="$2"
-  if grep -Eiq "$pattern" "$file"; then
+  if tr -d '\r' < "$file" | grep -Eiq "$pattern"; then
     fail "unexpected_header pattern=$pattern file=$file"
   fi
 }
@@ -70,33 +70,33 @@ done
 
 code="$(request headers /headers)"
 [[ "$code" == "200" ]] || fail "headers_status=$code"
-assert_header "$TMP/headers.headers" '^X-Content-Type-Options:[[:space:]]*nosniff\r?$'
-assert_header "$TMP/headers.headers" '^X-Frame-Options:[[:space:]]*SAMEORIGIN\r?$'
-assert_header "$TMP/headers.headers" '^Referrer-Policy:[[:space:]]*strict-origin-when-cross-origin\r?$'
-assert_header "$TMP/headers.headers" '^Permissions-Policy:[[:space:]]*geolocation=\(\), microphone=\(\), camera=\(\)\r?$'
-assert_header "$TMP/headers.headers" "^Content-Security-Policy-Report-Only:[[:space:]]*default-src 'self'; object-src 'none'; base-uri 'self'\\r?$"
+assert_header "$TMP/headers.headers" '^X-Content-Type-Options:[[:space:]]*nosniff$'
+assert_header "$TMP/headers.headers" '^X-Frame-Options:[[:space:]]*SAMEORIGIN$'
+assert_header "$TMP/headers.headers" '^Referrer-Policy:[[:space:]]*strict-origin-when-cross-origin$'
+assert_header "$TMP/headers.headers" '^Permissions-Policy:[[:space:]]*geolocation=\(\), microphone=\(\), camera=\(\)$'
+assert_header "$TMP/headers.headers" "^Content-Security-Policy-Report-Only:[[:space:]]*default-src 'self'; object-src 'none'; base-uri 'self'$"
 assert_no_header "$TMP/headers.headers" '^Content-Security-Policy:'
 assert_no_header "$TMP/headers.headers" '^Strict-Transport-Security:'
 [[ "$(cat "$TMP/headers.body")" == "headers fixture" ]] || fail "headers_body_mismatch"
 
 code="$(request cookie /cookie)"
 [[ "$code" == "200" ]] || fail "cookie_status=$code"
-assert_header "$TMP/cookie.headers" '^Set-Cookie:[[:space:]]*HB_HTTP_FIXTURE=1; path=/; HttpOnly; SameSite=Lax\r?$'
-assert_no_header "$TMP/cookie.headers" '^Set-Cookie:.*; Secure(;|\r?$)'
+assert_header "$TMP/cookie.headers" '^Set-Cookie:[[:space:]]*HB_HTTP_FIXTURE=1; path=/; HttpOnly; SameSite=Lax$'
+assert_no_header "$TMP/cookie.headers" '^Set-Cookie:.*; Secure(;|$)'
 
 code="$(request cache-public /cache/public)"
 [[ "$code" == "200" ]] || fail "cache_public_status=$code"
-assert_header "$TMP/cache-public.headers" '^Cache-Control:[[:space:]]*public, max-age=60\r?$'
+assert_header "$TMP/cache-public.headers" '^Cache-Control:[[:space:]]*public, max-age=60$'
 
 code="$(request cache-private /cache/private)"
 [[ "$code" == "200" ]] || fail "cache_private_status=$code"
-assert_header "$TMP/cache-private.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0\r?$'
-assert_header "$TMP/cache-private.headers" '^Pragma:[[:space:]]*no-cache\r?$'
+assert_header "$TMP/cache-private.headers" '^Cache-Control:[[:space:]]*private, no-store, max-age=0$'
+assert_header "$TMP/cache-private.headers" '^Pragma:[[:space:]]*no-cache$'
 
 code="$(request compressed /compressed -H 'Accept-Encoding: gzip')"
 [[ "$code" == "200" ]] || fail "compressed_status=$code"
-assert_header "$TMP/compressed.headers" '^Content-Encoding:[[:space:]]*gzip\r?$'
-assert_header "$TMP/compressed.headers" '^Vary:[[:space:]]*Accept-Encoding\r?$'
+assert_header "$TMP/compressed.headers" '^Content-Encoding:[[:space:]]*gzip$'
+assert_header "$TMP/compressed.headers" '^Vary:[[:space:]]*Accept-Encoding$'
 php -r '$raw=file_get_contents($argv[1]); $decoded=is_string($raw) ? gzdecode($raw) : false; exit($decoded === "compressed fixture\n" ? 0 : 1);' "$TMP/compressed.body" \
   || fail "gzip_body_invalid"
 
@@ -107,7 +107,7 @@ assert_no_header "$TMP/plain.headers" '^Content-Encoding:'
 
 code="$(request redirect /redirect)"
 [[ "$code" == "302" ]] || fail "redirect_status=$code"
-assert_header "$TMP/redirect.headers" '^Location:[[:space:]]*/target\r?$'
+assert_header "$TMP/redirect.headers" '^Location:[[:space:]]*/target$'
 follow_body="$(curl -fsS --max-time 5 -L "$BASE/redirect")" || fail "redirect_follow_failed"
 [[ "$follow_body" == "redirect target" ]] || fail "redirect_target_mismatch"
 
@@ -118,12 +118,12 @@ code="$(request no-content /status/204)"
 code="$(request not-found /missing-route)"
 [[ "$code" == "404" ]] || fail "status_404=$code"
 [[ "$(cat "$TMP/not-found.body")" == "Not Found" ]] || fail "status_404_body_mismatch"
-assert_header "$TMP/not-found.headers" '^Cache-Control:[[:space:]]*no-store\r?$'
+assert_header "$TMP/not-found.headers" '^Cache-Control:[[:space:]]*no-store$'
 
 code="$(request server-error /error)"
 [[ "$code" == "500" ]] || fail "status_500=$code"
 [[ "$(cat "$TMP/server-error.body")" == "Internal Server Error" ]] || fail "status_500_body_mismatch"
-assert_header "$TMP/server-error.headers" '^Cache-Control:[[:space:]]*no-store\r?$'
+assert_header "$TMP/server-error.headers" '^Cache-Control:[[:space:]]*no-store$'
 if grep -Eqi 'stack trace|fatal error|tests/http|/home/|/var/www/' "$TMP/server-error.body"; then
   fail "status_500_leaks_internal_detail"
 fi
