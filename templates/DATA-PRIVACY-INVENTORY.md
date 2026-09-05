@@ -33,6 +33,18 @@ No usar `no` para cerrar un control sin evidencia. Si el proyecto afirma **NO_PE
 
 `NO_PERSONAL_DATA` no vuelve automáticamente N/A a `PRIV-003`: cookies/analytics/trackers se evalúan por separado cuando existen.
 
+Si el proyecto afirma que no existen analytics/cookies/trackers, registrar un estado vacío verificable para `PRIV-003`:
+
+- Declaración: `NO_TRACKERS`
+- Alcance revisado: páginas/CUF, hosts/subdominios, browser storage, cookies HTTP, scripts/SDKs, tag managers, network requests y entornos incluidos
+- Evidencia de scan/network/storage o inspección equivalente:
+- Herramienta/procedimiento y versión, cuando aplique:
+- Commit/build/entorno revisado:
+- Persona revisora:
+- Fecha (`YYYY-MM-DD`):
+
+`NO_TRACKERS` es evidencia de un inventario vacío, no un PASS automático. Debe corresponder al alcance real revisado y volver a evaluarse si aparecen scripts, storage, cookies, SDKs, analytics o terceros nuevos.
+
 ## 2. Inventario de datos — PRIV-001
 
 Usar IDs estables (`DATA-001`, `DATA-002`, …). Inventariar por campo o grupo homogéneo únicamente cuando finalidad, acceso, retención y eliminación sean realmente iguales.
@@ -185,6 +197,8 @@ La revisión debe demostrar minimización por campo/grupo, acceso mínimo, prote
 
 La revisión debe demostrar inventario real y comportamiento observado de storage/network frente a la política de consentimiento/ley que el proyecto haya aprobado. `No hay banner` y `hay banner` no son por sí solos evidencia de cumplimiento.
 
+Cuando la revisión concluya que no existen trackers, `NO_TRACKERS` debe aportar alcance, evidencia de scan/network/storage o inspección equivalente, commit/build/entorno, persona revisora y fecha. Un `no` sin esa evidencia permanece sin evaluar.
+
 ## 9. Cambios que obligan a re-evaluar
 
 Revisar el inventario cuando cambie cualquiera de estos puntos:
@@ -203,5 +217,6 @@ Revisar el inventario cuando cambie cualquiera de estos puntos:
 - No copiar una “base legal” genérica sin identificar jurisdicción, decisión y referencia de aprobación del proyecto.
 - No asumir que cifrar un dato justifica recopilarlo o conservarlo.
 - No convertir automáticamente `NO_PERSONAL_DATA` en PASS sin alcance y evidencia de revisión.
+- No convertir automáticamente `NO_TRACKERS` en PASS sin alcance y evidencia verificable del inventario vacío.
 - No convertir automáticamente este inventario en `PASS`; `PRIV-001…003` requieren evidencia del proyecto y revisión humana según el registro canónico.
 - No usar P1-09 para imponer una CMP, proveedor de analytics, herramienta legal o política universal desde Core.
