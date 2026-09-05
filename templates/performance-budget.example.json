@@ -28,11 +28,6 @@
     "font_transfer_bytes": null,
     "third_party_transfer_bytes": null,
     "third_party_requests": null,
-    "per_origin": {
-      "https://third-party.example.invalid": {
-        "transfer_bytes": null,
-        "requests": null
-      }
-    }
+    "per_origin": {}
   }
 }
