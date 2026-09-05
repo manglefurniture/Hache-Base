@@ -2,6 +2,20 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TEMPLATE="$ROOT/templates/ARTIFACT-PROMOTION.md"
+
+for fragment in \
+  'build una sola vez' \
+  'digest + commit' \
+  'no auto-PASS' \
+  'No construir cambios no revisados directamente en producción' \
+  'P2-06'; do
+  grep -Fq "$fragment" "$TEMPLATE" || {
+    echo "ERROR: missing artifact promotion template fragment: $fragment" >&2
+    exit 1
+  }
+done
+
 TMP="$(mktemp -d)"
 cleanup() {
   rm -rf "$TMP"
@@ -51,6 +65,17 @@ grep -q '"decision": "ARTIFACT_IDENTITY_ONLY_NOT_PRODUCTION_READY_DECLARATION"' 
 export EXPECTED_COMMIT="$TARGET"
 php "$ROOT/deployment/artifact-manifest.php" verify > "$TMP/verify.log"
 grep -q '^ARTIFACT_VERIFY_OK ' "$TMP/verify.log"
+
+# A manifest must never overwrite the artifact it describes.
+if ARTIFACT_MANIFEST="$ARTIFACT_PATH" \
+   SOURCE_COMMIT="$TARGET" \
+   php "$ROOT/deployment/artifact-manifest.php" create >"$TMP/collision.out" 2>"$TMP/collision.err"; then
+  echo 'ERROR: manifest helper accepted artifact/manifest path collision' >&2
+  exit 1
+fi
+grep -q 'artifact_manifest_path_collision' "$TMP/collision.err"
+EXPECT_AFTER_COLLISION="$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
+test -n "$EXPECT_AFTER_COLLISION"
 
 # A different release commit must not be accepted even when the bytes are intact.
 BAD_COMMIT="0000000000000000000000000000000000000000"
@@ -112,6 +137,7 @@ if PROMOTE_COMMAND='exit 9' bash "$ROOT/deployment/promote-artifact.sh" >"$TMP/p
   echo 'ERROR: promotion swallowed installer failure' >&2
   exit 1
 fi
+grep -q 'exit_code=9' "$TMP/promote-fail.err"
 ! grep -q '^ARTIFACT_PROMOTION_OK ' "$TMP/promote-fail.out"
 
 echo 'ARTIFACT_PROMOTION_TEST_OK'
