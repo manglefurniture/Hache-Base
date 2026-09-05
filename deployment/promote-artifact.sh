@@ -9,7 +9,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROMOTION_WORK_ROOT="${PROMOTION_WORK_ROOT:-${TMPDIR:-/tmp}}"
 
-for command in php realpath mktemp cp chmod; do
+for command in php realpath mktemp cp chmod mkdir rm basename; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "ARTIFACT_PROMOTION_FAILED missing_command=$command" >&2
     exit 2
@@ -37,7 +37,9 @@ chmod 700 "$SNAPSHOT_DIR"
 cleanup() {
   rm -rf -- "$SNAPSHOT_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 SNAPSHOT_ARTIFACT="$SNAPSHOT_DIR/$(basename "$SOURCE_ARTIFACT")"
 SNAPSHOT_MANIFEST="$SNAPSHOT_DIR/$(basename "$SOURCE_MANIFEST")"
@@ -67,7 +69,9 @@ export VERIFIED_SOURCE_COMMIT VERIFIED_ARTIFACT_SHA256 VERIFIED_ARTIFACT_SIZE
 # snapshot before returning. This boundary deliberately does not build or run the
 # pre-release test suite again in production.
 echo "ARTIFACT_PROMOTION_GATE status=verified source_commit=$VERIFIED_SOURCE_COMMIT sha256=$VERIFIED_ARTIFACT_SHA256"
-if ! bash -lc "$PROMOTE_COMMAND"; then
+if bash -lc "$PROMOTE_COMMAND"; then
+  :
+else
   exit_code=$?
   echo "ARTIFACT_PROMOTION_FAILED promote_command exit_code=$exit_code source_commit=$VERIFIED_SOURCE_COMMIT" >&2
   exit "$exit_code"
