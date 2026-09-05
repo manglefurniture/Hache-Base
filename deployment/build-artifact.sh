@@ -14,7 +14,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARTIFACT_BUILD_COMMAND="${ARTIFACT_BUILD_COMMAND:-:}"
 
-for command in git tar gzip php realpath mktemp; do
+for command in git tar gzip php realpath mktemp sha256sum awk; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "BUILD_ARTIFACT_FAILED missing_command=$command" >&2
     exit 2
@@ -92,14 +92,16 @@ mkdir -p "$ARTIFACT_DIR" "$MANIFEST_DIR"
 
 TMP_ARTIFACT="$(mktemp "$ARTIFACT_DIR/.hache-artifact-XXXXXX.tar.gz")"
 cleanup() {
-  rm -f "$TMP_ARTIFACT"
+  if [[ -n "${TMP_ARTIFACT:-}" ]]; then
+    rm -f -- "$TMP_ARTIFACT"
+  fi
 }
 trap cleanup EXIT
 
 # Package only after build and tests have succeeded. The deploy side receives this
 # exact byte stream; it does not rebuild or retest in production.
 tar -C "$CONTENT_REAL" --exclude='.git' -czf "$TMP_ARTIFACT" .
-mv -f "$TMP_ARTIFACT" "$ARTIFACT_PATH_ABS"
+mv -f -- "$TMP_ARTIFACT" "$ARTIFACT_PATH_ABS"
 TMP_ARTIFACT=""
 chmod 600 "$ARTIFACT_PATH_ABS"
 
