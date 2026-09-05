@@ -72,6 +72,15 @@ $expectedLevels = ['A', 'B', 'C'];
 $fixtures = [];
 $executionContract = $runSh . "\n" . $workflow;
 $coverageKeys = ['classification', 'checklist', 'headers', 'errors', 'cuf', 'budgets'];
+$requiredExecutableEvidence = [
+    'tests/http/ProductionReadinessHttpTest.sh',
+    'tests/security/HeadersTest.php',
+    'tests/security/ProductionReadinessCoreTest.php',
+    'tests/browser/config-contract.mjs',
+    'tests/performance/ReleaseBudgetTest.mjs',
+    'tests/form-b/ProductionReadinessFormBTest.sh',
+    'tests/integration/InboxOutboxMariaDbTest.sh',
+];
 $cufKeys = [
     'id',
     'level',
@@ -92,6 +101,11 @@ $cufKeys = [
     'signals',
     'recovery',
 ];
+
+foreach ($requiredExecutableEvidence as $relativePath) {
+    assertFixturePath($root, $relativePath, 'required_executable_evidence');
+    assert(str_contains($executionContract, $relativePath), 'required_evidence_not_executed_in_ci_' . $relativePath);
+}
 
 foreach ($expectedLevels as $level) {
     $path = $fixtureDir . '/level-' . strtolower($level) . '.json';
@@ -157,11 +171,6 @@ foreach ($expectedLevels as $level) {
         foreach ($fixture['coverage'][$category] as $relativePath) {
             assert(is_string($relativePath));
             assertFixturePath($root, $relativePath, 'coverage_' . $level . '_' . $category);
-
-            $extension = pathinfo($relativePath, PATHINFO_EXTENSION);
-            if (str_starts_with($relativePath, 'tests/') && in_array($extension, ['php', 'sh', 'mjs'], true)) {
-                assert(str_contains($executionContract, $relativePath), 'coverage_not_executed_in_ci_' . $relativePath);
-            }
         }
     }
 
