@@ -14,7 +14,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARTIFACT_BUILD_COMMAND="${ARTIFACT_BUILD_COMMAND:-:}"
 
-for command in git tar gzip php realpath mktemp sha256sum awk; do
+for command in git tar gzip php realpath mktemp sha256sum awk mv rm mkdir chmod dirname; do
   command -v "$command" >/dev/null 2>&1 || {
     echo "BUILD_ARTIFACT_FAILED missing_command=$command" >&2
     exit 2
@@ -52,16 +52,81 @@ ARTIFACT_MANIFEST_ABS="$(realpath -m "$ARTIFACT_MANIFEST")"
   exit 2
 }
 
-# Release outputs are create-once. Reusing a stale path can make a failed build look
-# publishable to a later step that blindly uploads by filename.
-if [[ -e "$ARTIFACT_PATH_ABS" || -L "$ARTIFACT_PATH_ABS" ]]; then
-  echo "BUILD_ARTIFACT_FAILED artifact_target_exists" >&2
-  exit 2
-fi
-if [[ -e "$ARTIFACT_MANIFEST_ABS" || -L "$ARTIFACT_MANIFEST_ABS" ]]; then
-  echo "BUILD_ARTIFACT_FAILED manifest_target_exists" >&2
-  exit 2
-fi
+for output_path in "$ARTIFACT_PATH_ABS" "$ARTIFACT_MANIFEST_ABS"; do
+  if [[ -d "$output_path" && ! -L "$output_path" ]]; then
+    echo "BUILD_ARTIFACT_FAILED output_target_is_directory path=$output_path" >&2
+    exit 2
+  fi
+
+  case "$output_path" in
+    "$APP_ROOT_REAL"/*)
+      relative_path="${output_path#"$APP_ROOT_REAL"/}"
+      if git ls-files --error-unmatch -- "$relative_path" >/dev/null 2>&1; then
+        echo "BUILD_ARTIFACT_FAILED output_target_is_tracked_source path=$relative_path" >&2
+        exit 2
+      fi
+      ;;
+  esac
+done
+
+QUARANTINE_ROOT="${ARTIFACT_QUARANTINE_ROOT:-$(dirname "$ARTIFACT_PATH_ABS")/.hache-artifact-quarantine}"
+QUARANTINE_DIR=""
+TMP_ARTIFACT=""
+build_success=0
+
+ensure_quarantine_dir() {
+  if [[ -n "$QUARANTINE_DIR" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$QUARANTINE_ROOT"
+  QUARANTINE_ROOT="$(realpath -e "$QUARANTINE_ROOT")"
+  QUARANTINE_DIR="$(mktemp -d "$QUARANTINE_ROOT/run-XXXXXX")"
+  chmod 700 "$QUARANTINE_DIR"
+}
+
+quarantine_path() {
+  local source_path="$1"
+  local label="$2"
+
+  if [[ ! -e "$source_path" && ! -L "$source_path" ]]; then
+    return 0
+  fi
+
+  ensure_quarantine_dir
+  mv -- "$source_path" "$QUARANTINE_DIR/$label"
+  echo "BUILD_ARTIFACT_QUARANTINED label=$label path=$QUARANTINE_DIR/$label"
+}
+
+cleanup() {
+  local exit_code=$?
+  set +e
+
+  if [[ -n "$TMP_ARTIFACT" ]]; then
+    rm -f -- "$TMP_ARTIFACT"
+  fi
+
+  if [[ "$build_success" != "1" ]]; then
+    # Never leave an advertised artifact/manifest path populated after a failed
+    # invocation. Anything created by build/test/package is preserved off-path.
+    quarantine_path "$ARTIFACT_PATH_ABS" "artifact.failed" >/dev/null 2>&1 || true
+    quarantine_path "$ARTIFACT_MANIFEST_ABS" "manifest.failed" >/dev/null 2>&1 || true
+    if [[ -n "$QUARANTINE_DIR" ]]; then
+      echo "BUILD_ARTIFACT_QUARANTINE_PRESERVED path=$QUARANTINE_DIR" >&2
+    fi
+  elif [[ -n "$QUARANTINE_DIR" ]]; then
+    rm -rf -- "$QUARANTINE_DIR"
+  fi
+
+  return "$exit_code"
+}
+trap cleanup EXIT
+
+# A retry can reuse configured paths, but prior bytes are moved away before any
+# fallible build/test phase. This prevents later upload/promotion steps from seeing
+# a previous successful pair after the current invocation fails.
+quarantine_path "$ARTIFACT_PATH_ABS" "artifact.previous"
+quarantine_path "$ARTIFACT_MANIFEST_ABS" "manifest.previous"
 
 run_phase() {
   local phase="$1"
@@ -101,13 +166,15 @@ fi
 
 run_phase tests "$ARTIFACT_TEST_COMMAND"
 
-# Build/test commands do not own release output paths. Catch accidental/stale writes
-# before packaging rather than overwriting bytes with ambiguous provenance.
+# Build/test commands do not own release output paths. Move accidental writes away
+# and fail rather than assigning them the manifest/evidence of this packaging step.
 if [[ -e "$ARTIFACT_PATH_ABS" || -L "$ARTIFACT_PATH_ABS" ]]; then
+  quarantine_path "$ARTIFACT_PATH_ABS" "artifact.created-by-phase"
   echo "BUILD_ARTIFACT_FAILED artifact_target_created_by_phase" >&2
   exit 2
 fi
 if [[ -e "$ARTIFACT_MANIFEST_ABS" || -L "$ARTIFACT_MANIFEST_ABS" ]]; then
+  quarantine_path "$ARTIFACT_MANIFEST_ABS" "manifest.created-by-phase"
   echo "BUILD_ARTIFACT_FAILED manifest_target_created_by_phase" >&2
   exit 2
 fi
@@ -117,12 +184,6 @@ MANIFEST_DIR="$(dirname "$ARTIFACT_MANIFEST_ABS")"
 mkdir -p "$ARTIFACT_DIR" "$MANIFEST_DIR"
 
 TMP_ARTIFACT="$(mktemp "$ARTIFACT_DIR/.hache-artifact-XXXXXX.tar.gz")"
-cleanup() {
-  if [[ -n "${TMP_ARTIFACT:-}" ]]; then
-    rm -f -- "$TMP_ARTIFACT"
-  fi
-}
-trap cleanup EXIT
 
 # Package only after build and tests have succeeded. The deploy side receives this
 # exact byte stream; it does not rebuild or retest in production.
@@ -142,4 +203,5 @@ export EXPECTED_COMMIT="$TARGET_COMMIT"
 php "$SCRIPT_DIR/artifact-manifest.php" verify
 
 ARTIFACT_SHA256="$(sha256sum "$ARTIFACT_PATH_ABS" | awk '{print $1}')"
+build_success=1
 echo "BUILD_ARTIFACT_OK source_commit=$TARGET_COMMIT sha256=$ARTIFACT_SHA256 artifact=$ARTIFACT_PATH_ABS manifest=$ARTIFACT_MANIFEST_ABS"
