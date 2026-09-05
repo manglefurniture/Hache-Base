@@ -11,7 +11,7 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-CHECKLIST.md` — proyección verificable del registro canónico de controles.
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
-- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y del criterio de salida que todavía requiere evidencia de un piloto B/C real.
+- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y de los criterios de salida todavía pendientes: fixtures A/C explícitos que cierren los gates P0/P1 y evidencia de un piloto B/C real con campo, restore y comunicación status.
 - `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización 126/126 Standard ↔ Checklist; no sustituye la norma.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
 - `ASYNC-OPERATIONS.md` — contrato reusable implementado en P0-05 para distinguir aceptación, confirmación, ambigüedad, retry y reconciliación.
@@ -96,7 +96,7 @@ P0-10 no ejecuta restore de DB, canary, blue-green, failover ni recuperación au
 
 P0-11 añade primitives y evidencia reusable para **DB-006 / DB-007** sin convertir Hache Base en un sistema de backup administrado:
 
-- `deployment/backup.sh` usa directorios únicos y crea `backup-manifest.env` + `BACKUP_COMPLETE` únicamente después de un dump/checksum exitoso;
+- `deployment/backup.sh` usa directorios únicos y crea `backup-manifest.env` + `BACKUP_COMPLETE` únicamente después de un dump/checksum exitosos;
 - `deployment/backup-freshness-check.sh` ignora backups incompletos, compara edad contra `RPO_SECONDS` y falla ante missing/stale/timestamp futuro; admite un `BACKUP_ALERT_COMMAND` local opcional;
 - `deployment/restore-drill.sh` exige target DB aislado, verifica checksums, ejecuta `RESTORE_VERIFY_COMMAND`, mide edad/RPO y duración/RTO, persiste `RESTORE_DRILL_REPORT_FILE` y limpia por default la DB del drill;
 - `templates/BACKUP-RESTORE.md` obliga a definir RPO/RTO, retención, alerta, owner y evidencia del último restore drill;
@@ -118,7 +118,7 @@ P0-12 cierra el baseline P0 con una política reusable de supply chain, mantenie
 
 P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
 
-**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. El baseline de implementación P1 está completo, pero el **criterio de salida P1 todavía no está cerrado** porque el roadmap exige evidencia de al menos un proyecto B/C piloto con evidencia de campo, restore y comunicación status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
+**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base, pero **los criterios de salida P0 y P1 todavía no están cerrados**. El mismo faltante de fixtures explícitos Nivel A y Nivel C deja abierto el gate P0 de “clasificación + Checklist” y el gate P1 de “headers + errores + CUF + budgets”. Después de cerrar ambos con la matriz A/B/C, P1 todavía exige evidencia real de al menos un proyecto B/C piloto **con flujo de comunicación aplicable**, incluyendo campo, restore y communication status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 
