@@ -84,15 +84,29 @@ if SOURCE_COMMIT="$TARGET" php "$ROOT/deployment/artifact-manifest.php" create >
 fi
 grep -q 'manifest_target_exists' "$TMP/recreate.err"
 
-# Build outputs are also create-once. A stale target must stop before build/test run.
-export FIXTURE_SENTINEL="$TMP/stale-build-ran"
-if ARTIFACT_BUILD_COMMAND='touch "$FIXTURE_SENTINEL"' \
+# A failed retry must remove prior advertised outputs before build/test and preserve
+# the previous bytes only under a quarantine path.
+STALE_ARTIFACT="$OUT/stale.tar.gz"
+STALE_MANIFEST="$OUT/stale.manifest.json"
+QUARANTINE="$TMP/quarantine"
+printf 'old-artifact\n' > "$STALE_ARTIFACT"
+printf 'old-manifest\n' > "$STALE_MANIFEST"
+rm -rf "$STAGE"
+if ARTIFACT_PATH="$STALE_ARTIFACT" \
+   ARTIFACT_MANIFEST="$STALE_MANIFEST" \
+   ARTIFACT_QUARANTINE_ROOT="$QUARANTINE" \
+   ARTIFACT_TEST_COMMAND='exit 7' \
    bash "$ROOT/deployment/build-artifact.sh" >"$TMP/stale.out" 2>"$TMP/stale.err"; then
-  echo 'ERROR: build helper reused stale release paths' >&2
+  echo 'ERROR: failed retry unexpectedly succeeded' >&2
   exit 1
 fi
-grep -q 'artifact_target_exists' "$TMP/stale.err"
-test ! -e "$FIXTURE_SENTINEL"
+test ! -e "$STALE_ARTIFACT"
+test ! -e "$STALE_MANIFEST"
+grep -q 'BUILD_ARTIFACT_QUARANTINE_PRESERVED' "$TMP/stale.err"
+test "$(find "$QUARANTINE" -type f -name 'artifact.previous' | wc -l)" -eq 1
+test "$(find "$QUARANTINE" -type f -name 'manifest.previous' | wc -l)" -eq 1
+grep -Rq 'old-artifact' "$QUARANTINE"
+grep -Rq 'old-manifest' "$QUARANTINE"
 
 # A different release commit must not be accepted even when the bytes are intact.
 BAD_COMMIT="0000000000000000000000000000000000000000"
@@ -112,12 +126,13 @@ fi
 grep -Eq 'artifact_(size|sha256)_mismatch' "$TMP/tamper.err"
 cp "$TMP/pristine.tar.gz" "$ARTIFACT_PATH"
 
-# A failed test phase must not create a releasable artifact or manifest.
+# A failed test phase with fresh paths must not create a releasable pair.
 rm -rf "$STAGE"
 FAIL_ARTIFACT="$OUT/failed.tar.gz"
 FAIL_MANIFEST="$OUT/failed.manifest.json"
 if ARTIFACT_PATH="$FAIL_ARTIFACT" \
    ARTIFACT_MANIFEST="$FAIL_MANIFEST" \
+   ARTIFACT_QUARANTINE_ROOT="$TMP/fresh-failure-quarantine" \
    ARTIFACT_TEST_COMMAND='exit 7' \
    bash "$ROOT/deployment/build-artifact.sh" >"$TMP/fail-build.out" 2>"$TMP/fail-build.err"; then
   echo 'ERROR: build helper succeeded after failing tests' >&2
