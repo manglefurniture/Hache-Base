@@ -61,23 +61,36 @@ function assertExactKeys(array $value, array $expected, string $label): void
     assert($actual === $expected, $label . '_keys_drift');
 }
 
+function assertFixturePath(string $root, string $relativePath, string $label): void
+{
+    assert($relativePath !== '', $label . '_empty');
+    assert(!str_contains($relativePath, '..'), $label . '_parent_escape');
+    assert(is_file($root . '/' . $relativePath), $label . '_missing_' . $relativePath);
+}
+
 $expectedLevels = ['A', 'B', 'C'];
 $fixtures = [];
 $executionContract = $runSh . "\n" . $workflow;
 $coverageKeys = ['classification', 'checklist', 'headers', 'errors', 'cuf', 'budgets'];
 $cufKeys = [
     'id',
+    'level',
+    'technical_owner',
+    'business_owner',
     'goal',
     'precondition',
     'steps',
     'observable_result',
+    'authoritative_result',
     'mutations',
     'integrations',
     'failure_states',
     'idempotency_key',
+    'concurrency_behavior',
     'automated_test',
     'smoke_contract',
     'signals',
+    'recovery',
 ];
 
 foreach ($expectedLevels as $level) {
@@ -110,21 +123,40 @@ foreach ($expectedLevels as $level) {
     assert(is_array($fixture['cufs']) && count($fixture['cufs']) >= 1);
     foreach ($fixture['cufs'] as $cuf) {
         assertExactKeys($cuf, $cufKeys, 'cuf_' . $level);
-        foreach (['id', 'goal', 'precondition', 'observable_result', 'mutations', 'integrations', 'idempotency_key', 'automated_test', 'smoke_contract'] as $field) {
+        assert($cuf['level'] === $level, 'cuf_level_drift_' . $level);
+        foreach ([
+            'id',
+            'technical_owner',
+            'business_owner',
+            'goal',
+            'precondition',
+            'observable_result',
+            'authoritative_result',
+            'mutations',
+            'integrations',
+            'idempotency_key',
+            'concurrency_behavior',
+            'automated_test',
+            'smoke_contract',
+            'recovery',
+        ] as $field) {
             assert(is_string($cuf[$field]) && trim($cuf[$field]) !== '', 'cuf_' . $level . '_' . $field);
         }
         foreach (['steps', 'failure_states', 'signals'] as $field) {
             assert(is_array($cuf[$field]) && count($cuf[$field]) >= 1, 'cuf_' . $level . '_' . $field);
         }
+        assertFixturePath($root, $cuf['automated_test'], 'cuf_' . $level . '_automated_test');
+        assertFixturePath($root, $cuf['smoke_contract'], 'cuf_' . $level . '_smoke_contract');
+        assert(str_contains($executionContract, $cuf['automated_test']), 'cuf_test_not_executed_' . $cuf['automated_test']);
+        assert(str_contains($executionContract, $cuf['smoke_contract']), 'cuf_smoke_not_connected_' . $cuf['smoke_contract']);
     }
 
     assertExactKeys($fixture['coverage'], $coverageKeys, 'coverage_' . $level);
     foreach ($coverageKeys as $category) {
         assert(is_array($fixture['coverage'][$category]) && count($fixture['coverage'][$category]) >= 1, 'coverage_empty_' . $level . '_' . $category);
         foreach ($fixture['coverage'][$category] as $relativePath) {
-            assert(is_string($relativePath) && $relativePath !== '');
-            assert(!str_contains($relativePath, '..'), 'coverage_parent_escape_' . $level);
-            assert(is_file($root . '/' . $relativePath), 'missing_coverage_file_' . $relativePath);
+            assert(is_string($relativePath));
+            assertFixturePath($root, $relativePath, 'coverage_' . $level . '_' . $category);
 
             $extension = pathinfo($relativePath, PATHINFO_EXTENSION);
             if (str_starts_with($relativePath, 'tests/') && in_array($extension, ['php', 'sh', 'mjs'], true)) {
@@ -159,6 +191,7 @@ foreach ($aSignals as $value) {
 }
 assert($fixtures['A']['fixture']['classification']['profile'] === 'informational');
 assert($fixtures['A']['controls']['SEC-004']['scope'] === 'out_of_level');
+assert($fixtures['A']['fixture']['cufs'][0]['idempotency_key'] === 'N/A — read-only flow');
 
 $bSignals = $fixtures['B']['fixture']['classification']['signals'];
 assert($fixtures['B']['fixture']['classification']['profile'] === 'interactive');
@@ -168,6 +201,7 @@ assert($bSignals['duplicate_or_loss_material_harm'] === false);
 assert($fixtures['B']['controls']['SEC-008']['scope'] === 'applicable');
 assert($fixtures['B']['controls']['ROB-005']['scope'] === 'out_of_level');
 assert(in_array('tests/form-b/ProductionReadinessFormBTest.sh', $fixtures['B']['fixture']['coverage']['cuf'], true));
+assert(str_contains($fixtures['B']['fixture']['cufs'][0]['concurrency_behavior'], 'does not claim durable'));
 
 $cSignals = $fixtures['C']['fixture']['classification']['signals'];
 assert($fixtures['C']['fixture']['classification']['profile'] === 'critical');
@@ -176,6 +210,7 @@ assert($cSignals['external_state_change'] === true);
 assert($cSignals['duplicate_or_loss_material_harm'] === true);
 assert($fixtures['C']['controls']['ROB-005']['scope'] === 'applicable');
 assert(in_array('tests/integration/InboxOutboxMariaDbTest.sh', $fixtures['C']['fixture']['coverage']['cuf'], true));
+assert(str_contains($fixtures['C']['fixture']['cufs'][0]['recovery'], 'do not issue a second critical mutation'));
 
 foreach ($expectedLevels as $level) {
     foreach (['headers', 'errors', 'cuf', 'budgets'] as $requiredCoverage) {
