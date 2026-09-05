@@ -21,21 +21,27 @@
   "cufs": [
     {
       "id": "CUF-A-READ",
+      "level": "A",
+      "technical_owner": "Hache Base fixture maintainers",
+      "business_owner": "synthetic informational scenario",
       "goal": "Read the primary public content and reach a second public section.",
-      "precondition": "The static production build is available through the HTTP fixture.",
+      "precondition": "The static production-shaped build is available through the HTTP fixture.",
       "steps": [
         "Request the primary HTML document.",
         "Verify the document exposes usable content and navigation.",
         "Request a representative error path and observe a safe failure response."
       ],
       "observable_result": "Public HTML is reachable, navigable and failures remain explicit without exposing sensitive details.",
+      "authoritative_result": "The requested public document or an explicit safe HTTP error response is returned; there is no business state to reconcile.",
       "mutations": "none",
       "integrations": "none",
       "failure_states": ["404", "500", "unavailable build"],
       "idempotency_key": "N/A — read-only flow",
+      "concurrency_behavior": "N/A — concurrent reads do not create or mutate business state.",
       "automated_test": "tests/http/ProductionReadinessHttpTest.sh",
-      "smoke_contract": "tests/browser/config-contract.mjs",
-      "signals": ["HTTP status", "security headers", "Lighthouse laboratory artifact"]
+      "smoke_contract": "tests/smoke/http-smoke.sh",
+      "signals": ["HTTP status", "security headers", "Lighthouse laboratory artifact"],
+      "recovery": "Restore or roll back the exact static artifact/assets and rerun health/smoke; no data restore is required for this synthetic A flow."
     }
   ],
   "coverage": {
@@ -56,7 +62,8 @@
     ],
     "cuf": [
       "tests/browser/fixture/index.html",
-      "tests/http/ProductionReadinessHttpTest.sh"
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/smoke/http-smoke.sh"
     ],
     "budgets": [
       "tests/browser/budgets.json",
