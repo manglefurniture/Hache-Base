@@ -11,6 +11,7 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-CHECKLIST.md` — proyección verificable del registro canónico de controles.
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
+- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y del criterio de salida que todavía requiere evidencia de un piloto B/C real.
 - `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización 126/126 Standard ↔ Checklist; no sustituye la norma.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
 - `ASYNC-OPERATIONS.md` — contrato reusable implementado en P0-05 para distinguir aceptación, confirmación, ambigüedad, retry y reconciliación.
@@ -117,7 +118,7 @@ P0-12 cierra el baseline P0 con una política reusable de supply chain, mantenie
 
 P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
 
-**Estado del roadmap:** P0-01 a P0-12 están implementados en Hache Base. El trabajo futuro comienza en P1; disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
+**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. El baseline de implementación P1 está completo, pero el **criterio de salida P1 todavía no está cerrado** porque el roadmap exige evidencia de al menos un proyecto B/C piloto con evidencia de campo, restore y comunicación status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 
@@ -132,7 +133,8 @@ P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhausti
 9. Antes de habilitar deploy de producción, completar `templates/DEPLOY-RECOVERY.md`, definir smoke/ventana/criterios y ejecutar un drill de staging.
 10. Cuando DB-006/DB-007 apliquen, completar `templates/BACKUP-RESTORE.md`, conectar backup/freshness a monitoreo y ejecutar un restore drill aislado con RPO/RTO medidos.
 11. Cuando P0-12 aplique, completar `templates/SUPPLY-CHAIN-TRIAGE.md`, declarar stacks y conservar `NOT EVALUATED` cuando SCA/licencias no tengan evidencia suficiente.
-12. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+12. Para adoptar P1, completar solo las plantillas/Extensions aplicables (`THIRD-PARTY-INVENTORY.md`, `CACHE-POLICY.md`, `DATA-PRIVACY-INVENTORY.md`, `ARTIFACT-PROMOTION.md`, `PERFORMANCE-BUDGET.md`) y ejecutar los fixtures/reporters con evidencia del proyecto real.
+13. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 
