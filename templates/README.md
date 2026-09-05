@@ -20,12 +20,13 @@ Todo archivo de esta carpeta debe:
 - `DEPLOY-RECOVERY.md`: adopción P0-10 con matriz código/DB/assets/config, punto de no retorno, smoke, observación, criterios y drill de recovery.
 - `BACKUP-RESTORE.md`: adopción P0-11 con RPO/RTO, freshness/alertas y evidencia de restore aislado.
 - `SUPPLY-CHAIN-TRIAGE.md`: adopción P0-12 con stacks/lockfiles, secret scan, SCA, triage/SLA, mitigaciones SEC-014 y revisión de licencias.
-- `THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010 con owner, propósito, datos compartidos, timeout/fallback, coste medido y criterio de retiro por tercero.
+- `THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010 con owner, propósito, datos compartidos, timeout/fallback, coste medido, budget P1-11 cuando aplica y criterio de retiro por tercero.
 - `CACHE-POLICY.md`: adopción P1-06/PERF-011 con matriz por HTML/assets/API/privado/errores e invalidación reproducible.
 - `DATA-PRIVACY-INVENTORY.md`: adopción P1-09/PRIV-001…003 con inventario de datos, minimización, acceso, retención, derechos y analytics/cookies/trackers sin imponer una regla legal universal.
 - `ARTIFACT-PROMOTION.md`: adopción P1-10/DPL-001 para build/test una vez, manifest verificable, promoción por digest+commit y rollback sin reconstruir.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
-- `PERFORMANCE-BUDGET.md`: presupuesto de performance.
+- `PERFORMANCE-BUDGET.md`: adopción P1-11/PERF-004 con presupuesto versionado para JS/CSS/imágenes/fuentes/terceros y criterios para CI.
+- `performance-budget.example.json`: contrato machine-readable P1-11 para `release-budget.mjs`; debe copiarse y completarse con límites justificados por proyecto.
 - `staging.env.example`: referencia de configuración de staging.
 
 Las plantillas no son implementaciones universales. Los schemas opcionales de `database/modules/` tampoco se aplican automáticamente: cada proyecto debe adaptarlos a su stack, riesgo y evidencia real.
