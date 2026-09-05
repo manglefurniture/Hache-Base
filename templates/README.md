@@ -23,6 +23,7 @@ Todo archivo de esta carpeta debe:
 - `THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010 con owner, propósito, datos compartidos, timeout/fallback, coste medido y criterio de retiro por tercero.
 - `CACHE-POLICY.md`: adopción P1-06/PERF-011 con matriz por HTML/assets/API/privado/errores e invalidación reproducible.
 - `DATA-PRIVACY-INVENTORY.md`: adopción P1-09/PRIV-001…003 con inventario de datos, minimización, acceso, retención, derechos y analytics/cookies/trackers sin imponer una regla legal universal.
+- `ARTIFACT-PROMOTION.md`: adopción P1-10/DPL-001 para build/test una vez, manifest verificable, promoción por digest+commit y rollback sin reconstruir.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
 - `PERFORMANCE-BUDGET.md`: presupuesto de performance.
 - `staging.env.example`: referencia de configuración de staging.
