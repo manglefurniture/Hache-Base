@@ -21,6 +21,9 @@
   "cufs": [
     {
       "id": "CUF-B-FORM",
+      "level": "B",
+      "technical_owner": "Hache Base fixture maintainers",
+      "business_owner": "synthetic form-request scenario",
       "goal": "Submit a public request exactly once and receive an accessible success or validation error state.",
       "precondition": "A secure fixture session and CSRF token are available.",
       "steps": [
@@ -30,13 +33,16 @@
         "Repeat the accepted submission_id and verify the synthetic effect is not duplicated."
       ],
       "observable_result": "The request is either rejected safely or accepted once with an explicit accessible state.",
-      "mutations": "synthetic session-scoped fixture effect only",
+      "authoritative_result": "For an accepted submission, the synthetic effect counter increments at most once for the submission_id in the fixture session.",
+      "mutations": "synthetic session-scoped fixture effect only; submitted personal fields are not persisted",
       "integrations": "none",
       "failure_states": ["419", "422", "429", "duplicate submission", "server error"],
       "idempotency_key": "submission_id within the fixture session",
+      "concurrency_behavior": "The fixture demonstrates repeated-submit dedupe but does not claim durable multi-process idempotency; a real project must replace it with project-appropriate persistence/claims.",
       "automated_test": "tests/form-b/ProductionReadinessFormBTest.sh",
       "smoke_contract": "tests/form-b/ProductionReadinessFormBTest.sh",
-      "signals": ["HTTP status", "Retry-After", "accessible error summary", "synthetic effect counter"]
+      "signals": ["HTTP status", "Retry-After", "accessible error summary", "synthetic effect counter"],
+      "recovery": "Rejected requests keep no business effect; accepted fixture state can be discarded with the isolated session. A real B project must document backup/recovery for any persisted data it adopts."
     }
   ],
   "coverage": {
