@@ -124,6 +124,9 @@ if ($command === 'create') {
     if ($artifactReal === $manifestTarget || ($manifestExistingReal !== false && $artifactReal === $manifestExistingReal)) {
         fail('artifact_manifest_path_collision');
     }
+    if (file_exists($manifestPath) || is_link($manifestPath)) {
+        fail('manifest_target_exists');
+    }
 
     $sourceCommit = canonicalCommit(requiredEnv('SOURCE_COMMIT'), 'source_commit');
     $ciRunRef = requiredEnv('CI_RUN_REF');
