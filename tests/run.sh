@@ -10,6 +10,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/ThirdPartyInv
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/DataPrivacyInventoryTemplateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/CachePolicyTemplateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/FormBFixtureContractTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/ProductionReadinessLevelFixturesTest.php"
 bash "$ROOT/tests/static/production-readiness-ci-report.sh"
 node "$ROOT/tests/browser/config-contract.mjs"
 node "$ROOT/tests/performance/ReleaseBudgetTest.mjs"
