@@ -11,7 +11,7 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-CHECKLIST.md` — proyección verificable del registro canónico de controles.
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
-- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y del criterio de salida que todavía requiere evidencia de un piloto B/C real.
+- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y de los criterios de salida todavía pendientes: fixtures A/C explícitos y evidencia de un piloto B/C real con campo, restore y comunicación status.
 - `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización 126/126 Standard ↔ Checklist; no sustituye la norma.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
 - `ASYNC-OPERATIONS.md` — contrato reusable implementado en P0-05 para distinguir aceptación, confirmación, ambigüedad, retry y reconciliación.
@@ -118,7 +118,7 @@ P0-12 cierra el baseline P0 con una política reusable de supply chain, mantenie
 
 P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
 
-**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. El baseline de implementación P1 está completo, pero el **criterio de salida P1 todavía no está cerrado** porque el roadmap exige evidencia de al menos un proyecto B/C piloto con evidencia de campo, restore y comunicación status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
+**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. El baseline de implementación P1 está completo, pero el **criterio de salida P1 todavía no está cerrado**. Quedan dos gates: completar fixtures explícitos Nivel A y Nivel C que cierren la condición A/B/C del roadmap, y después producir evidencia real de al menos un proyecto B/C piloto **con flujo de comunicación aplicable**, incluyendo campo, restore y communication status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 
