@@ -28,6 +28,10 @@ SOURCE_MANIFEST="$(realpath -e "$ARTIFACT_MANIFEST")"
   echo "ARTIFACT_PROMOTION_FAILED artifact_or_manifest_not_file" >&2
   exit 2
 }
+[[ "$SOURCE_ARTIFACT" != "$SOURCE_MANIFEST" ]] || {
+  echo "ARTIFACT_PROMOTION_FAILED artifact_manifest_path_collision" >&2
+  exit 2
+}
 
 mkdir -p "$PROMOTION_WORK_ROOT"
 PROMOTION_WORK_ROOT="$(realpath -e "$PROMOTION_WORK_ROOT")"
@@ -41,8 +45,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-SNAPSHOT_ARTIFACT="$SNAPSHOT_DIR/$(basename "$SOURCE_ARTIFACT")"
-SNAPSHOT_MANIFEST="$SNAPSHOT_DIR/$(basename "$SOURCE_MANIFEST")"
+mkdir -m 700 "$SNAPSHOT_DIR/artifact" "$SNAPSHOT_DIR/manifest"
+SNAPSHOT_ARTIFACT="$SNAPSHOT_DIR/artifact/$(basename "$SOURCE_ARTIFACT")"
+SNAPSHOT_MANIFEST="$SNAPSHOT_DIR/manifest/$(basename "$SOURCE_MANIFEST")"
 cp -- "$SOURCE_ARTIFACT" "$SNAPSHOT_ARTIFACT"
 cp -- "$SOURCE_MANIFEST" "$SNAPSHOT_MANIFEST"
 chmod 400 "$SNAPSHOT_ARTIFACT" "$SNAPSHOT_MANIFEST"
