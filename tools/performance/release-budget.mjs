@@ -58,6 +58,15 @@ function requireString(value, field) {
   return value.trim();
 }
 
+function rejectUnknownKeys(object, allowedKeys, field) {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(object)) {
+    if (!allowed.has(key)) {
+      throw new ConfigError(`unknown_key=${field}.${key}`);
+    }
+  }
+}
+
 function optionalBudget(value, field) {
   if (value === undefined || value === null) return null;
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -95,7 +104,13 @@ function normalizeOrigin(value, field) {
   return parsed.origin;
 }
 
-function normalizeExtensions(config) {
+function normalizeExtensions(rawConfig) {
+  let config = rawConfig;
+  if (config !== undefined) {
+    config = requireObject(config, 'extensions');
+    rejectUnknownKeys(config, Object.keys(DEFAULT_EXTENSIONS), 'extensions');
+  }
+
   const result = {};
   const seen = new Map();
   for (const [category, defaults] of Object.entries(DEFAULT_EXTENSIONS)) {
@@ -122,11 +137,17 @@ function normalizeExtensions(config) {
 
 function validateConfig(raw) {
   const config = requireObject(raw, 'root');
+  rejectUnknownKeys(
+    config,
+    ['schema_version', 'project', 'baseline', 'first_party_origins', 'release', 'network', 'extensions'],
+    'root',
+  );
   if (config.schema_version !== SCHEMA_VERSION) {
     throw new ConfigError(`unsupported_schema_version=${config.schema_version}`);
   }
   const project = requireString(config.project, 'project');
   const baseline = requireObject(config.baseline, 'baseline');
+  rejectUnknownKeys(baseline, ['reference', 'justification', 'owner', 'reviewed_at'], 'baseline');
   const baselineMeta = {
     reference: requireString(baseline.reference, 'baseline.reference'),
     justification: requireString(baseline.justification, 'baseline.justification'),
@@ -135,6 +156,11 @@ function validateConfig(raw) {
   };
 
   const releaseRaw = requireObject(config.release ?? {}, 'release');
+  rejectUnknownKeys(
+    releaseRaw,
+    ['total_bytes', 'javascript_bytes', 'css_bytes', 'image_bytes', 'font_bytes', 'other_bytes', 'max_image_bytes', 'max_font_bytes'],
+    'release',
+  );
   const release = {
     total_bytes: optionalBudget(releaseRaw.total_bytes, 'release.total_bytes'),
     javascript_bytes: optionalBudget(releaseRaw.javascript_bytes, 'release.javascript_bytes'),
@@ -147,6 +173,20 @@ function validateConfig(raw) {
   };
 
   const networkRaw = requireObject(config.network ?? {}, 'network');
+  rejectUnknownKeys(
+    networkRaw,
+    [
+      'total_transfer_bytes',
+      'javascript_transfer_bytes',
+      'css_transfer_bytes',
+      'image_transfer_bytes',
+      'font_transfer_bytes',
+      'third_party_transfer_bytes',
+      'third_party_requests',
+      'per_origin',
+    ],
+    'network',
+  );
   const network = {
     total_transfer_bytes: optionalBudget(networkRaw.total_transfer_bytes, 'network.total_transfer_bytes'),
     javascript_transfer_bytes: optionalBudget(networkRaw.javascript_transfer_bytes, 'network.javascript_transfer_bytes'),
@@ -163,6 +203,7 @@ function validateConfig(raw) {
     for (const [originText, rawBudget] of Object.entries(perOrigin)) {
       const origin = normalizeOrigin(originText, `network.per_origin.${originText}`);
       const budget = requireObject(rawBudget, `network.per_origin.${originText}`);
+      rejectUnknownKeys(budget, ['transfer_bytes', 'requests'], `network.per_origin.${origin}`);
       if (network.per_origin[origin]) {
         throw new ConfigError(`duplicate_per_origin=${origin}`);
       }
@@ -183,6 +224,12 @@ function validateConfig(raw) {
     }
     for (let index = 0; index < config.first_party_origins.length; index += 1) {
       firstPartyOrigins.add(normalizeOrigin(config.first_party_origins[index], `first_party_origins[${index}]`));
+    }
+  }
+
+  for (const origin of Object.keys(network.per_origin)) {
+    if (firstPartyOrigins.has(origin)) {
+      throw new ConfigError(`per_origin_conflicts_first_party=${origin}`);
     }
   }
 
@@ -400,7 +447,11 @@ async function loadLighthouseSummaries(directory, config) {
     const filePath = path.join(directory, entry.name);
     const report = await readJson(filePath, 'lighthouse_report');
     if (!report?.audits?.['network-requests']) continue;
-    summaries.push(summarizeLighthouseReport(report, entry.name, config.first_party_origins));
+    const summary = summarizeLighthouseReport(report, entry.name, config.first_party_origins);
+    if (Object.prototype.hasOwnProperty.call(config.network.per_origin, summary.page_origin)) {
+      throw new ConfigError(`per_origin_matches_page_origin=${entry.name}:${summary.page_origin}`);
+    }
+    summaries.push(summary);
   }
   if (summaries.length === 0) {
     throw new ConfigError(`no_lighthouse_network_reports=${directory}`);
