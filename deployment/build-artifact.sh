@@ -47,6 +47,21 @@ fi
 
 ARTIFACT_PATH_ABS="$(realpath -m "$ARTIFACT_PATH")"
 ARTIFACT_MANIFEST_ABS="$(realpath -m "$ARTIFACT_MANIFEST")"
+[[ "$ARTIFACT_PATH_ABS" != "$ARTIFACT_MANIFEST_ABS" ]] || {
+  echo "BUILD_ARTIFACT_FAILED artifact_manifest_path_collision" >&2
+  exit 2
+}
+
+# Release outputs are create-once. Reusing a stale path can make a failed build look
+# publishable to a later step that blindly uploads by filename.
+if [[ -e "$ARTIFACT_PATH_ABS" || -L "$ARTIFACT_PATH_ABS" ]]; then
+  echo "BUILD_ARTIFACT_FAILED artifact_target_exists" >&2
+  exit 2
+fi
+if [[ -e "$ARTIFACT_MANIFEST_ABS" || -L "$ARTIFACT_MANIFEST_ABS" ]]; then
+  echo "BUILD_ARTIFACT_FAILED manifest_target_exists" >&2
+  exit 2
+fi
 
 run_phase() {
   local phase="$1"
@@ -86,6 +101,17 @@ fi
 
 run_phase tests "$ARTIFACT_TEST_COMMAND"
 
+# Build/test commands do not own release output paths. Catch accidental/stale writes
+# before packaging rather than overwriting bytes with ambiguous provenance.
+if [[ -e "$ARTIFACT_PATH_ABS" || -L "$ARTIFACT_PATH_ABS" ]]; then
+  echo "BUILD_ARTIFACT_FAILED artifact_target_created_by_phase" >&2
+  exit 2
+fi
+if [[ -e "$ARTIFACT_MANIFEST_ABS" || -L "$ARTIFACT_MANIFEST_ABS" ]]; then
+  echo "BUILD_ARTIFACT_FAILED manifest_target_created_by_phase" >&2
+  exit 2
+fi
+
 ARTIFACT_DIR="$(dirname "$ARTIFACT_PATH_ABS")"
 MANIFEST_DIR="$(dirname "$ARTIFACT_MANIFEST_ABS")"
 mkdir -p "$ARTIFACT_DIR" "$MANIFEST_DIR"
@@ -101,7 +127,7 @@ trap cleanup EXIT
 # Package only after build and tests have succeeded. The deploy side receives this
 # exact byte stream; it does not rebuild or retest in production.
 tar -C "$CONTENT_REAL" --exclude='.git' -czf "$TMP_ARTIFACT" .
-mv -f -- "$TMP_ARTIFACT" "$ARTIFACT_PATH_ABS"
+mv -- "$TMP_ARTIFACT" "$ARTIFACT_PATH_ABS"
 TMP_ARTIFACT=""
 chmod 600 "$ARTIFACT_PATH_ABS"
 
