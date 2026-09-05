@@ -108,16 +108,33 @@ $artifactPath = requiredEnv('ARTIFACT_PATH');
 $manifestPath = requiredEnv('ARTIFACT_MANIFEST');
 
 if ($command === 'create') {
+    $directory = dirname($manifestPath);
+    if (!is_dir($directory) || !is_writable($directory)) {
+        fail('manifest_directory_not_writable');
+    }
+
+    $artifactReal = realpath($artifactPath);
+    $directoryReal = realpath($directory);
+    if ($artifactReal === false || $directoryReal === false) {
+        fail('artifact_or_manifest_path_unresolved');
+    }
+
+    $manifestTarget = $directoryReal . DIRECTORY_SEPARATOR . basename($manifestPath);
+    $manifestExistingReal = file_exists($manifestPath) ? realpath($manifestPath) : false;
+    if ($artifactReal === $manifestTarget || ($manifestExistingReal !== false && $artifactReal === $manifestExistingReal)) {
+        fail('artifact_manifest_path_collision');
+    }
+
     $sourceCommit = canonicalCommit(requiredEnv('SOURCE_COMMIT'), 'source_commit');
     $ciRunRef = requiredEnv('CI_RUN_REF');
     $buildEvidenceRef = requiredEnv('BUILD_EVIDENCE_REF');
     $testEvidenceRef = requiredEnv('TEST_EVIDENCE_REF');
-    $metadata = artifactMetadata($artifactPath);
+    $metadata = artifactMetadata($artifactReal);
 
     $manifest = [
         'schema' => ARTIFACT_SCHEMA,
         'source_commit' => $sourceCommit,
-        'artifact_name' => basename($artifactPath),
+        'artifact_name' => basename($artifactReal),
         'artifact_size_bytes' => $metadata['size'],
         'artifact_sha256' => $metadata['sha256'],
         'ci_run_ref' => $ciRunRef,
@@ -127,13 +144,13 @@ if ($command === 'create') {
         'decision' => 'ARTIFACT_IDENTITY_ONLY_NOT_PRODUCTION_READY_DECLARATION',
     ];
 
-    $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
-    $directory = dirname($manifestPath);
-    if (!is_dir($directory) || !is_writable($directory)) {
-        fail('manifest_directory_not_writable');
+    try {
+        $json = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
+    } catch (JsonException) {
+        fail('manifest_json_encode_failed');
     }
 
-    $temporary = tempnam($directory, '.artifact-manifest-');
+    $temporary = tempnam($directoryReal, '.artifact-manifest-');
     if ($temporary === false) {
         fail('manifest_temp_create_failed');
     }
@@ -143,7 +160,7 @@ if ($command === 'create') {
             fail('manifest_write_failed');
         }
         @chmod($temporary, 0600);
-        if (!rename($temporary, $manifestPath)) {
+        if (!rename($temporary, $manifestTarget)) {
             fail('manifest_rename_failed');
         }
     } finally {
@@ -157,7 +174,7 @@ if ($command === 'create') {
         $sourceCommit,
         $metadata['sha256'],
         $metadata['size'],
-        $manifestPath
+        $manifestTarget
     );
     exit(0);
 }
@@ -207,7 +224,7 @@ if ($expectedCommit !== false && trim($expectedCommit) !== '') {
     }
 }
 
-// Access the evidence fields so empty/invalid values can never be silently ignored.
+// These fields are required above so artifact identity never loses its CI/test linkage.
 assert($ciRunRef !== '');
 assert($buildEvidenceRef !== '');
 assert($testEvidenceRef !== '');
