@@ -36,6 +36,7 @@ assert.equal(exampleConfig.release.image_bytes, null);
 assert.equal(exampleConfig.release.font_bytes, null);
 assert.equal(exampleConfig.network.third_party_transfer_bytes, null);
 assert.equal(exampleConfig.network.third_party_requests, null);
+assert.deepEqual(exampleConfig.network.per_origin, {});
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'hache-release-budget-'));
 try {
@@ -154,12 +155,27 @@ try {
   assert.match(result.stderr, /scope=release-file dimension=max_image_bytes actual=200 limit=199/);
   assert.match(result.stderr, /hero\.webp/);
 
+  const fontFileFail = structuredClone(baseConfig);
+  fontFileFail.release.max_font_bytes = 79;
+  await writeConfig(fontFileFail);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /scope=release-file dimension=max_font_bytes actual=80 limit=79/);
+  assert.match(result.stderr, /body\.woff2/);
+
   const thirdPartyFail = structuredClone(baseConfig);
   thirdPartyFail.network.third_party_transfer_bytes = 49;
   await writeConfig(thirdPartyFail);
   result = run(['--lighthouse-dir', lhrDir]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /dimension=third_party_transfer_bytes actual=50 limit=49/);
+
+  const thirdPartyRequestFail = structuredClone(baseConfig);
+  thirdPartyRequestFail.network.third_party_requests = 1;
+  await writeConfig(thirdPartyRequestFail);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /dimension=third_party_requests actual=2 limit=1/);
 
   const perOriginFail = structuredClone(baseConfig);
   perOriginFail.network.per_origin['https://analytics.example.test'].requests = 1;
