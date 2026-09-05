@@ -95,10 +95,14 @@ Usar `N/A — <justificación>` cuando una dimensión realmente no aplique. Un `
 - Delta LCP / INP / CLS / TBT, si aplica:
 - Latencia backend p50/p95 o tiempo añadido al CUF, si aplica:
 - Resultado / observación:
+- P1-11 budget key/origen (`performance-budget.json`), si aplica:
+- P1-11 límite de transferencia/requests y resultado, si aplica:
 
 No inventar un score único. Medir lo que el tercero realmente afecta. Para una API solo-servidor puede ser correcto documentar latencia/timeout y marcar métricas de navegador como `N/A — no participa en browser`. Para un script de navegador, una cifra de latencia backend por sí sola no representa su coste.
 
 Si no es posible hacer una prueba con/sin tercero, documentar el baseline alternativo, la limitación y por qué la evidencia sigue siendo útil. “Sin medición” no equivale a coste cero.
+
+P1-11 puede bloquear una regresión cuantitativa de transferencia/requests por origen, pero **no sustituye** este registro ni convierte automáticamente al tercero en aceptable. Si la integración no participa en browser, sus límites pueden seguir siendo timeout/latencia/CUF y el budget de red puede ser `N/A — <justificación>`.
 
 #### Retiro y revisión
 
@@ -118,6 +122,7 @@ Para cada tercero `planned` o `active`, la revisión debe poder responder con ev
 - qué **timeout** o presupuesto temporal limita su impacto;
 - cuál es el **fallback/degradación**;
 - cuál es su **coste de performance medido** y cómo se comparó con/sin tercero o baseline equivalente;
+- si participa en browser y existe P1-11, qué origen/regla de budget lo representa o por qué no aplica;
 - cuál es el **criterio de retiro**;
 - cuándo y por quién se revisó.
 
@@ -128,6 +133,7 @@ Si falta una de esas piezas, el inventario no debe presentarse como evidencia co
 - No guardar tokens, API keys, passwords, cookies ni secretos en este archivo; solo referencias de configuración.
 - No declarar un proveedor “aprobado”, “seguro” o “legal” por aparecer en el inventario.
 - No asumir que un tercero es aceptable porque el coste actual sea pequeño.
+- No reclasificar un origen como first-party únicamente para ocultarlo de un budget P1-11; documentar el control operativo real del origen.
 - No convertir automáticamente el inventario en `PASS`; `PERF-010` requiere revisión humana y medición del proyecto.
 - Actualizar el registro cuando cambien finalidad, datos, origen/endpoint, SDK, comportamiento, coste, timeout, fallback o estrategia de retiro.
 - Si P1-04 RUM usa un collector/SDK externo, registrarlo aquí como cualquier otro tercero.
