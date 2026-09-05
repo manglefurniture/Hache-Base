@@ -27,6 +27,17 @@
 
 Los ítems anteriores están disponibles como primitives, Extensions, plantillas, fixtures o tests de Hache Base. Su mera existencia **no** convierte los controles relacionados en PASS para un proyecto derivado.
 
+## Deuda todavía abierta del criterio de salida P0
+
+Aunque P0-01…P0-12 están implementados, el roadmap exige además como criterio de salida P0 que **un fixture A, B y C demuestre clasificación y checklist**. Ese gate continúa **PENDIENTE**: hoy existe un fixture nivel-específico B, pero no fixtures explícitos A y C equivalentes.
+
+El trabajo A/C que sigue debe cerrar simultáneamente dos alcances distintos, sin confundirlos:
+
+- **P0:** cada fixture A/B/C debe declarar y justificar su nivel, asociar CUF y demostrar la proyección/evaluación de Checklist/readiness correspondiente sin inventar PASS humanos.
+- **P1:** esos fixtures A/B/C deben además cubrir de forma demostrable headers, errores, CUF y budgets según el criterio de salida P1.
+
+Por tanto, completar solo páginas genéricas de HTTP/browser o solo etiquetar un fixture como A/C no cerrará el gate; la clasificación y la evidencia de Checklist forman parte explícita de la aceptación P0.
+
 ## Estado del criterio de salida P1
 
 El roadmap exige tres condiciones para cerrar P1:
@@ -38,8 +49,9 @@ El roadmap exige tres condiciones para cerrar P1:
 Por tanto:
 
 - **P1-01…P1-11: IMPLEMENTADOS EN HACHE BASE.**
+- **Criterio de salida P0 completo: NO CERRADO TODAVÍA por el gate de fixtures A/B/C con clasificación + Checklist.**
 - **Criterio de salida P1 completo: NO CERRADO TODAVÍA.**
-- Bloqueo Base: completar fixtures explícitos A y C para cerrar la condición A/B/C del roadmap.
+- Bloqueo Base: completar fixtures explícitos A y C que, junto con B, satisfagan tanto el gate P0 como el gate P1 en sus respectivos alcances.
 - Bloqueo Project: seleccionar un piloto B/C que tenga un flujo de comunicación aplicable y conservar evidencia verificable de campo, restore y communication status.
 
 Ninguno de esos bloqueos debe maquillarse como `PASS`, `N/A` o “resuelto por Core”.
@@ -64,12 +76,12 @@ La elección del proyecto piloto y cualquier cambio sobre su runtime/infraestruc
 
 ## Siguiente frontera segura
 
-Antes de declarar “P1 cerrado” hay dos pasos independientes:
+Antes de declarar cerrados los criterios pendientes hay dos pasos independientes:
 
-1. completar en Hache Base fixtures explícitos Nivel A y Nivel C que, junto con el fixture B, demuestren headers, errores, CUF y budgets según la condición del roadmap;
+1. completar en Hache Base fixtures explícitos Nivel A y Nivel C que, junto con el fixture B, demuestren **clasificación + Checklist** para P0 y **headers + errores + CUF + budgets** para P1;
 2. seleccionar explícitamente un proyecto B/C piloto **con flujo de comunicación aplicable** y ejecutar una adopción controlada que produzca evidencia real de campo, restore y communication status.
 
-P2 puede investigarse o implementarse después por decisión explícita, pero no debe usarse para esconder ninguno de los dos criterios P1 pendientes.
+P2 puede investigarse o implementarse después por decisión explícita, pero no debe usarse para esconder ninguno de los criterios P0/P1 pendientes.
 
 ## Guardrails
 
