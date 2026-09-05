@@ -209,6 +209,51 @@ try {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /invalid_date=baseline\.reviewed_at/);
 
+  // Misspelled keys must fail even when another valid budget would otherwise let the config pass.
+  const unknownReleaseKey = structuredClone(releaseOnly);
+  unknownReleaseKey.release.image_byte = 1;
+  await writeConfig(unknownReleaseKey);
+  result = run();
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown_key=release\.image_byte/);
+
+  const unknownNetworkKey = structuredClone(baseConfig);
+  unknownNetworkKey.network.third_party_request = 1;
+  await writeConfig(unknownNetworkKey);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown_key=network\.third_party_request/);
+
+  const unknownOriginKey = structuredClone(baseConfig);
+  unknownOriginKey.network.per_origin['https://analytics.example.test'].transfer_byte = 1;
+  await writeConfig(unknownOriginKey);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown_key=network\.per_origin\.https:\/\/analytics\.example\.test\.transfer_byte/);
+
+  const unknownExtensionKey = structuredClone(releaseOnly);
+  unknownExtensionKey.extensions = {video: ['.mp4']};
+  await writeConfig(unknownExtensionKey);
+  result = run();
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown_key=extensions\.video/);
+
+  // A third-party budget cannot be neutralized by classifying the same origin as first-party.
+  const firstPartyConflict = structuredClone(baseConfig);
+  firstPartyConflict.first_party_origins.push('https://analytics.example.test');
+  await writeConfig(firstPartyConflict);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /per_origin_conflicts_first_party=https:\/\/analytics\.example\.test/);
+
+  // The page's own origin is first-party by definition for that LHR and cannot carry a third-party rule.
+  const pageOriginConflict = structuredClone(baseConfig);
+  pageOriginConflict.network.per_origin['https://app.example.test'] = {transfer_bytes: 1, requests: 1};
+  await writeConfig(pageOriginConflict);
+  result = run(['--lighthouse-dir', lhrDir]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /per_origin_matches_page_origin=run-1\.json:https:\/\/app\.example\.test/);
+
   const noBudget = structuredClone(releaseOnly);
   noBudget.release = {};
   await writeConfig(noBudget);
