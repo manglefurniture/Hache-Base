@@ -11,7 +11,8 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-CHECKLIST.md` — proyección verificable del registro canónico de controles.
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
-- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11 y de los criterios de salida todavía pendientes: fixtures A/C explícitos que cierren los gates P0/P1 y evidencia de un piloto B/C real con campo, restore y comunicación status.
+- `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11, de la matriz A/B/C ya cubierta en Base y del criterio de salida que todavía requiere evidencia de un piloto B/C real.
+- `LEVEL-A-B-C-FIXTURES.md` — contrato ejecutable de fixtures explícitos A/B/C que enlaza clasificación + Checklist (P0) y headers + errores + CUF + budgets (P1) sin auto-PASS.
 - `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización 126/126 Standard ↔ Checklist; no sustituye la norma.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
 - `ASYNC-OPERATIONS.md` — contrato reusable implementado en P0-05 para distinguir aceptación, confirmación, ambigüedad, retry y reconciliación.
@@ -118,7 +119,7 @@ P0-12 cierra el baseline P0 con una política reusable de supply chain, mantenie
 
 P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
 
-**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base, pero **los criterios de salida P0 y P1 todavía no están cerrados**. El mismo faltante de fixtures explícitos Nivel A y Nivel C deja abierto el gate P0 de “clasificación + Checklist” y el gate P1 de “headers + errores + CUF + budgets”. Después de cerrar ambos con la matriz A/B/C, P1 todavía exige evidencia real de al menos un proyecto B/C piloto **con flujo de comunicación aplicable**, incluyendo campo, restore y communication status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
+**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. La matriz explícita `LEVEL-A-B-C-FIXTURES.md` cubre el gate P0 de **clasificación + Checklist** y el gate P1 de **headers + errores + CUF + budgets** sin convertir pruebas de Base en PASS de un proyecto. El **único criterio de salida P1 todavía pendiente** es producir evidencia real de al menos un proyecto B/C piloto **con flujo de comunicación aplicable**, incluyendo campo, restore y communication status. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 
@@ -134,7 +135,8 @@ P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhausti
 10. Cuando DB-006/DB-007 apliquen, completar `templates/BACKUP-RESTORE.md`, conectar backup/freshness a monitoreo y ejecutar un restore drill aislado con RPO/RTO medidos.
 11. Cuando P0-12 aplique, completar `templates/SUPPLY-CHAIN-TRIAGE.md`, declarar stacks y conservar `NOT EVALUATED` cuando SCA/licencias no tengan evidencia suficiente.
 12. Para adoptar P1, completar solo las plantillas/Extensions aplicables (`THIRD-PARTY-INVENTORY.md`, `CACHE-POLICY.md`, `DATA-PRIVACY-INVENTORY.md`, `ARTIFACT-PROMOTION.md`, `PERFORMANCE-BUDGET.md`) y ejecutar los fixtures/reporters con evidencia del proyecto real.
-13. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
+13. Usar `LEVEL-A-B-C-FIXTURES.md` como demostración de contrato y clasificación, nunca como sustituto de evidencia del proyecto.
+14. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
 ## Contratos Core implementados
 

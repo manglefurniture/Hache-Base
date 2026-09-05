@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "fixture_id": "level-c-critical-capacity",
+  "level": "C",
+  "name": "Critical capacity mutation with external confirmation",
+  "report_level": "C",
+  "classification": {
+    "profile": "critical",
+    "rationale": "The simulated flow changes critical capacity and treats duplication or loss as material harm. It therefore requires Level C semantics such as durable idempotency, ordered state transitions and reconciliation, even though no real inventory, money or provider is used by the fixture.",
+    "signals": {
+      "accepts_user_input": true,
+      "accounts_or_sessions": false,
+      "personal_data": false,
+      "business_persistence": true,
+      "remote_mutation": true,
+      "critical_capacity_or_inventory": true,
+      "external_state_change": true,
+      "duplicate_or_loss_material_harm": true
+    }
+  },
+  "cufs": [
+    {
+      "id": "CUF-C-CRITICAL-MUTATION",
+      "level": "C",
+      "technical_owner": "Hache Base fixture maintainers",
+      "business_owner": "synthetic critical-capacity scenario",
+      "goal": "Apply one critical capacity mutation and reconcile its external confirmation without duplicating the effect.",
+      "precondition": "The fixture database modules for inbox/outbox/idempotency are available in the isolated test database.",
+      "steps": [
+        "Create or claim the logical operation with a durable idempotency key.",
+        "Record the outbound intent before crossing the external boundary.",
+        "Accept repeated and out-of-order inbound events without duplicating the logical effect.",
+        "Reprocess safely and reconcile to an authoritative terminal state."
+      ],
+      "observable_result": "One logical mutation survives duplicate, retry and out-of-order delivery while preserving an auditable state history.",
+      "authoritative_result": "Exactly one persisted logical operation reaches the authoritative terminal state; duplicate/out-of-order external events do not create a second effect.",
+      "mutations": "isolated fixture database rows only",
+      "integrations": "simulated external boundary using inbox/outbox fixtures; no network provider",
+      "failure_states": ["duplicate event", "concurrent claim", "out-of-order event", "ambiguous external result", "reprocess"],
+      "idempotency_key": "persistent fixture operation/external-event identifiers",
+      "concurrency_behavior": "Durable claims/unique constraints arbitrate competing attempts; ambiguous boundaries reconcile instead of blind retry.",
+      "automated_test": "tests/integration/InboxOutboxMariaDbTest.sh",
+      "smoke_contract": "tests/integration/InboxOutboxMariaDbTest.sh",
+      "signals": ["persisted operation state", "dedupe constraint", "attempt count", "reprocess result"],
+      "recovery": "Reprocess the same inbox event or reconcile the same logical operation; do not issue a second critical mutation unless authoritative evidence says the first boundary was never crossed."
+    }
+  ],
+  "coverage": {
+    "classification": [
+      "docs/production-readiness/PRODUCTION-READINESS-STANDARD.md",
+      "tools/production-readiness/report.php"
+    ],
+    "checklist": [
+      "tools/production-readiness/report.php"
+    ],
+    "headers": [
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/security/HeadersTest.php"
+    ],
+    "errors": [
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/security/ProductionReadinessCoreTest.php"
+    ],
+    "cuf": [
+      "tests/common/AsyncOperationStateTest.php",
+      "tests/integration/AsyncPersistenceContractTest.php",
+      "tests/integration/InboxOutboxMariaDbTest.sh"
+    ],
+    "budgets": [
+      "tests/browser/budgets.json",
+      "tests/browser/config-contract.mjs",
+      "tests/performance/ReleaseBudgetTest.mjs"
+    ]
+  },
+  "disclaimer": "Synthetic Hache Base fixture only. It exercises Level C contracts in isolated tests and contains no real payment, inventory, personal data or provider traffic."
+}

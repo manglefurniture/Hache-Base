@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "fixture_id": "level-b-public-form",
+  "level": "B",
+  "name": "Interactive public form",
+  "report_level": "B",
+  "classification": {
+    "profile": "interactive",
+    "rationale": "A public form accepts user input and performs a remote mutation. The fixture does not model payment or another material critical effect, so it remains Level B.",
+    "signals": {
+      "accepts_user_input": true,
+      "accounts_or_sessions": true,
+      "personal_data": true,
+      "business_persistence": false,
+      "remote_mutation": true,
+      "critical_capacity_or_inventory": false,
+      "external_state_change": false,
+      "duplicate_or_loss_material_harm": false
+    }
+  },
+  "cufs": [
+    {
+      "id": "CUF-B-FORM",
+      "level": "B",
+      "technical_owner": "Hache Base fixture maintainers",
+      "business_owner": "synthetic form-request scenario",
+      "goal": "Submit a public request exactly once and receive an accessible success or validation error state.",
+      "precondition": "A secure fixture session and CSRF token are available.",
+      "steps": [
+        "Load the form and required anti-CSRF state.",
+        "Submit valid or invalid user input.",
+        "Observe validation, rate-limit, honeypot and dedupe behavior.",
+        "Repeat the accepted submission_id and verify the synthetic effect is not duplicated."
+      ],
+      "observable_result": "The request is either rejected safely or accepted once with an explicit accessible state.",
+      "authoritative_result": "For an accepted submission, the synthetic effect counter increments at most once for the submission_id in the fixture session.",
+      "mutations": "synthetic session-scoped fixture effect only; submitted personal fields are not persisted",
+      "integrations": "none",
+      "failure_states": ["419", "422", "429", "duplicate submission", "server error"],
+      "idempotency_key": "submission_id within the fixture session",
+      "concurrency_behavior": "The fixture demonstrates repeated-submit dedupe but does not claim durable multi-process idempotency; a real project must replace it with project-appropriate persistence/claims.",
+      "automated_test": "tests/form-b/ProductionReadinessFormBTest.sh",
+      "smoke_contract": "tests/form-b/ProductionReadinessFormBTest.sh",
+      "signals": ["HTTP status", "Retry-After", "accessible error summary", "synthetic effect counter"],
+      "recovery": "Rejected requests keep no business effect; accepted fixture state can be discarded with the isolated session. A real B project must document backup/recovery for any persisted data it adopts."
+    }
+  ],
+  "coverage": {
+    "classification": [
+      "docs/production-readiness/PRODUCTION-READINESS-STANDARD.md",
+      "docs/production-readiness/FORM-B-FIXTURE.md",
+      "tools/production-readiness/report.php"
+    ],
+    "checklist": [
+      "tools/production-readiness/report.php"
+    ],
+    "headers": [
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/security/HeadersTest.php"
+    ],
+    "errors": [
+      "tests/form-b/ProductionReadinessFormBTest.sh",
+      "tests/security/ProductionReadinessCoreTest.php"
+    ],
+    "cuf": [
+      "tests/form-b/fixture-router.php",
+      "tests/form-b/ProductionReadinessFormBTest.sh",
+      "docs/production-readiness/FORM-B-FIXTURE.md"
+    ],
+    "budgets": [
+      "tests/browser/budgets.json",
+      "tests/browser/config-contract.mjs",
+      "tests/performance/ReleaseBudgetTest.mjs"
+    ]
+  },
+  "disclaimer": "Synthetic Hache Base fixture only. Session-local dedupe/rate limiting are demonstrative and do not become production evidence for a derived project."
+}
