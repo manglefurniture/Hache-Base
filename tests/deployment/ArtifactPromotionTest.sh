@@ -67,6 +67,7 @@ php "$ROOT/deployment/artifact-manifest.php" verify > "$TMP/verify.log"
 grep -q '^ARTIFACT_VERIFY_OK ' "$TMP/verify.log"
 
 # A manifest must never overwrite the artifact it describes.
+ARTIFACT_SHA_BEFORE_COLLISION="$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
 if ARTIFACT_MANIFEST="$ARTIFACT_PATH" \
    SOURCE_COMMIT="$TARGET" \
    php "$ROOT/deployment/artifact-manifest.php" create >"$TMP/collision.out" 2>"$TMP/collision.err"; then
@@ -74,8 +75,24 @@ if ARTIFACT_MANIFEST="$ARTIFACT_PATH" \
   exit 1
 fi
 grep -q 'artifact_manifest_path_collision' "$TMP/collision.err"
-EXPECT_AFTER_COLLISION="$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
-test -n "$EXPECT_AFTER_COLLISION"
+test "$ARTIFACT_SHA_BEFORE_COLLISION" = "$(sha256sum "$ARTIFACT_PATH" | awk '{print $1}')"
+
+# Manifests are create-once; a second create cannot replace release evidence.
+if SOURCE_COMMIT="$TARGET" php "$ROOT/deployment/artifact-manifest.php" create >"$TMP/recreate.out" 2>"$TMP/recreate.err"; then
+  echo 'ERROR: manifest helper overwrote an existing manifest' >&2
+  exit 1
+fi
+grep -q 'manifest_target_exists' "$TMP/recreate.err"
+
+# Build outputs are also create-once. A stale target must stop before build/test run.
+export FIXTURE_SENTINEL="$TMP/stale-build-ran"
+if ARTIFACT_BUILD_COMMAND='touch "$FIXTURE_SENTINEL"' \
+   bash "$ROOT/deployment/build-artifact.sh" >"$TMP/stale.out" 2>"$TMP/stale.err"; then
+  echo 'ERROR: build helper reused stale release paths' >&2
+  exit 1
+fi
+grep -q 'artifact_target_exists' "$TMP/stale.err"
+test ! -e "$FIXTURE_SENTINEL"
 
 # A different release commit must not be accepted even when the bytes are intact.
 BAD_COMMIT="0000000000000000000000000000000000000000"
