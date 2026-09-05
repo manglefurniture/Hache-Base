@@ -62,6 +62,8 @@ TEST_EVIDENCE_REF
 
 `ARTIFACT_CONTENT_DIR` debe ser un stage controlado. No apuntarlo a un directorio que contenga secretos de runtime. `ARTIFACT_PATH` y `ARTIFACT_MANIFEST` deben quedar fuera del stage para evitar auto-inclusión.
 
+Los paths de salida son **create-once**: usar nombres/directorios únicos por commit o intento CI. El helper rechaza artefactos/manifests preexistentes y también rechaza si el build/test escribe esas rutas. Así un fallo no puede dejar un archivo viejo con el mismo nombre listo para que otro paso lo publique por accidente.
+
 No guardar el texto de los comandos de build/test dentro del manifest: pueden incluir detalles operativos o secretos. Registrar referencias de evidencia, no credenciales.
 
 ## 4. Contrato de promoción
@@ -113,6 +115,7 @@ La evidencia de P1-10 ayuda a demostrar `DPL-001`, pero **no auto-PASS** el cont
 
 - No construir cambios no revisados directamente en producción.
 - No aceptar solo nombre de archivo/tag mutable como identidad; verificar digest + commit.
+- No reutilizar rutas de salida de un intento previo; artefacto y manifest son create-once.
 - No crear el manifest antes de que pasen los tests requeridos.
 - No editar el artefacto después de generar su SHA-256; cualquier cambio crea un artefacto nuevo.
 - No copiar secretos de runtime al stage del artefacto.
