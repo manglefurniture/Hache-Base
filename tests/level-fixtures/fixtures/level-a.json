@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "fixture_id": "level-a-informational-read",
+  "level": "A",
+  "name": "Informational read-only site",
+  "report_level": "A",
+  "classification": {
+    "profile": "informational",
+    "rationale": "Public read-only content with no accounts, business persistence or remote mutation. A broken page can block access to information, but it cannot duplicate or corrupt a business effect.",
+    "signals": {
+      "accepts_user_input": false,
+      "accounts_or_sessions": false,
+      "personal_data": false,
+      "business_persistence": false,
+      "remote_mutation": false,
+      "critical_capacity_or_inventory": false,
+      "external_state_change": false,
+      "duplicate_or_loss_material_harm": false
+    }
+  },
+  "cufs": [
+    {
+      "id": "CUF-A-READ",
+      "goal": "Read the primary public content and reach a second public section.",
+      "precondition": "The static production build is available through the HTTP fixture.",
+      "steps": [
+        "Request the primary HTML document.",
+        "Verify the document exposes usable content and navigation.",
+        "Request a representative error path and observe a safe failure response."
+      ],
+      "observable_result": "Public HTML is reachable, navigable and failures remain explicit without exposing sensitive details.",
+      "mutations": "none",
+      "integrations": "none",
+      "failure_states": ["404", "500", "unavailable build"],
+      "idempotency_key": "N/A — read-only flow",
+      "automated_test": "tests/http/ProductionReadinessHttpTest.sh",
+      "smoke_contract": "tests/browser/config-contract.mjs",
+      "signals": ["HTTP status", "security headers", "Lighthouse laboratory artifact"]
+    }
+  ],
+  "coverage": {
+    "classification": [
+      "docs/production-readiness/PRODUCTION-READINESS-STANDARD.md",
+      "tools/production-readiness/report.php"
+    ],
+    "checklist": [
+      "tools/production-readiness/report.php"
+    ],
+    "headers": [
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/security/HeadersTest.php"
+    ],
+    "errors": [
+      "tests/http/ProductionReadinessHttpTest.sh",
+      "tests/security/ProductionReadinessCoreTest.php"
+    ],
+    "cuf": [
+      "tests/browser/fixture/index.html",
+      "tests/http/ProductionReadinessHttpTest.sh"
+    ],
+    "budgets": [
+      "tests/browser/budgets.json",
+      "tests/browser/config-contract.mjs",
+      "tests/performance/ReleaseBudgetTest.mjs"
+    ]
+  },
+  "disclaimer": "Synthetic Hache Base fixture only. Its green tests demonstrate the reusable Level A contract, not Production Ready evidence for a real project."
+}
