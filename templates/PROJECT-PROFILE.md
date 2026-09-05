@@ -48,6 +48,16 @@ Completar también `PERMISSION-MATRIX.md`.
 - Pagos:
 - Otros:
 
+## Datos y privacidad
+
+- Inventario completado en `DATA-PRIVACY-INVENTORY.md`: sí / no / no aplica
+- ¿El proyecto trata datos personales?: sí / no / por revisar
+- Jurisdicción(es)/mercados evaluados:
+- Owner de privacidad/datos:
+- Canal de derechos aplicable:
+- ¿Existen analytics/cookies/trackers?: sí / no / por revisar
+- ¿Proceso de retención/eliminación probado cuando aplica?: sí / no / pendiente / no aplica
+
 ## Reglas críticas
 
 1.
