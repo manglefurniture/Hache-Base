@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "project": "<project-name>",
+  "baseline": {
+    "reference": "<commit/report/reference>",
+    "justification": "<why these limits fit the CUF, device/profile and measured baseline>",
+    "owner": "<owner>",
+    "reviewed_at": "2026-09-05"
+  },
+  "first_party_origins": [
+    "https://example.invalid"
+  ],
+  "release": {
+    "total_bytes": null,
+    "javascript_bytes": null,
+    "css_bytes": null,
+    "image_bytes": null,
+    "font_bytes": null,
+    "other_bytes": null,
+    "max_image_bytes": null,
+    "max_font_bytes": null
+  },
+  "network": {
+    "total_transfer_bytes": null,
+    "javascript_transfer_bytes": null,
+    "css_transfer_bytes": null,
+    "image_transfer_bytes": null,
+    "font_transfer_bytes": null,
+    "third_party_transfer_bytes": null,
+    "third_party_requests": null,
+    "per_origin": {
+      "https://third-party.example.invalid": {
+        "transfer_bytes": null,
+        "requests": null
+      }
+    }
+  }
+}
