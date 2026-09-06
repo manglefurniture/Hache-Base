@@ -38,6 +38,8 @@ final class ObservabilityBridge
     /** @var null|callable(Throwable): void */
     private $onExportFailure;
 
+    private ?RequestContext $defaultRequestContext = null;
+
     public function __construct(
         private readonly string $service,
         private readonly string $environment,
@@ -125,7 +127,11 @@ final class ObservabilityBridge
         ?RequestContext $requestContext = null,
         ?TraceContext $parentTrace = null,
     ): mixed {
-        $requestContext ??= RequestContext::fromServer();
+        // Validate telemetry-only inputs before a side-effecting business callback
+        // can run. A bad span name must never turn a committed operation into an
+        // apparent failure that a caller may retry.
+        $name = self::normalizeName($name);
+        $requestContext = $this->resolveRequestContext($requestContext);
         $localTrace = $parentTrace === null
             ? TraceContext::root()
             : TraceContext::childOf($parentTrace);
@@ -192,7 +198,7 @@ final class ObservabilityBridge
         ?TraceContext $traceContext,
     ): array {
         $name = self::normalizeName($name);
-        $requestContext ??= RequestContext::fromServer();
+        $requestContext = $this->resolveRequestContext($requestContext);
         $traceContext ??= TraceContext::root();
 
         return [
@@ -208,6 +214,17 @@ final class ObservabilityBridge
             ...$traceContext->toArray(),
             'attributes' => self::sanitizeAttributes(StructuredLogger::redact($attributes)),
         ];
+    }
+
+    private function resolveRequestContext(?RequestContext $requestContext): RequestContext
+    {
+        if ($requestContext instanceof RequestContext) {
+            return $requestContext;
+        }
+
+        // One bridge instance represents one request/job boundary by default.
+        // Reuse the generated context so separate records can be correlated.
+        return $this->defaultRequestContext ??= RequestContext::fromServer();
     }
 
     /** @param array<string, mixed> $record */
