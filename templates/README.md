@@ -24,6 +24,9 @@ Todo archivo de esta carpeta debe:
 - `CACHE-POLICY.md`: adopción P1-06/PERF-011 con matriz por HTML/assets/API/privado/errores e invalidación reproducible.
 - `DATA-PRIVACY-INVENTORY.md`: adopción P1-09/PRIV-001…003 con inventario de datos, minimización, acceso, retención, derechos y analytics/cookies/trackers sin imponer una regla legal universal.
 - `ARTIFACT-PROMOTION.md`: adopción P1-10/DPL-001 para build/test una vez, manifest verificable, promoción por digest+commit y rollback sin reconstruir.
+- `OBSERVABILITY-ADOPTION.md`: adopción P2-01 de logs/métricas/trazas con exporter neutral, sampling, retención, coste, atributos y fallback.
+- `ALERTING-RUNBOOKS.md`: adopción P2-02 de alertas accionables por golden signals/CUF, owner, threshold, ventana, routing, control de ruido y runbook.
+- `alert-policy.example.json`: contrato machine-readable P2-02 para `validate-alert-policy.mjs`; contiene únicamente ejemplos ficticios y thresholds no universales.
 - `PERMISSION-MATRIX.md`: matriz de permisos.
 - `PERFORMANCE-BUDGET.md`: adopción P1-11/PERF-004 con presupuesto versionado para JS/CSS/imágenes/fuentes/terceros y criterios para CI.
 - `performance-budget.example.json`: contrato machine-readable P1-11 para `release-budget.mjs`; debe copiarse y completarse con límites justificados por proyecto.

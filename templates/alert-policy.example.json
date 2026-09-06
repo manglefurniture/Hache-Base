@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "project": "example-project",
+  "reviewed_at": "2026-09-06",
+  "alerts": [
+    {
+      "id": "cuf-checkout-latency",
+      "cuf": "checkout",
+      "signal": "latency",
+      "metric": "cuf.checkout.duration_ms",
+      "operator": ">",
+      "threshold": 1500,
+      "window_seconds": 300,
+      "for_seconds": 120,
+      "severity": "warning",
+      "owner": "operations-owner",
+      "runbook": "runbooks/checkout-latency.md",
+      "action": "Confirm whether checkout latency is degraded, inspect dependency timing and mitigate the slowest confirmed boundary.",
+      "data_source": "project-observability-backend"
+    },
+    {
+      "id": "cuf-checkout-failure-rate",
+      "cuf": "checkout",
+      "signal": "cuf_failure",
+      "metric": "cuf.checkout.failure_ratio",
+      "operator": ">=",
+      "threshold": 0.05,
+      "window_seconds": 600,
+      "for_seconds": 180,
+      "severity": "critical",
+      "owner": "operations-owner",
+      "runbook": "runbooks/checkout-failures.md",
+      "action": "Verify authoritative failures, stop unsafe retries, identify the failing boundary and follow the documented recovery path.",
+      "data_source": "project-observability-backend"
+    }
+  ]
+}

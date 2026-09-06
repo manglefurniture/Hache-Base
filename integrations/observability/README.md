@@ -1,8 +1,8 @@
-# Observability — P2-01
+# Observability — P2-01 / P2-02
 
-Extension **opt-in** para conectar logs, métricas y trazas a una plataforma de observabilidad sin acoplar Hache Base a un proveedor.
+Extension **opt-in** para conectar logs, métricas y trazas a una plataforma de observabilidad sin acoplar Hache Base a un proveedor, y para definir alertas accionables/runbooks sin imponer thresholds universales.
 
-## Alcance
+## P2-01 — observabilidad neutral
 
 Este paquete implementa la frontera reusable de P2-01:
 
@@ -49,11 +49,32 @@ No incluir payloads, bodies, mensajes de excepción, emails, teléfonos, nombres
 
 No se implementa `tracestate`/baggage en Base. Si un proveedor lo requiere, debe quedar detrás de su exporter/adaptador y documentarse en el proyecto.
 
-## Fallos
+## Fallos del exporter
 
 La exportación es **fail-open por default**: un fallo del backend APM no debe tumbar el CUF. Puede configurarse `onExportFailure` para dejar señal local y `failOpen=false` solamente cuando un entorno de prueba quiera convertir la exportación en gate.
 
 Si la operación instrumentada falla, `measure()` emite solo `exception_type`; nunca copia el mensaje de excepción al record, y siempre vuelve a lanzar la excepción original aunque falle la telemetría.
+
+## P2-02 — alertas y runbooks
+
+P2-02 permanece vendor-neutral. Hache Base no crea monitores reales ni routing; entrega un contrato project-owned:
+
+- `templates/ALERTING-RUNBOOKS.md` — golden signals/CUF, thresholds, ventanas, severidad, routing, control de ruido y runbook mínimo;
+- `templates/alert-policy.example.json` — ejemplo ficticio machine-readable;
+- `tools/observability/validate-alert-policy.mjs` — checker sin dependencias externas.
+
+Signals permitidas:
+
+- `latency`, `traffic`, `errors`, `saturation`;
+- `cuf_success`, `cuf_failure`, `cuf_pending`.
+
+Cada alerta debe tener threshold, ventana, tiempo sostenido, owner, acción y runbook. El checker valida que esos campos existan y sean coherentes; **no** decide si el threshold es correcto ni si una alerta es útil en producción.
+
+Ejemplo de validación:
+
+```bash
+node tools/observability/validate-alert-policy.mjs alert-policy.json
+```
 
 ## Adopción por proyecto
 
@@ -67,6 +88,8 @@ Antes de activar P2-01 completar `templates/OBSERVABILITY-ADOPTION.md` y definir
 6. qué ocurre si el exporter falla;
 7. evidencia de request → job/webhook/proveedor cuando aplique;
 8. procedimiento de desactivación sin romper el producto.
+
+Antes de activar P2-02 completar `templates/ALERTING-RUNBOOKS.md`, versionar la política de alertas y probar al menos una condición positiva y una negativa/control de ruido en un entorno apropiado.
 
 ## Límite de evidencia
 
