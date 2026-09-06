@@ -38,8 +38,6 @@ final class ObservabilityBridge
     /** @var null|callable(Throwable): void */
     private $onExportFailure;
 
-    private ?RequestContext $defaultRequestContext = null;
-
     public function __construct(
         private readonly string $service,
         private readonly string $environment,
@@ -47,6 +45,7 @@ final class ObservabilityBridge
         private readonly TelemetryExporter $exporter,
         private readonly bool $failOpen = true,
         ?callable $onExportFailure = null,
+        private readonly ?RequestContext $boundaryContext = null,
     ) {
         if (trim($service) === '' || trim($environment) === '' || trim($version) === '') {
             throw new InvalidArgumentException('service, environment and version are required.');
@@ -221,10 +220,13 @@ final class ObservabilityBridge
         if ($requestContext instanceof RequestContext) {
             return $requestContext;
         }
+        if ($this->boundaryContext instanceof RequestContext) {
+            return $this->boundaryContext;
+        }
 
-        // One bridge instance represents one request/job boundary by default.
-        // Reuse the generated context so separate records can be correlated.
-        return $this->defaultRequestContext ??= RequestContext::fromServer();
+        throw new InvalidArgumentException(
+            'RequestContext is required unless a boundary-scoped context is injected into ObservabilityBridge.',
+        );
     }
 
     /** @param array<string, mixed> $record */
