@@ -17,10 +17,10 @@
 | P2-01 | IMPLEMENTADO / MERGEADO | Extension opt-in y vendor-neutral para logs, métricas y trazas; exporter contract, trace context estricto, minimización, fail-open y plantilla de adopción. PR #40, merge `ca7e243f3661f40accf9d1f762e5897b4419cd80`; follow-up automático de ciclo de vida/contexto cerrado en PR #42, merge `0b57b4873e67bfe95284b63713fb6d92f799a8d0`. |
 | P2-02 | IMPLEMENTADO / MERGEADO | Política machine-readable de alertas sobre golden signals/CUF, validator determinista, plantilla de runbooks, control de ruido y regresión offline. PR #41, merge `a3398bf0fc7851beb04ea46214def65ce458f236`. |
 | P2-03 | IMPLEMENTADO / MERGEADO | Failure fixtures deterministas y solo de test para timeout/429/5xx/DNS/storage, sin retry implícito ni fault injection en producción; plantilla de adopción y regresión integrada a la suite. PR #43, merge `be35f2ea2a2ea526fee130842a7fc4883f5a0427`. |
-| P2-04 | NO INICIADO | Upload Extension segura; requiere caso real y threat model antes de promover runtime reusable. |
+| P2-04 | IMPLEMENTADO EN ESTE PAQUETE / PILOTO PENDIENTE | Upload Extension opt-in con transporte PHP confiable, MIME/content/limits, dimensiones/píxeles de imagen, storage neutral/local de referencia, scanner opcional y threat-model template. Caso real auditado: fotos de productos en Tienda Natación; todavía no se declara adopción hasta pilotear el flujo real. |
 | P2-05 | NO INICIADO | Rate limit shared-store; requiere Redis/DB/edge real antes de elegir implementación. |
 | P2-06 | IMPLEMENTADO / MERGEADO | Pinning inmutable de Actions/containers, checker sobre workflows de HEAD y generación de SBOM CycloneDX 1.6 + provenance de enlace artifact/commit/CI/materiales, sin afirmar firma ni SLSA. PR #44, merge `42fc0e202f903bd9bd64aecbb7c7c97087983935`. |
-| P2-07 | CONTRATO IMPLEMENTADO EN ESTE PAQUETE / PILOTO ACTIVO | `templates/RESTORE-HISTORY.md` define scheduler, RPO/RTO project-owned, historial de runs/attempts, retención, fallos visibles y revisión humana. Hache Natación activó la cadencia real en PR #133, merge `a01b3ae7b45a6149a0b60028f143d44b8a8aa866`; falta observar y revisar la primera ejecución programada antes de declarar historia recurrente cerrada. |
+| P2-07 | CONTRATO IMPLEMENTADO / PILOTO ACTIVO | `templates/RESTORE-HISTORY.md` define scheduler, RPO/RTO project-owned, historial de runs/attempts, retención, fallos visibles y revisión humana. Hache Natación activó la cadencia real en PR #133, merge `a01b3ae7b45a6149a0b60028f143d44b8a8aa866`; falta observar y revisar la primera ejecución programada antes de declarar historia recurrente cerrada. |
 
 ## P2-01 — observabilidad neutral
 
@@ -92,6 +92,36 @@ P2-03 se considera cubierto como primitive/fixture reusable cuando:
 
 La existencia de los fixtures no marca controles `ROB-*` ni un proyecto derivado como PASS.
 
+## P2-04 — Upload Extension segura
+
+El prerequisito de “caso real + threat model” dejó de ser hipotético al auditar el flujo real de imágenes del administrador de **Tienda Natación**. Ese proyecto ya limita cantidad/bytes, exige auth+CSRF, usa `is_uploaded_file()`, `finfo`, `getimagesize()`, nombres aleatorios y cleanup; además su `ImageOptimizer` decodifica imágenes con GD, por lo que faltaba limitar dimensiones/píxeles antes de almacenar para evitar presión de memoria/CPU.
+
+Este paquete añade:
+
+- `integrations/upload/PhpUploadAdapter.php` — normaliza `$_FILES`, exige origen de transporte y no conserva filename/MIME del cliente;
+- `UploadPolicy.php` — allowlist MIME→extensión de servidor, bytes, cantidad, dimensiones/píxeles y scanner mode project-owned;
+- `UploadService.php` — vuelve a medir/fingerprint bytes, hace MIME sniff real, valida estructura MIME de imágenes, dimensiones/píxeles, scanner y verifica que storage conserve exactamente los bytes validados;
+- `UploadStorage.php` + `LocalUploadStorage.php` — frontera neutral y adapter local de referencia con ID aleatorio, create-exclusive, SHA-256 y delete scoped al root;
+- `UploadScanner.php` — frontera opcional `clean|infected|unavailable`, sin proveedor impuesto;
+- `templates/UPLOAD-ADOPTION.md` — threat model/adopción sin límites de negocio universales;
+- `tests/integration/UploadExtensionTest.php` y `tests/static/UploadAdoptionTemplateTest.php` — MIME spoof, size mismatch, oversize, dimensiones/píxeles, scanner, cantidad, transport origin, traversal por filename, collision/no overwrite, symlink root y cleanup.
+
+El scanner no tiene política universal: `infected` siempre rechaza; `required` falla cerrado si falta/está unavailable; `best_effort` conserva explícitamente `unavailable`; `disabled` no invoca scanner.
+
+### Criterio de terminado P2-04 en Base
+
+La primitive reusable puede considerarse implementada cuando:
+
+1. filename/MIME declarados por el cliente no controlan ruta ni tipo persistido;
+2. bytes reales, MIME allowlisted y límites tienen validación negativa;
+3. imágenes exigen límites de ancho, alto y píxeles antes de cualquier optimizador/decoder posterior;
+4. storage genera destino server-side, evita overwrite y verifica SHA-256 de los bytes persistidos;
+5. scanner queda detrás de una interfaz opcional y su indisponibilidad sigue política explícita del proyecto;
+6. el template obliga a revisar ejecución pública/privada, cleanup, auth/CSRF/rate-limit/auditoría y riesgo residual;
+7. la suite cubre abuso/fallo sin depender de un servicio antivirus real.
+
+Esto **no cierra la adopción de proyecto**. Tienda Natación debe integrar la primitive en su endpoint real, escoger límites de imagen y probar su ruta pública antes de promover P2-04 como reutilización demostrada.
+
 ## P2-06 — SBOM, provenance y pinning inmutable
 
 P2-06 se implementa encima de P0-12 y del artifact manifest ya existente, sin introducir un servicio externo ni una afirmación criptográfica ficticia.
@@ -152,4 +182,4 @@ La madurez del piloto solo podrá cerrarse después de observar y revisar su pri
 
 ## Siguiente frontera
 
-P2-04 y P2-05 siguen bloqueados hasta existir un caso real que justifique upload/storage o shared-state rate limiting. P2-07 ya tiene contrato reusable y piloto programado, pero su evidencia recurrente está **en construcción** hasta la primera ejecución real del scheduler. No se debe saltar automáticamente a P3 ni inventar infraestructura para cerrar una casilla.
+P2-04 ya tiene primitive reusable en implementación y un piloto real identificado en Tienda Natación; la siguiente decisión depende de su CI y adopción real, no de inventar otro fixture. P2-05 sigue bloqueado: el rate limiter real de Hache Natación es local/single-VPS y todavía no existe necesidad demostrada de Redis/DB/edge compartido. P2-07 mantiene pendiente únicamente su primera ejecución programada real. No se debe saltar automáticamente a P3 ni fabricar infraestructura para cerrar una casilla.

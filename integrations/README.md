@@ -10,6 +10,7 @@ Patrones para conectar servicios externos sin acoplarlos al núcleo de la aplica
 - `n8n/`: patrón aplicación ↔ n8n, reenvío de Authorization para Nginx/PHP-FPM y backup consistente para Docker + SQLite.
 - `rum/`: Web Vitals/RUM opt-in, minimizado y sin proveedor obligatorio para evidencia de campo p75.
 - `observability/`: P2-01 opt-in para logs, métricas y trazas con exporter neutral, trace context estricto y sin SDK/APM obligatorio.
+- `upload/`: P2-04 opt-in para transporte HTTP confiable, MIME/content/limits, dimensiones/píxeles de imagen, storage neutral y scanner opcional sin filename del cliente.
 
 Cada integración debe documentar:
 
@@ -36,5 +37,7 @@ Inbox/outbox no son obligatorias por existir en Hache Base. Se adoptan como Exte
 RUM tampoco se activa por existir en Hache Base. Cada proyecto debe completar su política de telemetría, definir `shouldCollect()`, sampling, retención, collector y cobertura; Core no decide consentimiento ni convierte p75 en `PASS`.
 
 Observability P2-01 tampoco se activa por existir en Base. El proyecto debe justificar CUF/señales, exporter, sampling, retención, coste, atributos permitidos y fallback. La frontera neutral puede adaptarse a OpenTelemetry/APM, pero Base no instala ni configura un proveedor.
+
+Upload P2-04 tampoco se activa por existir en Base. Cada proyecto conserva auth/autorización/CSRF/rate-limit y define allowlist, límites, storage, exposición pública/privada, scanner policy, rollback y threat model. Un archivo permitido por MIME no autoriza por sí mismo que el servidor lo ejecute o lo exponga públicamente.
 
 Las integraciones específicas de un negocio (por ejemplo, un asistente o workflow concreto) permanecen en ese proyecto y no entran automáticamente en Hache-Base.
