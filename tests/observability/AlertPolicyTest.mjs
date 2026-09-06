@@ -35,9 +35,11 @@ expectInvalid((policy) => { policy.alerts[0].for_seconds = policy.alerts[0].wind
 expectInvalid((policy) => { policy.alerts[0].owner = ' '; }, 'owner');
 expectInvalid((policy) => { policy.alerts[0].runbook = ''; }, 'runbook');
 expectInvalid((policy) => { policy.alerts[0].runbook = 'javascript:alert(1)'; }, 'unsafe');
+expectInvalid((policy) => { policy.alerts[0].runbook = 'JaVaScRiPt:alert(1)'; }, 'unsafe');
 expectInvalid((policy) => { policy.alerts[0].action = ''; }, 'action');
 expectInvalid((policy) => { policy.alerts[0].data_source = ''; }, 'data_source');
 expectInvalid((policy) => { policy.reviewed_at = '2026-99-99'; }, 'valid YYYY-MM-DD');
+expectInvalid((policy) => { policy.reviewed_at = '2026-02-31'; }, 'valid YYYY-MM-DD');
 
 const allowedSignals = new Set(example.alerts.map((alert) => alert.signal));
 assert(allowedSignals.has('latency'));
