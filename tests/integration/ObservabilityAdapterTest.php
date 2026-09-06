@@ -53,6 +53,33 @@ $requestContext = RequestContext::create('req-observe-1', 'corr-observe-1');
 $exporter = new MemoryTelemetryExporter();
 $bridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $exporter);
 
+// When callers omit RequestContext, one bridge instance must keep one generated
+// context so records from the same request/job remain correlatable.
+$hadRequestId = array_key_exists('HTTP_X_REQUEST_ID', $_SERVER);
+$hadCorrelationId = array_key_exists('HTTP_X_CORRELATION_ID', $_SERVER);
+$previousRequestId = $_SERVER['HTTP_X_REQUEST_ID'] ?? null;
+$previousCorrelationId = $_SERVER['HTTP_X_CORRELATION_ID'] ?? null;
+unset($_SERVER['HTTP_X_REQUEST_ID'], $_SERVER['HTTP_X_CORRELATION_ID']);
+
+$defaultContextExporter = new MemoryTelemetryExporter();
+$defaultContextBridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $defaultContextExporter);
+$defaultContextBridge->event('info', 'fixture.default_context.event');
+$defaultContextBridge->counter('fixture.default_context.counter');
+assert(count($defaultContextExporter->records) === 2);
+assert($defaultContextExporter->records[0]['request_id'] === $defaultContextExporter->records[1]['request_id']);
+assert($defaultContextExporter->records[0]['correlation_id'] === $defaultContextExporter->records[1]['correlation_id']);
+
+if ($hadRequestId) {
+    $_SERVER['HTTP_X_REQUEST_ID'] = $previousRequestId;
+} else {
+    unset($_SERVER['HTTP_X_REQUEST_ID']);
+}
+if ($hadCorrelationId) {
+    $_SERVER['HTTP_X_CORRELATION_ID'] = $previousCorrelationId;
+} else {
+    unset($_SERVER['HTTP_X_CORRELATION_ID']);
+}
+
 $dangerousObject = new class implements JsonSerializable {
     public function jsonSerialize(): mixed
     {
@@ -147,6 +174,26 @@ assert($failedSpan['kind'] === 'span');
 assert($failedSpan['status'] === 'ERROR');
 assert($failedSpan['attributes']['exception_type'] === DomainException::class);
 assert(!str_contains(json_encode($failedSpan, JSON_THROW_ON_ERROR), 'business message must not enter telemetry'));
+
+// An invalid telemetry name must be rejected before the business callback runs.
+$invalidMeasureExecuted = false;
+try {
+    $bridge->measure(
+        "fixture\ninvalid",
+        static function () use (&$invalidMeasureExecuted): int {
+            $invalidMeasureExecuted = true;
+            return 1;
+        },
+        [],
+        $requestContext,
+        $remote,
+    );
+    assert(false, 'Expected invalid span name failure.');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+assert($invalidMeasureExecuted === false);
+assert(count($exporter->records) === 5);
 
 $failureCount = 0;
 $failOpenBridge = new ObservabilityBridge(
