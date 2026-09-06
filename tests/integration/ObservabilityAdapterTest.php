@@ -53,32 +53,37 @@ $requestContext = RequestContext::create('req-observe-1', 'corr-observe-1');
 $exporter = new MemoryTelemetryExporter();
 $bridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $exporter);
 
-// When callers omit RequestContext, one bridge instance must keep one generated
-// context so records from the same request/job remain correlatable.
-$hadRequestId = array_key_exists('HTTP_X_REQUEST_ID', $_SERVER);
-$hadCorrelationId = array_key_exists('HTTP_X_CORRELATION_ID', $_SERVER);
-$previousRequestId = $_SERVER['HTTP_X_REQUEST_ID'] ?? null;
-$previousCorrelationId = $_SERVER['HTTP_X_CORRELATION_ID'] ?? null;
-unset($_SERVER['HTTP_X_REQUEST_ID'], $_SERVER['HTTP_X_CORRELATION_ID']);
+// A boundary-scoped default may be injected once and reused for records in that
+// request/job. A bridge without that boundary must reject omitted context rather
+// than caching an identifier across persistent worker requests.
+$boundaryContext = RequestContext::create('req-boundary-1', 'corr-boundary-1');
+$boundaryExporter = new MemoryTelemetryExporter();
+$boundaryBridge = new ObservabilityBridge(
+    'fixture-service',
+    'test',
+    'git-test',
+    $boundaryExporter,
+    true,
+    null,
+    $boundaryContext,
+);
+$boundaryBridge->event('info', 'fixture.boundary_context.event');
+$boundaryBridge->counter('fixture.boundary_context.counter');
+assert(count($boundaryExporter->records) === 2);
+assert($boundaryExporter->records[0]['request_id'] === 'req-boundary-1');
+assert($boundaryExporter->records[1]['request_id'] === 'req-boundary-1');
+assert($boundaryExporter->records[0]['correlation_id'] === 'corr-boundary-1');
+assert($boundaryExporter->records[1]['correlation_id'] === 'corr-boundary-1');
 
-$defaultContextExporter = new MemoryTelemetryExporter();
-$defaultContextBridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $defaultContextExporter);
-$defaultContextBridge->event('info', 'fixture.default_context.event');
-$defaultContextBridge->counter('fixture.default_context.counter');
-assert(count($defaultContextExporter->records) === 2);
-assert($defaultContextExporter->records[0]['request_id'] === $defaultContextExporter->records[1]['request_id']);
-assert($defaultContextExporter->records[0]['correlation_id'] === $defaultContextExporter->records[1]['correlation_id']);
-
-if ($hadRequestId) {
-    $_SERVER['HTTP_X_REQUEST_ID'] = $previousRequestId;
-} else {
-    unset($_SERVER['HTTP_X_REQUEST_ID']);
+$missingContextExporter = new MemoryTelemetryExporter();
+$missingContextBridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $missingContextExporter);
+try {
+    $missingContextBridge->event('info', 'fixture.missing_context');
+    assert(false, 'Expected missing RequestContext failure.');
+} catch (InvalidArgumentException $exception) {
+    assert(str_contains($exception->getMessage(), 'RequestContext is required'));
 }
-if ($hadCorrelationId) {
-    $_SERVER['HTTP_X_CORRELATION_ID'] = $previousCorrelationId;
-} else {
-    unset($_SERVER['HTTP_X_CORRELATION_ID']);
-}
+assert($missingContextExporter->records === []);
 
 $dangerousObject = new class implements JsonSerializable {
     public function jsonSerialize(): mixed
