@@ -19,8 +19,8 @@
 | P2-03 | IMPLEMENTADO / MERGEADO | Failure fixtures deterministas y solo de test para timeout/429/5xx/DNS/storage, sin retry implícito ni fault injection en producción; plantilla de adopción y regresión integrada a la suite. PR #43, merge `be35f2ea2a2ea526fee130842a7fc4883f5a0427`. |
 | P2-04 | NO INICIADO | Upload Extension segura; requiere caso real y threat model antes de promover runtime reusable. |
 | P2-05 | NO INICIADO | Rate limit shared-store; requiere Redis/DB/edge real antes de elegir implementación. |
-| P2-06 | IMPLEMENTADO EN ESTE PAQUETE | Pinning inmutable de Actions/containers, checker sobre workflows de HEAD y generación de SBOM CycloneDX 1.6 + provenance de enlace artifact/commit/CI/materiales, sin afirmar firma ni SLSA. |
-| P2-07 | NO INICIADO | Restore drills programados e historial por proyecto C; la agenda/evidencia pertenece al proyecto. |
+| P2-06 | IMPLEMENTADO / MERGEADO | Pinning inmutable de Actions/containers, checker sobre workflows de HEAD y generación de SBOM CycloneDX 1.6 + provenance de enlace artifact/commit/CI/materiales, sin afirmar firma ni SLSA. PR #44, merge `42fc0e202f903bd9bd64aecbb7c7c97087983935`. |
+| P2-07 | CONTRATO IMPLEMENTADO EN ESTE PAQUETE / PILOTO ACTIVO | `templates/RESTORE-HISTORY.md` define scheduler, RPO/RTO project-owned, historial de runs/attempts, retención, fallos visibles y revisión humana. Hache Natación activó la cadencia real en PR #133, merge `a01b3ae7b45a6149a0b60028f143d44b8a8aa866`; falta observar y revisar la primera ejecución programada antes de declarar historia recurrente cerrada. |
 
 ## P2-01 — observabilidad neutral
 
@@ -123,6 +123,33 @@ P2-06 se considera cubierto como primitive reusable cuando:
 
 La existencia de este tooling no declara un proyecto derivado Production Ready: cada Nivel C debe conservar SBOM/provenance de su release real y su propia revisión.
 
+## P2-07 — restore drills programados e historia
+
+P2-07 extiende el restore aislado de P0-11/DB-007 con una obligación de **recurrencia demostrable** para proyectos Nivel C. Hache Base no impone un cron, RPO/RTO ni un proveedor de artifacts universales.
+
+Incluye:
+
+- `templates/RESTORE-HISTORY.md` — contrato project-owned para scheduler, RPO/RTO, ventana de baja carga, store/retención, identidad de `run_id`/`run_attempt`, minimización y revisión periódica;
+- `tests/static/RestoreHistoryTemplateTest.php` — bloquea defaults de negocio incrustados en Base y exige que fallos/reruns permanezcan distinguibles;
+- integración de la regresión en `tests/run.sh`;
+- piloto real Hache Natación: PR #133 programa el restore el día 1 de cada mes una hora después del backup diario, reutiliza RPO 24 h/RTO 1 h ya aprobados, conserva la ruta manual explícita y retiene evidencia minimizada por 90 días.
+
+La evidencia bootstrap manual de un restore previo demuestra que el mecanismo funciona, pero **no sustituye** la primera ejecución nacida del scheduler. Por eso el piloto queda activo y P2-07 no se declara históricamente cerrado todavía.
+
+## Criterio de terminado P2-07 en Base
+
+El contrato reusable se considera implementado cuando:
+
+1. la plantilla no inventa cadencia, RPO/RTO ni retención universal;
+2. exige scheduler real e identidad distinguible de runs/attempts;
+3. exige conservar fallos como fallos y no sobrescribir historia con el último PASS;
+4. exige backup real, restore aislado, verificación específica y cleanup;
+5. exige retención suficiente para observar recurrencia;
+6. exige al menos una ejecución programada real antes de cerrar P2-07 en un proyecto;
+7. una revisión humana permanece obligatoria.
+
+La madurez del piloto solo podrá cerrarse después de observar y revisar su primera ejecución programada real.
+
 ## Siguiente frontera
 
-P2-04 y P2-05 siguen bloqueados hasta existir un caso real que justifique upload/storage o shared-state rate limiting. Tras merge y CI verde de P2-06, el siguiente bloque razonable es **P2-07**, pero su valor real depende de agenda e historial de restore drills en proyectos Nivel C; Hache Base debe limitarse a primitives/contrato y reutilizar la evidencia real ya aprendida del piloto Hache Natación, sin inventar restores de producción.
+P2-04 y P2-05 siguen bloqueados hasta existir un caso real que justifique upload/storage o shared-state rate limiting. P2-07 ya tiene contrato reusable y piloto programado, pero su evidencia recurrente está **en construcción** hasta la primera ejecución real del scheduler. No se debe saltar automáticamente a P3 ni inventar infraestructura para cerrar una casilla.

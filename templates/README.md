@@ -19,6 +19,7 @@ Todo archivo de esta carpeta debe:
 - `SESSION-SECURITY.md`: adopción P0-08 de cookies, fixation, idle/absolute expiry, logout y trusted proxy para sesión.
 - `DEPLOY-RECOVERY.md`: adopción P0-10 con matriz código/DB/assets/config, punto de no retorno, smoke, observación, criterios y drill de recovery.
 - `BACKUP-RESTORE.md`: adopción P0-11 con RPO/RTO, freshness/alertas y evidencia de restore aislado.
+- `RESTORE-HISTORY.md`: adopción P2-07 para proyectos Nivel C con scheduler real, RPO/RTO project-owned, historial de runs/attempts, retención, fallos visibles y revisión humana de la primera ejecución programada.
 - `SUPPLY-CHAIN-TRIAGE.md`: adopción P0-12 con stacks/lockfiles, secret scan, SCA, triage/SLA, mitigaciones SEC-014 y revisión de licencias.
 - `THIRD-PARTY-INVENTORY.md`: adopción P1-05/PERF-010 con owner, propósito, datos compartidos, timeout/fallback, coste medido, budget P1-11 cuando aplica y criterio de retiro por tercero.
 - `CACHE-POLICY.md`: adopción P1-06/PERF-011 con matriz por HTML/assets/API/privado/errores e invalidación reproducible.
