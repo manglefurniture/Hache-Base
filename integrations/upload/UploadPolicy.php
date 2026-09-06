@@ -6,11 +6,14 @@ namespace HacheBase\Integrations\Upload;
 
 final class UploadPolicy
 {
+    /** @var array<string, string> */
+    public readonly array $allowedMimeExtensions;
+
     /**
      * @param array<string, string> $allowedMimeExtensions MIME => server extension.
      */
     public function __construct(
-        public readonly array $allowedMimeExtensions,
+        array $allowedMimeExtensions,
         public readonly int $maxBytes,
         public readonly int $maxFiles,
         public readonly ?int $maxImageWidth = null,
@@ -29,6 +32,7 @@ final class UploadPolicy
         }
 
         $hasImage = false;
+        $normalized = [];
         foreach ($allowedMimeExtensions as $mime => $extension) {
             $mime = strtolower(trim((string) $mime));
             $extension = strtolower(trim((string) $extension));
@@ -38,10 +42,15 @@ final class UploadPolicy
             if (!preg_match('/^[a-z0-9]{1,10}$/', $extension)) {
                 throw new \InvalidArgumentException('invalid server extension');
             }
+            if (isset($normalized[$mime]) && $normalized[$mime] !== $extension) {
+                throw new \InvalidArgumentException('conflicting MIME allowlist entry');
+            }
+            $normalized[$mime] = $extension;
             if (str_starts_with($mime, 'image/')) {
                 $hasImage = true;
             }
         }
+        $this->allowedMimeExtensions = $normalized;
 
         if ($hasImage) {
             foreach ([$maxImageWidth, $maxImageHeight, $maxImagePixels] as $limit) {
@@ -55,7 +64,6 @@ final class UploadPolicy
     public function extensionForMime(string $mime): ?string
     {
         $mime = strtolower(trim($mime));
-        $extension = $this->allowedMimeExtensions[$mime] ?? null;
-        return is_string($extension) ? strtolower($extension) : null;
+        return $this->allowedMimeExtensions[$mime] ?? null;
     }
 }
