@@ -53,16 +53,36 @@ function expectRejected(string $reason, callable $callback): void
     failUploadTest("expected rejection={$reason}");
 }
 
+function pngChunk(string $type, string $data): string
+{
+    $crc = crc32($type . $data);
+    return pack('N', strlen($data)) . $type . $data . pack('N', $crc & 0xffffffff);
+}
+
 function pngFixture(int $width, int $height): string
 {
-    $chunk = static function (string $type, string $data): string {
-        $crc = crc32($type . $data);
-        return pack('N', strlen($data)) . $type . $data . pack('N', $crc & 0xffffffff);
-    };
+    if (!function_exists('gzcompress')) {
+        failUploadTest('zlib is required for PNG fixtures');
+    }
+
+    $scanline = "\x00" . str_repeat("\x00", $width * 4);
+    $raw = str_repeat($scanline, $height);
+    $compressed = gzcompress($raw, 9);
+    if (!is_string($compressed) || $compressed === '') {
+        failUploadTest('could not create PNG fixture payload');
+    }
 
     return "\x89PNG\r\n\x1a\n"
-        . $chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 6, 0, 0, 0))
-        . $chunk('IEND', '');
+        . pngChunk('IHDR', pack('NNCCCCC', $width, $height, 8, 6, 0, 0, 0))
+        . pngChunk('IDAT', $compressed)
+        . pngChunk('IEND', '');
+}
+
+function pngHeaderOnlyFixture(int $width, int $height): string
+{
+    return "\x89PNG\r\n\x1a\n"
+        . pngChunk('IHDR', pack('NNCCCCC', $width, $height, 8, 6, 0, 0, 0))
+        . pngChunk('IEND', '');
 }
 
 function policy(
@@ -130,6 +150,18 @@ try {
     assert(!file_exists($receipt['stored']['path']));
     $service->delete($second);
     assert(!file_exists($second['stored']['path']));
+
+    $truncated = $sourceDir . '/header-only.png';
+    file_put_contents($truncated, pngHeaderOnlyFixture(32, 24));
+    $truncatedSize = filesize($truncated);
+    assert(is_int($truncatedSize));
+    assert(is_array(@getimagesize($truncated)));
+    expectRejected('invalid_image_content', static function () use ($truncated, $truncatedSize, $storageDir): void {
+        (new UploadService(policy(), new LocalUploadStorage($storageDir)))->store([
+            'path' => $truncated,
+            'declared_size' => $truncatedSize,
+        ]);
+    });
 
     $text = $sourceDir . '/fake.png';
     file_put_contents($text, "<?php echo 'not an image';\n");
