@@ -9,6 +9,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/ProductionRea
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/ThirdPartyInventoryTemplateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/DataPrivacyInventoryTemplateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/CachePolicyTemplateTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/RestoreHistoryTemplateTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/FormBFixtureContractTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/static/ProductionReadinessLevelFixturesTest.php"
 bash "$ROOT/tests/static/production-readiness-ci-report.sh"
