@@ -2,7 +2,7 @@
 
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {basename, resolve} from 'node:path';
 
 const ACTION_SHA = /^[0-9a-f]{40}$/;
@@ -44,46 +44,180 @@ function headFile(root, path) {
   }
 }
 
+function scalarToken(raw) {
+  let value = String(raw ?? '').trim();
+  if (value === '') return '';
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    const end = value.indexOf(quote, 1);
+    if (end < 0) return value;
+    return value.slice(1, end);
+  }
+  const comment = value.search(/\s+#/);
+  if (comment >= 0) value = value.slice(0, comment).trim();
+  return value;
+}
+
+function validateActionReference(reference, path, line, references, errors) {
+  if (reference.startsWith('./')) {
+    references.push({kind: 'local_action', reference, path, line});
+    return;
+  }
+  if (reference.startsWith('docker://')) {
+    if (!DIGEST.test(`${reference} `)) {
+      errors.push(`${path}:${line}: docker action must be pinned by sha256 digest (${reference})`);
+    } else {
+      references.push({kind: 'container_action', reference, path, line});
+    }
+    return;
+  }
+  const at = reference.lastIndexOf('@');
+  const revision = at >= 0 ? reference.slice(at + 1).toLowerCase() : '';
+  if (at <= 0 || !ACTION_SHA.test(revision)) {
+    errors.push(`${path}:${line}: external action must use a full 40-char commit SHA (${reference})`);
+  } else {
+    references.push({kind: 'github_action', reference: `${reference.slice(0, at)}@${revision}`, path, line});
+  }
+}
+
+function validateContainerReference(reference, path, line, references, errors) {
+  if (reference === '' || reference.includes('${{')) {
+    errors.push(`${path}:${line}: dynamic/empty container image cannot prove an immutable digest`);
+  } else if (!DIGEST.test(`${reference} `)) {
+    errors.push(`${path}:${line}: container image must be pinned by sha256 digest (${reference})`);
+  } else {
+    references.push({kind: 'container_image', reference, path, line});
+  }
+}
+
+function mappingLine(line) {
+  const match = line.match(/^(\s*)(?:-\s*)?(?:["']([^"']+)["']|([A-Za-z0-9_-]+))\s*:\s*(.*)$/);
+  if (!match) return null;
+  return {
+    indent: match[1].length,
+    key: match[2] ?? match[3],
+    value: match[4],
+  };
+}
+
+function pathIsJob(pathKeys) {
+  return pathKeys.length === 2 && pathKeys[0] === 'jobs';
+}
+
+function imageIsContainerDeclaration(pathKeys) {
+  return pathKeys.length === 3
+    && pathKeys[0] === 'jobs'
+    && pathKeys[2] === 'container';
+}
+
+function imageIsServiceDeclaration(pathKeys) {
+  return pathKeys.length === 4
+    && pathKeys[0] === 'jobs'
+    && pathKeys[2] === 'services';
+}
+
+function parseFlowUses(trimmed, path, lineNumber, references, errors) {
+  if (!trimmed.includes('{')) return;
+  const regex = /(?:^|[,{]\s*)["']?uses["']?\s*:\s*([^,}]+)/g;
+  let match;
+  while ((match = regex.exec(trimmed)) !== null) {
+    validateActionReference(scalarToken(match[1]), path, lineNumber, references, errors);
+  }
+}
+
+function parseInlineImages(value, path, lineNumber, references, errors) {
+  const regex = /(?:^|[,{]\s*)["']?image["']?\s*:\s*([^,}]+)/g;
+  let count = 0;
+  let match;
+  while ((match = regex.exec(value)) !== null) {
+    count++;
+    validateContainerReference(scalarToken(match[1]), path, lineNumber, references, errors);
+  }
+  return count;
+}
+
+/**
+ * Conservative workflow parser for the security-relevant YAML subset.
+ *
+ * We do not pretend this is a general YAML parser. Block mappings are tracked by
+ * indentation; flow-style `uses` entries are parsed explicitly. Direct flow-style
+ * job mappings are rejected so container/service declarations cannot hide from the
+ * checker. `image` keys are validated only at jobs.*.container.image and
+ * jobs.*.services.*.image, avoiding false positives from action inputs named image.
+ */
 function parseWorkflowReferences(path, content) {
   const references = [];
   const errors = [];
   const lines = content.split(/\r?\n/);
+  const stack = [];
+  let blockScalarIndent = null;
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const uses = line.match(/^\s*-?\s*uses:\s*['"]?([^'"\s#]+)['"]?/);
-    if (uses) {
-      const reference = uses[1];
-      if (reference.startsWith('./')) {
-        references.push({kind: 'local_action', reference, path, line: index + 1});
-      } else if (reference.startsWith('docker://')) {
-        if (!DIGEST.test(`${reference} `)) {
-          errors.push(`${path}:${index + 1}: docker action must be pinned by sha256 digest (${reference})`);
-        } else {
-          references.push({kind: 'container_action', reference, path, line: index + 1});
-        }
+    const lineNumber = index + 1;
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) continue;
+
+    const leading = line.match(/^\s*/)?.[0] ?? '';
+    if (leading.includes('\t')) {
+      errors.push(`${path}:${lineNumber}: tabs are not supported in workflow indentation`);
+      continue;
+    }
+    const indent = leading.length;
+
+    if (blockScalarIndent !== null) {
+      if (indent > blockScalarIndent) continue;
+      blockScalarIndent = null;
+    }
+
+    while (stack.length > 0 && indent <= stack.at(-1).indent) stack.pop();
+    const parentPath = stack.map((entry) => entry.key);
+
+    // Flow-style steps can contain a valid `uses` key. Parse it rather than
+    // approving the workflow merely because the anchored block regex missed it.
+    parseFlowUses(trimmed, path, lineNumber, references, errors);
+
+    const mapping = mappingLine(line);
+    if (!mapping) continue;
+    const {key, value} = mapping;
+    const cleanValue = value.trim();
+
+    // A whole job expressed as a flow mapping is intentionally rejected. It can
+    // nest container/services/steps in ways a line-oriented security checker
+    // cannot prove complete without a full YAML parser.
+    if ((key === 'jobs' && cleanValue.startsWith('{')) || (parentPath.length === 1 && parentPath[0] === 'jobs' && cleanValue.startsWith('{'))) {
+      errors.push(`${path}:${lineNumber}: flow-style job mappings are unsupported for immutable-reference evidence`);
+      continue;
+    }
+
+    if (key === 'uses') {
+      validateActionReference(scalarToken(cleanValue), path, lineNumber, references, errors);
+    }
+
+    if (key === 'container' && pathIsJob(parentPath) && cleanValue !== '') {
+      if (cleanValue.startsWith('{')) {
+        const count = parseInlineImages(cleanValue, path, lineNumber, references, errors);
+        if (count !== 1) errors.push(`${path}:${lineNumber}: flow-style container must contain exactly one image field`);
       } else {
-        const at = reference.lastIndexOf('@');
-        const revision = at >= 0 ? reference.slice(at + 1).toLowerCase() : '';
-        if (at <= 0 || !ACTION_SHA.test(revision)) {
-          errors.push(`${path}:${index + 1}: external action must use a full 40-char commit SHA (${reference})`);
-        } else {
-          references.push({kind: 'github_action', reference: `${reference.slice(0, at)}@${revision}`, path, line: index + 1});
-        }
+        validateContainerReference(scalarToken(cleanValue), path, lineNumber, references, errors);
       }
     }
 
-    const image = line.match(/^\s*image:\s*['"]?([^'"\s#]+)['"]?/);
-    if (image) {
-      const reference = image[1];
-      if (reference.includes('${{')) {
-        errors.push(`${path}:${index + 1}: dynamic container image cannot prove an immutable digest`);
-      } else if (!DIGEST.test(`${reference} `)) {
-        errors.push(`${path}:${index + 1}: container image must be pinned by sha256 digest (${reference})`);
-      } else {
-        references.push({kind: 'container_image', reference, path, line: index + 1});
-      }
+    if (key === 'services' && pathIsJob(parentPath) && cleanValue.startsWith('{')) {
+      const count = parseInlineImages(cleanValue, path, lineNumber, references, errors);
+      if (count === 0) errors.push(`${path}:${lineNumber}: flow-style services cannot be proven without inline image fields`);
     }
+
+    if (key === 'image' && (imageIsContainerDeclaration(parentPath) || imageIsServiceDeclaration(parentPath))) {
+      validateContainerReference(scalarToken(cleanValue), path, lineNumber, references, errors);
+    }
+
+    if (/^[>|][+-]?$/.test(cleanValue)) {
+      blockScalarIndent = indent;
+      continue;
+    }
+
+    if (cleanValue === '') stack.push({indent, key});
   }
 
   return {references, errors};
@@ -105,7 +239,7 @@ function verifyWorkflows(root) {
   const result = workflowEvidence(root);
   if (result.errors.length > 0) {
     for (const error of result.errors) process.stderr.write(`${error}\n`);
-    fail(`mutable_workflow_references=${result.errors.length}`, 1);
+    fail(`mutable_or_unprovable_workflow_references=${result.errors.length}`, 1);
   }
   process.stdout.write(`P2_IMMUTABLE_REFERENCES_OK workflows=${result.files.length} references=${result.references.length}\n`);
   return result;
@@ -210,15 +344,13 @@ function loadArtifactManifest(path) {
 
 function verifyArtifact(artifactPath, manifest) {
   let bytes;
-  let size;
   try {
     bytes = readFileSync(artifactPath);
-    size = statSync(artifactPath).size;
   } catch {
     fail('artifact_unreadable');
   }
   if (basename(artifactPath) !== manifest.artifact_name) fail('artifact_name_mismatch', 1);
-  if (size !== manifest.artifact_size_bytes) fail('artifact_size_mismatch', 1);
+  if (bytes.length !== manifest.artifact_size_bytes) fail('artifact_size_mismatch', 1);
   const digest = sha256Bytes(bytes);
   if (digest !== manifest.artifact_sha256.toLowerCase()) fail('artifact_sha256_mismatch', 1);
 }
@@ -297,6 +429,7 @@ function generateEvidence({root, manifestPath, artifactPath, outputDir, project,
       build_evidence_ref: manifest.build_evidence_ref,
       test_evidence_ref: manifest.test_evidence_ref,
     },
+    materials_scope: 'VERSIONED_GITHUB_ACTIONS_AND_WORKFLOW_CONTAINERS_ONLY',
     materials,
     sbom: {name: 'sbom.cdx.json', sha256: sha256Bytes(sbomText), dependency_coverage: inventory.coverage},
     created_at: manifest.created_at,
@@ -306,8 +439,8 @@ function generateEvidence({root, manifestPath, artifactPath, outputDir, project,
   mkdirSync(outputDir, {recursive: true});
   const sbomPath = resolve(outputDir, 'sbom.cdx.json');
   const provenancePath = resolve(outputDir, 'provenance.json');
-  writeFileSync(sbomPath, sbomText, {encoding: 'utf8', mode: 0o600});
-  writeFileSync(provenancePath, stableJson(provenance), {encoding: 'utf8', mode: 0o600});
+  writeFileSync(sbomPath, sbomText, {encoding: 'utf8', mode: 0o600, flag: 'wx'});
+  writeFileSync(provenancePath, stableJson(provenance), {encoding: 'utf8', mode: 0o600, flag: 'wx'});
 
   process.stdout.write(`P2_RELEASE_EVIDENCE_OK source_commit=${sourceCommit} components=${components.length} materials=${materials.length} sbom=${sbomPath} provenance=${provenancePath}\n`);
 }
