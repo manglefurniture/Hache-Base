@@ -21,6 +21,7 @@ node "$ROOT/tests/ui/reuse-hardening-regression.mjs"
 node "$ROOT/tests/rum/WebVitalsRumTest.mjs"
 node "$ROOT/tests/rum/FieldP75Test.mjs"
 node "$ROOT/tests/observability/AlertPolicyTest.mjs"
+node "$ROOT/tests/security/P2SupplyChainEvidenceTest.mjs"
 
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/audit/AuditSanitizerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/common/CommonTest.php"
