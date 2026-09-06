@@ -66,10 +66,11 @@ for (const [name, budget] of Object.entries(budgets.assertions)) {
 }
 
 const exactInstall = `npm install --global ${budgets.tool.package}@${budgets.tool.version}`;
+const uploadArtifactSha = 'ea165f8d65b6e75b540449e92b4886f43607fa02';
 if (!workflow.includes('browser_audit:')) fail('browser_audit_job_missing');
 if (!workflow.includes('node-version: 22')) fail('node_22_pin_missing');
 if (!workflow.includes(exactInstall)) fail('lhci_exact_install_missing');
 if (!workflow.includes('lhci autorun --config=tests/browser/lighthouserc.cjs')) fail('lhci_autorun_missing');
-if (!workflow.includes('actions/upload-artifact@v4')) fail('artifact_upload_missing');
+if (!workflow.includes(`actions/upload-artifact@${uploadArtifactSha}`)) fail('artifact_upload_missing_or_mutable');
 
 console.log('P1_03_CONFIG_OK');
