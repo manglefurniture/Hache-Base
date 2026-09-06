@@ -10,7 +10,7 @@ const example = JSON.parse(
   await fs.readFile(path.join(root, 'templates/alert-policy.example.json'), 'utf8'),
 );
 
-assert.equal(validateAlertPolicy(structuredClone(example)), example);
+assert.deepEqual(validateAlertPolicy(structuredClone(example)), example);
 assert.equal(example.alerts.length, 2);
 
 function expectInvalid(mutator, expectedFragment) {
