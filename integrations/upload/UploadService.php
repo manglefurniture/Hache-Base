@@ -44,6 +44,11 @@ final class UploadService
         if ($actualSize > $this->policy->maxBytes) {
             throw new UploadRejected('too_large');
         }
+        $sourceSha = hash_file('sha256', $path);
+        if ($sourceSha === false) {
+            throw new UploadRejected('fingerprint_unavailable');
+        }
+        $sourceSha = strtolower($sourceSha);
 
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mime = strtolower(trim((string) $finfo->file($path)));
@@ -77,12 +82,14 @@ final class UploadService
 
         $scannerStatus = $this->scan($path, $mime);
         $stored = $this->storage->store($path, $extension);
-        if (($stored['size'] ?? null) !== $actualSize) {
+        $storedSize = $stored['size'] ?? null;
+        $storedSha = $stored['sha256'] ?? null;
+        if ($storedSize !== $actualSize || !is_string($storedSha) || !hash_equals($sourceSha, strtolower($storedSha))) {
             try {
                 $this->storage->delete($stored);
             } catch (\Throwable) {
             }
-            throw new \RuntimeException('stored upload size drift');
+            throw new \RuntimeException('stored upload byte drift');
         }
 
         return [
