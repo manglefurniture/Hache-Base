@@ -11,7 +11,8 @@ jobs:
 
     services:
       mariadb:
-        image: mariadb:11.8
+        # MariaDB 11.8, immutable image digest observed by this CI on 2026-09-06.
+        image: mariadb:11.8@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
         env:
           MARIADB_ROOT_PASSWORD: root
           MARIADB_DATABASE: hache_base_test
@@ -25,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 2
 
@@ -53,6 +54,9 @@ jobs:
           SUPPLY_CHAIN_DISABLE_EXTERNAL_SCA: 1
           SUPPLY_CHAIN_REPORT_FILE: ${{ runner.temp }}/hache-supply-chain-report.json
         run: php security/supply-chain/check.php
+
+      - name: Verify immutable workflow references
+        run: node tools/supply-chain/p2-evidence.mjs verify-workflows .
 
       - name: PHP and unit checks
         run: bash tests/run.sh
@@ -120,10 +124,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Use Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -151,7 +155,7 @@ jobs:
 
       - name: Upload browser audit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: p1-03-lighthouse-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
