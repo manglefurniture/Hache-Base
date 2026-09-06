@@ -45,6 +45,7 @@ final class ObservabilityBridge
         private readonly TelemetryExporter $exporter,
         private readonly bool $failOpen = true,
         ?callable $onExportFailure = null,
+        private readonly ?RequestContext $boundaryContext = null,
     ) {
         if (trim($service) === '' || trim($environment) === '' || trim($version) === '') {
             throw new InvalidArgumentException('service, environment and version are required.');
@@ -125,7 +126,11 @@ final class ObservabilityBridge
         ?RequestContext $requestContext = null,
         ?TraceContext $parentTrace = null,
     ): mixed {
-        $requestContext ??= RequestContext::fromServer();
+        // Validate telemetry-only inputs before a side-effecting business callback
+        // can run. A bad span name must never turn a committed operation into an
+        // apparent failure that a caller may retry.
+        $name = self::normalizeName($name);
+        $requestContext = $this->resolveRequestContext($requestContext);
         $localTrace = $parentTrace === null
             ? TraceContext::root()
             : TraceContext::childOf($parentTrace);
@@ -192,7 +197,7 @@ final class ObservabilityBridge
         ?TraceContext $traceContext,
     ): array {
         $name = self::normalizeName($name);
-        $requestContext ??= RequestContext::fromServer();
+        $requestContext = $this->resolveRequestContext($requestContext);
         $traceContext ??= TraceContext::root();
 
         return [
@@ -208,6 +213,20 @@ final class ObservabilityBridge
             ...$traceContext->toArray(),
             'attributes' => self::sanitizeAttributes(StructuredLogger::redact($attributes)),
         ];
+    }
+
+    private function resolveRequestContext(?RequestContext $requestContext): RequestContext
+    {
+        if ($requestContext instanceof RequestContext) {
+            return $requestContext;
+        }
+        if ($this->boundaryContext instanceof RequestContext) {
+            return $this->boundaryContext;
+        }
+
+        throw new InvalidArgumentException(
+            'RequestContext is required unless a boundary-scoped context is injected into ObservabilityBridge.',
+        );
     }
 
     /** @param array<string, mixed> $record */

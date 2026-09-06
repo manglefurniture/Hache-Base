@@ -27,6 +27,17 @@ Todos los records exportados incluyen:
 
 Los metrics añaden `metric_type` y `value`; histogram añade `unit`. Los spans añaden `started_at`, `ended_at`, `duration_ms` y `status`.
 
+## Contexto por request/job
+
+`request_id` y `correlation_id` son datos de una **frontera de ejecución concreta**. La Extension no mantiene un contexto implícito permanente dentro de `ObservabilityBridge`, porque una misma instancia puede vivir más que un request en workers persistentes.
+
+El proyecto debe elegir una de estas dos formas:
+
+1. pasar el mismo `RequestContext` explícitamente a cada `event()`, `counter()`, `histogram()` o `measure()` de ese request/job; o
+2. inyectar un `boundaryContext` al construir un bridge que esté scoped únicamente a ese request/job.
+
+Si no se pasa un contexto explícito ni se inyecta uno de frontera, la operación falla antes de exportar. En RoadRunner, Swoole, workers de cola o cualquier runtime persistente, nunca reutilizar entre requests/jobs un bridge que tenga `boundaryContext` de una ejecución anterior.
+
 ## Privacidad y cardinalidad
 
 La Extension no autoriza enviar datos personales. `attributes` pasa por la redacción de `StructuredLogger` y además bloquea claves de alta probabilidad de PII como email, teléfono, dirección, IDs de usuario/cliente/alumno, IP, user-agent, referrer, session ID, query string y URL completa.

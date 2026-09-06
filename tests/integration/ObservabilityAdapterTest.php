@@ -53,6 +53,38 @@ $requestContext = RequestContext::create('req-observe-1', 'corr-observe-1');
 $exporter = new MemoryTelemetryExporter();
 $bridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $exporter);
 
+// A boundary-scoped default may be injected once and reused for records in that
+// request/job. A bridge without that boundary must reject omitted context rather
+// than caching an identifier across persistent worker requests.
+$boundaryContext = RequestContext::create('req-boundary-1', 'corr-boundary-1');
+$boundaryExporter = new MemoryTelemetryExporter();
+$boundaryBridge = new ObservabilityBridge(
+    'fixture-service',
+    'test',
+    'git-test',
+    $boundaryExporter,
+    true,
+    null,
+    $boundaryContext,
+);
+$boundaryBridge->event('info', 'fixture.boundary_context.event');
+$boundaryBridge->counter('fixture.boundary_context.counter');
+assert(count($boundaryExporter->records) === 2);
+assert($boundaryExporter->records[0]['request_id'] === 'req-boundary-1');
+assert($boundaryExporter->records[1]['request_id'] === 'req-boundary-1');
+assert($boundaryExporter->records[0]['correlation_id'] === 'corr-boundary-1');
+assert($boundaryExporter->records[1]['correlation_id'] === 'corr-boundary-1');
+
+$missingContextExporter = new MemoryTelemetryExporter();
+$missingContextBridge = new ObservabilityBridge('fixture-service', 'test', 'git-test', $missingContextExporter);
+try {
+    $missingContextBridge->event('info', 'fixture.missing_context');
+    assert(false, 'Expected missing RequestContext failure.');
+} catch (InvalidArgumentException $exception) {
+    assert(str_contains($exception->getMessage(), 'RequestContext is required'));
+}
+assert($missingContextExporter->records === []);
+
 $dangerousObject = new class implements JsonSerializable {
     public function jsonSerialize(): mixed
     {
@@ -147,6 +179,26 @@ assert($failedSpan['kind'] === 'span');
 assert($failedSpan['status'] === 'ERROR');
 assert($failedSpan['attributes']['exception_type'] === DomainException::class);
 assert(!str_contains(json_encode($failedSpan, JSON_THROW_ON_ERROR), 'business message must not enter telemetry'));
+
+// An invalid telemetry name must be rejected before the business callback runs.
+$invalidMeasureExecuted = false;
+try {
+    $bridge->measure(
+        "fixture\ninvalid",
+        static function () use (&$invalidMeasureExecuted): int {
+            $invalidMeasureExecuted = true;
+            return 1;
+        },
+        [],
+        $requestContext,
+        $remote,
+    );
+    assert(false, 'Expected invalid span name failure.');
+} catch (InvalidArgumentException) {
+    // Expected.
+}
+assert($invalidMeasureExecuted === false);
+assert(count($exporter->records) === 5);
 
 $failureCount = 0;
 $failOpenBridge = new ObservabilityBridge(
