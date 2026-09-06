@@ -2,7 +2,7 @@
 
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';
 import {basename, resolve} from 'node:path';
 
 const ACTION_SHA = /^[0-9a-f]{40}$/;
@@ -120,7 +120,7 @@ function parseJson(text, label) {
 }
 
 function npmComponents(lock, lockPath) {
-  if (![2, 3].includes(lock?.lockfileVersion) || typeof lock?.packages !== 'object' || lock.packages === null) {
+  if (![2, 3].includes(lock?.lockfileVersion) || typeof lock?.packages !== 'object' || lock.packages === null || Array.isArray(lock.packages)) {
     fail(`unsupported_npm_lock=${lockPath}`);
   }
   const components = [];
@@ -138,7 +138,10 @@ function npmComponents(lock, lockPath) {
 }
 
 function composerComponents(lock, lockPath) {
-  const lists = [...(Array.isArray(lock?.packages) ? lock.packages : []), ...(Array.isArray(lock?.['packages-dev']) ? lock['packages-dev'] : [])];
+  if (!Array.isArray(lock?.packages) || (lock['packages-dev'] !== undefined && !Array.isArray(lock['packages-dev']))) {
+    fail(`unsupported_composer_lock=${lockPath}`);
+  }
+  const lists = [...lock.packages, ...(Array.isArray(lock['packages-dev']) ? lock['packages-dev'] : [])];
   const components = [];
   for (const metadata of lists) {
     const name = typeof metadata?.name === 'string' ? metadata.name.trim() : '';
@@ -180,7 +183,7 @@ function dependencyInventory(root) {
 }
 
 function componentRef(component) {
-  return `pkg:${component.ecosystem}/${encodeURIComponent(component.name)}@${encodeURIComponent(component.version)}`;
+  return `urn:hache:component:${encodeURIComponent(component.ecosystem)}:${encodeURIComponent(component.name)}:${encodeURIComponent(component.version)}`;
 }
 
 function sha256Bytes(value) {
@@ -201,18 +204,41 @@ function loadArtifactManifest(path) {
   for (const field of ['artifact_name', 'ci_run_ref', 'build_evidence_ref', 'test_evidence_ref', 'created_at']) {
     if (typeof manifest?.[field] !== 'string' || manifest[field].trim() === '') fail(`artifact_manifest_invalid_field=${field}`);
   }
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(manifest.created_at)) fail('artifact_manifest_invalid_created_at');
   return manifest;
 }
 
-function generateEvidence({root, manifestPath, outputDir, project, repository}) {
+function verifyArtifact(artifactPath, manifest) {
+  let bytes;
+  let size;
+  try {
+    bytes = readFileSync(artifactPath);
+    size = statSync(artifactPath).size;
+  } catch {
+    fail('artifact_unreadable');
+  }
+  if (basename(artifactPath) !== manifest.artifact_name) fail('artifact_name_mismatch', 1);
+  if (size !== manifest.artifact_size_bytes) fail('artifact_size_mismatch', 1);
+  const digest = sha256Bytes(bytes);
+  if (digest !== manifest.artifact_sha256.toLowerCase()) fail('artifact_sha256_mismatch', 1);
+}
+
+function cleanLabel(value, field) {
+  const normalized = String(value ?? '').trim();
+  if (normalized === '' || normalized.length > 300 || /[\x00-\x1f\x7f]/.test(normalized)) fail(`invalid_argument=${field}`);
+  return normalized;
+}
+
+function generateEvidence({root, manifestPath, artifactPath, outputDir, project, repository}) {
   const manifest = loadArtifactManifest(manifestPath);
+  verifyArtifact(artifactPath, manifest);
   const head = headCommit(root);
   const sourceCommit = manifest.source_commit.toLowerCase();
   if (head !== sourceCommit) fail(`source_commit_mismatch expected=${sourceCommit} actual=${head}`, 1);
 
   const workflow = verifyWorkflows(root);
   const inventory = dependencyInventory(root);
-  const rootRef = `application:${project}@${sourceCommit}`;
+  const rootRef = `urn:hache:application:${encodeURIComponent(project)}:${sourceCommit}`;
   const components = inventory.components.map((component) => ({
     type: 'library',
     'bom-ref': componentRef(component),
@@ -249,9 +275,13 @@ function generateEvidence({root, manifestPath, outputDir, project, repository}) 
   };
 
   const sbomText = stableJson(sbom);
-  const materials = workflow.references
-    .filter((item) => item.kind !== 'local_action')
-    .map((item) => ({kind: item.kind, reference: item.reference, workflow: item.path}))
+  const materialMap = new Map();
+  for (const item of workflow.references) {
+    if (item.kind === 'local_action') continue;
+    const key = `${item.kind}\0${item.reference}\0${item.path}`;
+    materialMap.set(key, {kind: item.kind, reference: item.reference, workflow: item.path});
+  }
+  const materials = [...materialMap.values()]
     .sort((a, b) => `${a.kind}:${a.reference}:${a.workflow}`.localeCompare(`${b.kind}:${b.reference}:${b.workflow}`));
 
   const provenance = {
@@ -284,21 +314,23 @@ function generateEvidence({root, manifestPath, outputDir, project, repository}) 
 
 function parseGenerateArgs(argv) {
   const options = {};
+  if (argv.length % 2 !== 0) fail('invalid_generate_arguments');
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index];
     const value = argv[index + 1];
     if (!key?.startsWith('--') || value === undefined) fail('invalid_generate_arguments');
     options[key.slice(2)] = value;
   }
-  for (const required of ['root', 'artifact-manifest', 'output-dir', 'project', 'repository']) {
+  for (const required of ['root', 'artifact-manifest', 'artifact', 'output-dir', 'project', 'repository']) {
     if (!options[required]) fail(`missing_argument=${required}`);
   }
   return {
     root: resolve(options.root),
     manifestPath: resolve(options['artifact-manifest']),
+    artifactPath: resolve(options.artifact),
     outputDir: resolve(options['output-dir']),
-    project: options.project,
-    repository: options.repository,
+    project: cleanLabel(options.project, 'project'),
+    repository: cleanLabel(options.repository, 'repository'),
   };
 }
 
