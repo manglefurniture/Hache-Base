@@ -16,10 +16,10 @@
 | --- | --- | --- |
 | P2-01 | IMPLEMENTADO / MERGEADO | Extension opt-in y vendor-neutral para logs, métricas y trazas; exporter contract, trace context estricto, minimización, fail-open y plantilla de adopción. PR #40, merge `ca7e243f3661f40accf9d1f762e5897b4419cd80`; follow-up automático de ciclo de vida/contexto cerrado en PR #42, merge `0b57b4873e67bfe95284b63713fb6d92f799a8d0`. |
 | P2-02 | IMPLEMENTADO / MERGEADO | Política machine-readable de alertas sobre golden signals/CUF, validator determinista, plantilla de runbooks, control de ruido y regresión offline. PR #41, merge `a3398bf0fc7851beb04ea46214def65ce458f236`. |
-| P2-03 | IMPLEMENTADO EN ESTE PAQUETE | Failure fixtures deterministas y solo de test para timeout/429/5xx/DNS/storage, sin retry implícito ni fault injection en producción; plantilla de adopción y regresión integrada a la suite. |
+| P2-03 | IMPLEMENTADO / MERGEADO | Failure fixtures deterministas y solo de test para timeout/429/5xx/DNS/storage, sin retry implícito ni fault injection en producción; plantilla de adopción y regresión integrada a la suite. PR #43, merge `be35f2ea2a2ea526fee130842a7fc4883f5a0427`. |
 | P2-04 | NO INICIADO | Upload Extension segura; requiere caso real y threat model antes de promover runtime reusable. |
 | P2-05 | NO INICIADO | Rate limit shared-store; requiere Redis/DB/edge real antes de elegir implementación. |
-| P2-06 | NO INICIADO | SBOM/provenance y pinning de actions/containers para Nivel C. |
+| P2-06 | IMPLEMENTADO EN ESTE PAQUETE | Pinning inmutable de Actions/containers, checker sobre workflows de HEAD y generación de SBOM CycloneDX 1.6 + provenance de enlace artifact/commit/CI/materiales, sin afirmar firma ni SLSA. |
 | P2-07 | NO INICIADO | Restore drills programados e historial por proyecto C; la agenda/evidencia pertenece al proyecto. |
 
 ## P2-01 — observabilidad neutral
@@ -92,6 +92,37 @@ P2-03 se considera cubierto como primitive/fixture reusable cuando:
 
 La existencia de los fixtures no marca controles `ROB-*` ni un proyecto derivado como PASS.
 
+## P2-06 — SBOM, provenance y pinning inmutable
+
+P2-06 se implementa encima de P0-12 y del artifact manifest ya existente, sin introducir un servicio externo ni una afirmación criptográfica ficticia.
+
+Incluye:
+
+- `.github/workflows/ci.yml` con Actions externas fijadas por commit SHA completo y MariaDB fijada por digest SHA-256;
+- `tools/supply-chain/p2-evidence.mjs verify-workflows` — lee workflows del árbol versionado de `HEAD` y bloquea Actions/containers mutables;
+- `tools/supply-chain/p2-evidence.mjs generate` — verifica los bytes reales del artifact contra `hache-artifact-manifest/v1`, exige que `source_commit` coincida con `HEAD`, genera `sbom.cdx.json` CycloneDX 1.6 y `provenance.json`;
+- SBOM desde `package-lock.json`/`npm-shrinkwrap.json` v2/v3 y `composer.lock` versionados; yarn/pnpm quedan explícitamente como cobertura parcial;
+- provenance local `hache-release-provenance/v1` con artifact digest, commit, refs de CI/build/test, materiales inmutables de workflows y hash del SBOM;
+- `security/supply-chain/P2-06.md` — contrato de adopción y fronteras de confianza;
+- `tests/security/P2SupplyChainEvidenceTest.mjs` — regresión de pinning, generación y rechazo de artifact alterado;
+- integración del checker y regresión en CI/suite.
+
+La provenance queda marcada `UNSIGNED_PROVENANCE_LINKAGE_ONLY_NOT_SLSA_ATTESTATION`: Hache Base no afirma firma, identidad de builder ni cumplimiento SLSA sin infraestructura real que lo demuestre.
+
+## Criterio de terminado P2-06 en Base
+
+P2-06 se considera cubierto como primitive reusable cuando:
+
+1. las referencias externas de workflows Nivel C pueden verificarse por commit SHA/digest inmutable;
+2. el checker usa `HEAD` versionado y no un working tree potencialmente alterado;
+3. el SBOM conserva cobertura explícita y no convierte lockfiles no soportados en evidencia completa;
+4. provenance queda ligada a los bytes reales del artifact, su manifest, commit y evidencia CI/test;
+5. un artifact alterado o commit distinto impide generar evidencia válida;
+6. no se confunde provenance de enlace con attestation firmada/SLSA;
+7. la suite bloquea regresiones hacia referencias mutables.
+
+La existencia de este tooling no declara un proyecto derivado Production Ready: cada Nivel C debe conservar SBOM/provenance de su release real y su propia revisión.
+
 ## Siguiente frontera
 
-Después de merge y CI verde de P2-03, **no se debe saltar automáticamente a P2-04/P2-05**: ambos requieren un caso real que justifique upload/storage o shared-state rate limiting. El siguiente movimiento debe ser auditar qué ítem P2 tiene dependencias reales ya disponibles; P2-06 puede evaluarse sin inventar infraestructura, mientras P2-07 requiere agenda/evidencia por proyecto C.
+P2-04 y P2-05 siguen bloqueados hasta existir un caso real que justifique upload/storage o shared-state rate limiting. Tras merge y CI verde de P2-06, el siguiente bloque razonable es **P2-07**, pero su valor real depende de agenda e historial de restore drills en proyectos Nivel C; Hache Base debe limitarse a primitives/contrato y reutilizar la evidencia real ya aprendida del piloto Hache Natación, sin inventar restores de producción.
