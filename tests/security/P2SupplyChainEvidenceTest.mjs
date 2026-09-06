@@ -52,8 +52,9 @@ try {
   const commit = run('git', ['rev-parse', 'HEAD'], fixture).trim();
 
   const artifact = Buffer.from('artifact-bytes');
+  const artifactPath = join(fixture, 'artifact.tar.gz');
   const artifactSha = createHash('sha256').update(artifact).digest('hex');
-  writeFileSync(join(fixture, 'artifact.tar.gz'), artifact);
+  writeFileSync(artifactPath, artifact);
   const manifest = {
     schema: 'hache-artifact-manifest/v1',
     source_commit: commit,
@@ -66,14 +67,16 @@ try {
     created_at: '2026-09-06T22:00:00Z',
     decision: 'ARTIFACT_IDENTITY_ONLY_NOT_PRODUCTION_READY_DECLARATION',
   };
-  writeFileSync(join(fixture, 'artifact.manifest.json'), JSON.stringify(manifest));
+  const manifestPath = join(fixture, 'artifact.manifest.json');
+  writeFileSync(manifestPath, JSON.stringify(manifest));
 
   const output = join(fixture, 'evidence');
   const generation = run('node', [
     tool,
     'generate',
     '--root', fixture,
-    '--artifact-manifest', join(fixture, 'artifact.manifest.json'),
+    '--artifact-manifest', manifestPath,
+    '--artifact', artifactPath,
     '--output-dir', output,
     '--project', 'fixture-app',
     '--repository', 'https://example.invalid/fixture.git',
@@ -99,6 +102,21 @@ try {
   assert.ok(provenance.materials.some((item) => item.reference === `actions/checkout@${checkoutSha}`));
   assert.ok(provenance.materials.some((item) => item.reference.includes(`@sha256:${imageDigest}`)));
   assert.match(provenance.sbom.sha256, /^[0-9a-f]{64}$/);
+
+  // Fabricating only the manifest is insufficient: evidence must re-hash the artifact bytes.
+  writeFileSync(artifactPath, Buffer.from('tampered-artifact'));
+  const tampered = spawnSync('node', [
+    tool,
+    'generate',
+    '--root', fixture,
+    '--artifact-manifest', manifestPath,
+    '--artifact', artifactPath,
+    '--output-dir', join(fixture, 'tampered-evidence'),
+    '--project', 'fixture-app',
+    '--repository', 'https://example.invalid/fixture.git',
+  ], {encoding: 'utf8'});
+  assert.equal(tampered.status, 1);
+  assert.match(tampered.stderr, /artifact_(size|sha256)_mismatch/);
 } finally {
   rmSync(fixture, {recursive: true, force: true});
 }
