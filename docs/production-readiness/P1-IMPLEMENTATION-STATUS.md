@@ -4,7 +4,7 @@
 
 ## Corte
 
-- Fecha: 2026-09-05
+- Fecha: 2026-09-06
 - Base de este paquete: `19a9c578d589ae6a48b4997ddf2c132227bccdc1`
 - Fuente normativa: `PRODUCTION-READINESS-STANDARD.md` v1.1
 - Secuencia: `PRODUCTION-READINESS-ROADMAP.md`
@@ -50,16 +50,25 @@ El roadmap exige tres condiciones para cerrar P1:
 
 1. CI produce un reporte legible y no declara pruebas humanas inexistentes — **CUBIERTO EN HACHE BASE** por P1-01 y sus regresiones.
 2. Fixtures A/B/C cubren headers, errores, CUF y budgets — **CUBIERTO EN HACHE BASE** por la matriz explícita A/B/C y las regresiones enlazadas.
-3. Al menos un proyecto B/C piloto produce evidencia de campo, restore y comunicación status — **PENDIENTE DE EVIDENCIA DE PROYECTO**.
+3. Al menos un proyecto B/C piloto produce evidencia de campo, restore y comunicación status — **CUBIERTO POR HACHE NATACIÓN, PILOTO REAL NIVEL C** (revisiones humanas de Communication status, Restore y Field en PASS).
 
 Por tanto:
 
 - **P0-01…P0-12 + criterio de fixtures P0: CUBIERTOS EN HACHE BASE.**
 - **P1-01…P1-11 + criterio de fixtures P1: CUBIERTOS EN HACHE BASE.**
-- **Criterio de salida P1 completo: NO CERRADO TODAVÍA.**
-- Único bloqueo restante: seleccionar un piloto B/C que tenga un flujo de comunicación aplicable y conservar evidencia verificable de campo, restore y communication status.
+- **Criterio de salida P1 completo: CERRADO EL 2026-09-06.**
+- Piloto real: Hache Natación, Nivel C; cierre humano documentado y desplegado, sin convertir fixtures de Base en evidencia de producción.
 
-Ese bloqueo no debe maquillarse como `PASS`, `N/A` o “resuelto por Core”.
+## Registro del piloto real cerrado
+
+- [PILOT-C.md](https://github.com/manglefurniture/hache-natacion/blob/6db0572c1195e4fb206d800646a3a68a80915586/docs/production-readiness/PILOT-C.md): Communication status PASS, Restore PASS y Field PASS.
+- [Communication review](https://github.com/manglefurniture/hache-natacion/blob/6db0572c1195e4fb206d800646a3a68a80915586/docs/production-readiness/COMMUNICATION-DELIVERY-REVIEW-20260905.md): run `33945691437`, 36 estados correlacionados (10 DELIVERED, 26 READ, 0 FAILED).
+- [Restore review](https://github.com/manglefurniture/hache-natacion/blob/6db0572c1195e4fb206d800646a3a68a80915586/docs/production-readiness/RESTORE-REVIEW-20260905.md): run `33999270733`, backup real restaurado en target aislado; edad 1248 s ≤ RPO 86400 s, duración 3 s ≤ RTO 3600 s; integridad y cleanup verificados.
+- [Field review](https://github.com/manglefurniture/hache-natacion/blob/6db0572c1195e4fb206d800646a3a68a80915586/docs/production-readiness/FIELD-REVIEW-20260906.md): aprobación del owner el 2026-09-06; artifact `9995688004`, run `33999557068`, build `5cc3316b22a9c76134a34deb3fdabc2f8fe74805`. Snapshot de 634 mediciones; 616 del build evaluado, separado de 18 anteriores. Los seis grupos de `home` desktop/mobile cumplen piso de 20 muestras y targets p75. No acredita `registration`, `admin_payments` ni cobertura de campo de todos los CUF.
+- [PR #129](https://github.com/manglefurniture/hache-natacion/pull/129) mergeado con Quality verde; SHA `6db0572c1195e4fb206d800646a3a68a80915586`.
+- [Deploy automático](https://github.com/manglefurniture/hache-natacion/actions/runs/34055841972) exitoso; endpoint público de build HTTP 200 con `git-6db0572c1195` verificado después del deploy.
+
+Este registro cierra el criterio de salida P1 del roadmap dentro del alcance aceptado del piloto; no declara PASS universal para toda la Checklist ni para otros proyectos.
 
 ## Qué debe demostrar el piloto B/C
 
@@ -81,9 +90,7 @@ La elección del proyecto piloto y cualquier cambio sobre su runtime/infraestruc
 
 ## Siguiente frontera segura
 
-Después de mergear este paquete con CI verde, la siguiente frontera es **un piloto B/C real con flujo de comunicación aplicable**. Ese piloto debe producir evidencia real de campo, restore y communication status antes de declarar cerrado el criterio de salida P1.
-
-P2 puede investigarse o implementarse después por decisión explícita, pero no debe usarse para esconder el criterio P1 de proyecto todavía pendiente.
+Conservar las revisiones y operar el piloto conforme a sus políticas existentes; el criterio de salida P1 ya está cerrado. No se inicia P2: cualquier trabajo posterior requiere una decisión explícita.
 
 ## Guardrails
 
