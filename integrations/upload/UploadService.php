@@ -78,6 +78,8 @@ final class UploadService
             if ($height > 0 && $width > intdiv($pixelLimit, $height)) {
                 throw new UploadRejected('image_pixels_exceeded');
             }
+
+            $this->assertImageContentDecodable($path, $mime);
         }
 
         $scannerStatus = $this->scan($path, $mime);
@@ -110,6 +112,141 @@ final class UploadService
             throw new \InvalidArgumentException('upload receipt missing stored record');
         }
         $this->storage->delete($receipt['stored']);
+    }
+
+    private function assertImageContentDecodable(string $path, string $mime): void
+    {
+        $bytes = file_get_contents($path);
+        if (!is_string($bytes) || $bytes === '') {
+            throw new UploadRejected('invalid_image_content');
+        }
+
+        if (function_exists('imagecreatefromstring')) {
+            $decoded = @imagecreatefromstring($bytes);
+            if ($decoded === false) {
+                throw new UploadRejected('invalid_image_content');
+            }
+            @imagedestroy($decoded);
+            return;
+        }
+
+        $valid = match ($mime) {
+            'image/png' => self::inspectPng($bytes),
+            'image/jpeg' => self::inspectJpeg($bytes),
+            'image/webp' => self::inspectWebp($bytes),
+            'image/gif' => self::inspectGif($bytes),
+            default => false,
+        };
+
+        if (!$valid) {
+            throw new UploadRejected('invalid_image_content');
+        }
+    }
+
+    private static function inspectPng(string $bytes): bool
+    {
+        $signature = "\x89PNG\r\n\x1a\n";
+        if (!str_starts_with($bytes, $signature)) {
+            return false;
+        }
+
+        $length = strlen($bytes);
+        $offset = 8;
+        $seenIhdr = false;
+        $seenIdat = false;
+        $idat = '';
+
+        while ($offset + 12 <= $length) {
+            $lengthData = unpack('Nvalue', substr($bytes, $offset, 4));
+            if (!is_array($lengthData) || !isset($lengthData['value'])) {
+                return false;
+            }
+            $chunkLength = (int) $lengthData['value'];
+            $chunkEnd = $offset + 12 + $chunkLength;
+            if ($chunkLength < 0 || $chunkEnd > $length) {
+                return false;
+            }
+
+            $type = substr($bytes, $offset + 4, 4);
+            $data = substr($bytes, $offset + 8, $chunkLength);
+            $storedCrc = substr($bytes, $offset + 8 + $chunkLength, 4);
+            $expectedCrc = hash('crc32b', $type . $data, true);
+            if (strlen($type) !== 4 || strlen($storedCrc) !== 4 || !hash_equals($expectedCrc, $storedCrc)) {
+                return false;
+            }
+
+            if (!$seenIhdr) {
+                if ($type !== 'IHDR' || $chunkLength !== 13) {
+                    return false;
+                }
+                $seenIhdr = true;
+            } elseif ($type === 'IHDR') {
+                return false;
+            }
+
+            if ($type === 'IDAT') {
+                if ($chunkLength < 1) {
+                    return false;
+                }
+                $seenIdat = true;
+                $idat .= $data;
+            }
+
+            if ($type === 'IEND') {
+                if ($chunkLength !== 0 || !$seenIhdr || !$seenIdat || $chunkEnd !== $length) {
+                    return false;
+                }
+                if (function_exists('zlib_decode')) {
+                    $inflated = @zlib_decode($idat);
+                    if (!is_string($inflated) || $inflated === '') {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            $offset = $chunkEnd;
+        }
+
+        return false;
+    }
+
+    private static function inspectJpeg(string $bytes): bool
+    {
+        $length = strlen($bytes);
+        if ($length < 4 || substr($bytes, 0, 2) !== "\xff\xd8" || substr($bytes, -2) !== "\xff\xd9") {
+            return false;
+        }
+
+        $hasStartOfScan = str_contains($bytes, "\xff\xda");
+        $hasFrame = false;
+        foreach (["\xff\xc0", "\xff\xc1", "\xff\xc2", "\xff\xc3", "\xff\xc5", "\xff\xc6", "\xff\xc7", "\xff\xc9", "\xff\xca", "\xff\xcb", "\xff\xcd", "\xff\xce", "\xff\xcf"] as $marker) {
+            if (str_contains($bytes, $marker)) {
+                $hasFrame = true;
+                break;
+            }
+        }
+        return $hasStartOfScan && $hasFrame;
+    }
+
+    private static function inspectWebp(string $bytes): bool
+    {
+        if (strlen($bytes) < 20 || substr($bytes, 0, 4) !== 'RIFF' || substr($bytes, 8, 4) !== 'WEBP') {
+            return false;
+        }
+        $sizeData = unpack('Vvalue', substr($bytes, 4, 4));
+        if (!is_array($sizeData) || !isset($sizeData['value']) || (int) $sizeData['value'] + 8 !== strlen($bytes)) {
+            return false;
+        }
+        return str_contains($bytes, 'VP8 ') || str_contains($bytes, 'VP8L') || str_contains($bytes, 'VP8X');
+    }
+
+    private static function inspectGif(string $bytes): bool
+    {
+        $header = substr($bytes, 0, 6);
+        return strlen($bytes) >= 14
+            && in_array($header, ['GIF87a', 'GIF89a'], true)
+            && substr($bytes, -1) === "\x3b";
     }
 
     private function scan(string $path, string $mime): string
