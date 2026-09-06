@@ -8,7 +8,7 @@ La extensión separa cuatro responsabilidades:
 
 1. `PhpUploadAdapter`: demuestra que el temp file proviene del transporte HTTP de PHP y **descarta** nombre/MIME declarados por el cliente;
 2. `UploadPolicy`: allowlist MIME→extensión de servidor, bytes, cantidad, dimensiones/píxeles y modo de scanner definidos por proyecto;
-3. `UploadService`: vuelve a medir bytes, detecta MIME sobre contenido, valida estructura/dimensiones de imágenes y aplica scanner antes de persistir;
+3. `UploadService`: vuelve a medir bytes, detecta MIME sobre contenido, valida dimensiones y exige contenido de imagen decodificable antes de persistir;
 4. `UploadStorage`: frontera de storage. `LocalUploadStorage` es un adapter local de referencia con nombre aleatorio, create-exclusive, fingerprint SHA-256 y borrado limitado a su root.
 
 No existe filename del cliente en el receipt ni se usa para construir una ruta.
@@ -19,8 +19,8 @@ No existe filename del cliente en el receipt ni se usa para construir una ruta.
 | --- | --- | --- |
 | path traversal / overwrite por filename | el nombre del cliente se ignora; storage genera ID aleatorio y abre con modo exclusivo | permisos/ruta real del storage |
 | MIME spoofing | `finfo` sobre bytes + allowlist | allowlist justificada |
-| imagen corrupta o polyglot simple | `getimagesize` y coincidencia de MIME para `image/*` | formatos adicionales requieren inspector propio |
-| decompression/resource bomb | límites obligatorios de ancho, alto y píxeles cuando se permite `image/*` | valores según memoria/worker/optimizer real |
+| imagen truncada/corrupta o polyglot simple | `getimagesize` para metadata + decodificación real con GD cuando está disponible; fallback format-aware para PNG/JPEG/WebP/GIF | formatos adicionales requieren decoder/inspector compatible |
+| decompression/resource bomb | límites obligatorios de ancho, alto y píxeles cuando se permite `image/*`, antes de decodificar | valores según memoria/worker/optimizer real |
 | upload gigante / demasiados archivos | bytes reales + `maxBytes` + `maxFiles` | límites según CUF y hosting |
 | malware conocido | `UploadScanner` opcional | proveedor, SLA y modo `disabled|best_effort|required` |
 | scanner caído | modo explícito del proyecto; `required` falla cerrado, `best_effort` conserva estado `unavailable` | decisión de riesgo/UX |
@@ -34,7 +34,8 @@ No existe filename del cliente en el receipt ni se usa para construir una ruta.
 - No decide que `best_effort` sea aceptable para todos los proyectos.
 - No impone un directorio público ni privado universal.
 - No hace quotas por usuario/tenant ni lifecycle de object storage.
-- No convierte `getimagesize()` en defensa suficiente para PDFs, ZIPs u otros formatos complejos.
+- No convierte `getimagesize()` en prueba suficiente de contenido completo: una imagen debe pasar además el decoder/inspector.
+- No aplica la lógica de imagen a PDFs, ZIPs u otros formatos complejos; esos formatos requieren validadores propios.
 - No reemplaza auth, autorización, CSRF, rate limit, auditoría ni reglas de negocio del endpoint.
 
 ## Política
@@ -59,7 +60,9 @@ $policy = new UploadPolicy(
 );
 ```
 
-Cuando existe al menos un MIME `image/*`, ancho, alto y píxeles son obligatorios. Esto evita aceptar una imagen comprimida pequeña que luego obligue a GD/ImageMagick a reservar memoria desproporcionada.
+Cuando existe al menos un MIME `image/*`, ancho, alto y píxeles son obligatorios. Los límites se aplican antes de intentar una decodificación completa, de modo que una imagen comprimida pequeña no pueda forzar primero una reserva desproporcionada de memoria.
+
+Para imágenes, `UploadService` primero obtiene metadata con `getimagesize()` y compara el MIME. Después exige contenido decodificable: usa `imagecreatefromstring()` cuando GD está disponible; si no, usa un inspector format-aware para PNG/JPEG/WebP/GIF. En PNG, el fallback valida firma, chunks/CRC, presencia de `IDAT`, `IEND` terminal y stream zlib cuando está disponible. Un archivo con solo `IHDR`/`IEND` se rechaza aunque `getimagesize()` pueda leer sus dimensiones.
 
 ## Scanner opcional
 
@@ -106,7 +109,7 @@ Un proyecto real debe conservar:
 - policy concreta y justificación de límites;
 - storage root/bucket y prueba de no ejecución/no traversal;
 - MIME/content tests positivos y negativos;
-- prueba de bytes + dimensiones/píxeles;
+- prueba de bytes + dimensiones/píxeles + archivo truncado/corrupto;
 - scanner policy o decisión explícita `disabled`;
 - cleanup/rollback probado;
 - observabilidad/auditoría minimizada;
