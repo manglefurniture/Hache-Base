@@ -22,6 +22,15 @@ function initRepo(prefix, workflow) {
   return dir;
 }
 
+function commitFixture(dir, message = 'fixture') {
+  run('git', ['add', '.'], dir);
+  run('git', ['commit', '-m', message], dir);
+}
+
+function verifyFixture(dir) {
+  return spawnSync('node', [tool, 'verify-workflows', dir], {encoding: 'utf8'});
+}
+
 // The repository's own Level C-facing workflow references must be immutable.
 const ownVerification = run('node', [tool, 'verify-workflows', root], root);
 assert.match(ownVerification, /P2_IMMUTABLE_REFERENCES_OK/);
@@ -47,8 +56,7 @@ try {
   }));
   mkdirSync(join(fixture, 'local-action'), {recursive: true});
   writeFileSync(join(fixture, 'local-action/action.yml'), 'name: local\nruns:\n  using: composite\n  steps: []\n');
-  run('git', ['add', '.'], fixture);
-  run('git', ['commit', '-m', 'fixture'], fixture);
+  commitFixture(fixture);
   const commit = run('git', ['rev-parse', 'HEAD'], fixture).trim();
 
   const artifact = Buffer.from('artifact-bytes');
@@ -99,6 +107,7 @@ try {
   assert.equal(provenance.subject.sha256, artifactSha);
   assert.equal(provenance.source.commit, commit);
   assert.equal(provenance.decision, 'UNSIGNED_PROVENANCE_LINKAGE_ONLY_NOT_SLSA_ATTESTATION');
+  assert.equal(provenance.materials_scope, 'VERSIONED_GITHUB_ACTIONS_AND_WORKFLOW_CONTAINERS_ONLY');
   assert.ok(provenance.materials.some((item) => item.reference === `actions/checkout@${checkoutSha}`));
   assert.ok(provenance.materials.some((item) => item.reference.includes(`@sha256:${imageDigest}`)));
   assert.match(provenance.sbom.sha256, /^[0-9a-f]{64}$/);
@@ -121,16 +130,72 @@ try {
   rmSync(fixture, {recursive: true, force: true});
 }
 
-// A mutable tag is rejected; absence of pinning cannot silently become evidence.
+// A mutable block-style tag is rejected.
 const mutable = initRepo('hache-p2-mutable-', 'name: bad\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n');
 try {
-  run('git', ['add', '.'], mutable);
-  run('git', ['commit', '-m', 'mutable'], mutable);
-  const result = spawnSync('node', [tool, 'verify-workflows', mutable], {encoding: 'utf8'});
+  commitFixture(mutable, 'mutable block action');
+  const result = verifyFixture(mutable);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /external action must use a full 40-char commit SHA/);
 } finally {
   rmSync(mutable, {recursive: true, force: true});
+}
+
+// Flow-style `uses` is security-relevant too: a mutable ref must not bypass the checker.
+const mutableFlow = initRepo(
+  'hache-p2-mutable-flow-',
+  'name: bad-flow\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - { uses: actions/checkout@v4 }\n',
+);
+try {
+  commitFixture(mutableFlow, 'mutable flow action');
+  const result = verifyFixture(mutableFlow);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /external action must use a full 40-char commit SHA/);
+} finally {
+  rmSync(mutableFlow, {recursive: true, force: true});
+}
+
+// A pinned flow-style action is accepted and counted as an immutable reference.
+const pinnedFlow = initRepo(
+  'hache-p2-pinned-flow-',
+  `name: pinned-flow\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - { uses: actions/checkout@${checkoutSha} }\n`,
+);
+try {
+  commitFixture(pinnedFlow, 'pinned flow action');
+  const result = verifyFixture(pinnedFlow);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /references=1/);
+} finally {
+  rmSync(pinnedFlow, {recursive: true, force: true});
+}
+
+// An action input named `image` is not a container declaration and must not be digest-checked.
+const imageInput = initRepo(
+  'hache-p2-image-input-',
+  `name: image-input\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@${checkoutSha}\n        with: { image: ./docs/logo.png }\n      - run: |\n          echo 'image: not-a-container'\n          echo 'uses: actions/example@v1'\n`,
+);
+try {
+  commitFixture(imageInput, 'non-container image input');
+  const result = verifyFixture(imageInput);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /references=1/);
+} finally {
+  rmSync(imageInput, {recursive: true, force: true});
+}
+
+// Whole flow-style job mappings are rejected fail-closed because nested container/service
+// declarations cannot be proved complete by the conservative parser.
+const flowJob = initRepo(
+  'hache-p2-flow-job-',
+  `name: flow-job\non: [push]\njobs:\n  test: { runs-on: ubuntu-latest, steps: [ { uses: actions/checkout@${checkoutSha} } ] }\n`,
+);
+try {
+  commitFixture(flowJob, 'unsupported flow job');
+  const result = verifyFixture(flowJob);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /flow-style job mappings are unsupported/);
+} finally {
+  rmSync(flowJob, {recursive: true, force: true});
 }
 
 console.log('P2_SUPPLY_CHAIN_EVIDENCE_OK');
