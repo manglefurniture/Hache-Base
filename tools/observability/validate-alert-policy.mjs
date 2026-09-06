@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const SIGNALS = new Set([
   'latency',
@@ -41,6 +42,22 @@ function positiveInteger(value, label, { allowZero = false } = {}) {
   return value;
 }
 
+function isExactUtcDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (match === null) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day;
+}
+
 export function validateAlertPolicy(policy) {
   if (policy === null || typeof policy !== 'object' || Array.isArray(policy)) {
     fail('root must be an object');
@@ -51,7 +68,7 @@ export function validateAlertPolicy(policy) {
 
   requiredString(policy.project, 'project', 120);
   const reviewedAt = requiredString(policy.reviewed_at, 'reviewed_at', 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(reviewedAt) || Number.isNaN(Date.parse(`${reviewedAt}T00:00:00Z`))) {
+  if (!isExactUtcDate(reviewedAt)) {
     fail('reviewed_at must be a valid YYYY-MM-DD date');
   }
   if (!Array.isArray(policy.alerts) || policy.alerts.length === 0) {
@@ -104,7 +121,8 @@ export function validateAlertPolicy(policy) {
     }
     requiredString(alert.owner, `${prefix}.owner`, 160);
     const runbook = requiredString(alert.runbook, `${prefix}.runbook`, 300);
-    if (runbook.startsWith('javascript:') || runbook.startsWith('data:')) {
+    const normalizedRunbook = runbook.toLowerCase();
+    if (normalizedRunbook.startsWith('javascript:') || normalizedRunbook.startsWith('data:')) {
       fail(`${prefix}.runbook uses an unsafe location`);
     }
     requiredString(alert.action, `${prefix}.action`, 1000);
@@ -128,7 +146,8 @@ async function main() {
   console.log(`ALERT_POLICY_OK alerts=${policy.alerts.length} project=${policy.project}`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+if (invokedPath !== null && fileURLToPath(import.meta.url) === invokedPath) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
