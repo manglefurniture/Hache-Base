@@ -140,6 +140,15 @@ final class UploadService
                 throw new UploadRejected('invalid_image_content');
             }
             @imagedestroy($decoded);
+            return;
+        }
+
+        // PNG has a bounded, format-aware validator below that verifies the
+        // compressed stream and scanline layout. Header-only inspectors for
+        // JPEG/WebP/GIF are not a replacement for a real codec, so fail closed
+        // when the runtime cannot actually decode those formats.
+        if ($mime !== 'image/png') {
+            throw new UploadRejected('image_decoder_unavailable');
         }
     }
 
