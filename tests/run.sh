@@ -33,6 +33,7 @@ php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/resilience/FailureFi
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/AsyncPersistenceContractTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/ObservabilityAdapterTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/UploadExtensionTest.php"
+php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/UploadImageValidationFollowupTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/ResendMailerTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/EmailDeliveryStatusTest.php"
 php -d zend.assertions=1 -d assert.exception=1 "$ROOT/tests/integration/ResendWebhookTest.php"
