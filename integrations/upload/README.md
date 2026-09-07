@@ -19,8 +19,8 @@ No existe filename del cliente en el receipt ni se usa para construir una ruta.
 | --- | --- | --- |
 | path traversal / overwrite por filename | el nombre del cliente se ignora; storage genera ID aleatorio y abre con modo exclusivo | permisos/ruta real del storage |
 | MIME spoofing | `finfo` sobre bytes + allowlist | allowlist justificada |
-| imagen truncada/corrupta o polyglot simple | `getimagesize` para metadata + decodificación real con GD cuando está disponible; fallback format-aware para PNG/JPEG/WebP/GIF | formatos adicionales requieren decoder/inspector compatible |
-| decompression/resource bomb | límites obligatorios de ancho, alto y píxeles cuando se permite `image/*`, antes de decodificar | valores según memoria/worker/optimizer real |
+| imagen truncada/corrupta o polyglot simple | `getimagesize` solo para metadata + inspector estructural + decoder real del MIME cuando sea necesario | confirmar codecs disponibles para cada MIME allowlisted |
+| decompression/resource bomb | límites obligatorios de ancho, alto y píxeles cuando se permite `image/*`, antes de decodificar; PNG limita además la inflación zlib al layout declarado | valores según memoria/worker/optimizer real |
 | upload gigante / demasiados archivos | bytes reales + `maxBytes` + `maxFiles` | límites según CUF y hosting |
 | malware conocido | `UploadScanner` opcional | proveedor, SLA y modo `disabled|best_effort|required` |
 | scanner caído | modo explícito del proyecto; `required` falla cerrado, `best_effort` conserva estado `unavailable` | decisión de riesgo/UX |
@@ -34,13 +34,14 @@ No existe filename del cliente en el receipt ni se usa para construir una ruta.
 - No decide que `best_effort` sea aceptable para todos los proyectos.
 - No impone un directorio público ni privado universal.
 - No hace quotas por usuario/tenant ni lifecycle de object storage.
-- No convierte `getimagesize()` en prueba suficiente de contenido completo: una imagen debe pasar además el decoder/inspector.
+- No convierte `getimagesize()` ni una cabecera RIFF/JPEG/GIF en prueba suficiente de contenido completo.
+- No instala codecs de imagen. Si una policy permite JPEG/WebP/GIF, el runtime debe disponer del decoder real correspondiente o el upload falla cerrado con `image_decoder_unavailable`.
 - No aplica la lógica de imagen a PDFs, ZIPs u otros formatos complejos; esos formatos requieren validadores propios.
 - No reemplaza auth, autorización, CSRF, rate limit, auditoría ni reglas de negocio del endpoint.
 
 ## Política
 
-Ejemplo **ficticio** para imágenes; cada proyecto debe escoger sus límites a partir de su runtime:
+Ejemplo **ficticio** para imágenes; cada proyecto debe escoger sus límites **y confirmar que su runtime puede decodificar cada formato allowlisted**:
 
 ```php
 use HacheBase\Integrations\Upload\UploadPolicy;
@@ -49,7 +50,7 @@ $policy = new UploadPolicy(
     allowedMimeExtensions: [
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
-        'image/webp' => 'webp',
+        'image/webp' => 'webp', // solo si el runtime posee decoder WebP real
     ],
     maxBytes: $projectMaxBytes,
     maxFiles: $projectMaxFiles,
@@ -62,7 +63,16 @@ $policy = new UploadPolicy(
 
 Cuando existe al menos un MIME `image/*`, ancho, alto y píxeles son obligatorios. Los límites se aplican antes de intentar una decodificación completa, de modo que una imagen comprimida pequeña no pueda forzar primero una reserva desproporcionada de memoria.
 
-Para imágenes, `UploadService` primero obtiene metadata con `getimagesize()` y compara el MIME. Después exige contenido decodificable: usa `imagecreatefromstring()` cuando GD está disponible; si no, usa un inspector format-aware para PNG/JPEG/WebP/GIF. En PNG, el fallback valida firma, chunks/CRC, presencia de `IDAT`, `IEND` terminal y stream zlib cuando está disponible. Un archivo con solo `IHDR`/`IEND` se rechaza aunque `getimagesize()` pueda leer sus dimensiones.
+### Requisitos de decoder por formato
+
+`UploadService` usa `getimagesize()` únicamente para metadata y MIME. Después aplica un inspector estructural y, cuando corresponde, exige un decoder real específico del formato:
+
+- **PNG:** puede validarse aun sin GD si `zlib_decode()` está disponible, porque el fallback valida firma, chunks/CRC, `IHDR`, `IDAT`, `IEND`, tamaño inflado exacto y estructura/filtros de scanlines. Si zlib tampoco existe, se necesita `imagecreatefrompng()`.
+- **JPEG:** requiere `imagecreatefromjpeg()` además del inspector estructural.
+- **WebP:** requiere `imagecreatefromwebp()` además del inspector RIFF/WebP. Una cabecera `VP8X` sin bitstream no es suficiente.
+- **GIF:** requiere `imagecreatefromgif()` además del inspector estructural.
+
+Si el formato está allowlisted pero su decoder requerido no existe, el servicio rechaza el archivo con `image_decoder_unavailable`. El proyecto debe convertir ese motivo en un mensaje de UX adecuado o retirar ese MIME de su policy. **No** debe degradar a aceptación por cabecera.
 
 ## Scanner opcional
 
@@ -107,6 +117,7 @@ Un proyecto real debe conservar:
 - threat model y CUF;
 - auth/autorización/CSRF del endpoint cuando aplique;
 - policy concreta y justificación de límites;
+- inventario de MIME allowlisted y evidencia de decoder real disponible para cada formato que lo requiera;
 - storage root/bucket y prueba de no ejecución/no traversal;
 - MIME/content tests positivos y negativos;
 - prueba de bytes + dimensiones/píxeles + archivo truncado/corrupto;
