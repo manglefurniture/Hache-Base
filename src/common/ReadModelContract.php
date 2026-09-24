@@ -69,6 +69,8 @@ final class ReadModelContract
             self::requireText($definition, $field);
         }
 
+        $cutoffAt = self::requireText($definition, 'cutoff_at');
+
         $availability = self::requireText($definition, 'availability');
         if (!in_array($availability, self::availabilityStates(), true)) {
             throw new InvalidArgumentException('Unknown metric availability state.');
@@ -93,6 +95,13 @@ final class ReadModelContract
             if (in_array($coverage['state'], [self::COVERAGE_OUT_OF_COVERAGE, self::COVERAGE_NOT_EVALUATED], true)) {
                 throw new InvalidArgumentException('An available metric cannot use unavailable coverage.');
             }
+
+            if (
+                $coverage['state'] === self::COVERAGE_FORWARD_ONLY
+                && self::cutoffPrecedesCoverage($cutoffAt, $coverage['starts_at'])
+            ) {
+                throw new InvalidArgumentException('An available metric cannot predate forward-only coverage.');
+            }
         } elseif ($value !== null) {
             throw new InvalidArgumentException('Unavailable evidence must not be represented as a numeric value.');
         }
@@ -103,7 +112,7 @@ final class ReadModelContract
             'numerator' => self::requireText($definition, 'numerator'),
             'denominator' => self::requireText($definition, 'denominator'),
             'exclusions' => self::requireText($definition, 'exclusions'),
-            'cutoff_at' => self::requireText($definition, 'cutoff_at'),
+            'cutoff_at' => $cutoffAt,
             'timezone' => self::requireText($definition, 'timezone'),
             'coverage' => $coverage,
             'availability' => $availability,
@@ -187,5 +196,20 @@ final class ReadModelContract
         $value = trim((string) $value);
 
         return $value === '' ? null : $value;
+    }
+
+    private static function cutoffPrecedesCoverage(string $cutoffAt, ?string $startsAt): bool
+    {
+        if ($startsAt === null) {
+            return false;
+        }
+
+        try {
+            return new \DateTimeImmutable($cutoffAt) < new \DateTimeImmutable($startsAt);
+        } catch (\Throwable) {
+            throw new InvalidArgumentException(
+                'Forward-only coverage requires parseable cutoff_at and starts_at values.'
+            );
+        }
     }
 }

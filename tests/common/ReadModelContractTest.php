@@ -27,6 +27,16 @@ $zero = ReadModelContract::metric([
 assert($zero['value'] === 0);
 assert($zero['coverage']['state'] === ReadModelContract::COVERAGE_FORWARD_ONLY);
 
+$preCoverageAvailableRejected = false;
+try {
+    $preCoverage = $zero;
+    $preCoverage['cutoff_at'] = '2025-09-24T12:00:00Z';
+    ReadModelContract::metric($preCoverage);
+} catch (InvalidArgumentException) {
+    $preCoverageAvailableRejected = true;
+}
+assert($preCoverageAvailableRejected === true);
+
 $unavailableAsZeroRejected = false;
 try {
     ReadModelContract::metric([

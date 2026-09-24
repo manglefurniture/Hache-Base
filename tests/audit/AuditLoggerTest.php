@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../../src/audit/AuditSanitizer.php';
 require_once __DIR__ . '/../../src/audit/AuditLogger.php';
 
 use HacheBase\Audit\AuditLogger;

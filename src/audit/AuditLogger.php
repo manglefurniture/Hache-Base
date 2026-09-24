@@ -7,6 +7,8 @@ namespace HacheBase\Audit;
 use PDO;
 use Throwable;
 
+require_once __DIR__ . '/AuditSanitizer.php';
+
 final class AuditLogger
 {
     public const DOMAIN_CHANGE = 'domain_change';
@@ -22,12 +24,13 @@ final class AuditLogger
      */
     public function record(array $event): bool
     {
-        $event = self::prepareForRecord($event);
-        if ($event === null) {
-            return false;
-        }
+        try {
+            $event = self::prepareForRecord($event);
+            if ($event === null) {
+                return false;
+            }
 
-        $sql = <<<'SQL'
+            $sql = <<<'SQL'
 INSERT INTO audit_events (
     actor_type, actor_id, actor_role, organization_id, site_id,
     action, entity_type, entity_id, source, request_id, ip_address,
@@ -39,7 +42,6 @@ INSERT INTO audit_events (
 )
 SQL;
 
-        try {
             $stmt = $this->db->prepare($sql);
             return $stmt->execute([
                 ':actor_type' => $event['actor_type'],
