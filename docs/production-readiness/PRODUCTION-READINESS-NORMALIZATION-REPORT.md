@@ -5,6 +5,8 @@
 **Fuente de verdad:** `PRODUCTION-READINESS-STANDARD.md` v1.1  
 **Runtime, funcionalidades, dependencias, migraciones y deploy:** no modificados
 
+> **Nota de lectura actual (2026-09-24):** este informe conserva el corte exclusivamente documental del 2026-09-01. Sus frases sobre ausencia de controles son históricas, no estado actual; el avance posterior se registra en `CONSOLIDATION-2026-09.md` y el roadmap.
+
 ---
 
 ## 1. Resultado

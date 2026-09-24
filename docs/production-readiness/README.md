@@ -12,6 +12,8 @@ Los demás documentos no crean requisitos nuevos:
 - `PRODUCTION-READINESS-AUDIT.md` — fotografía de Hache Base antes de esta primera implementación; conserva valor histórico para explicar los huecos detectados.
 - `PRODUCTION-READINESS-ROADMAP.md` — secuencia de implementación P0/P1/P2/P3.
 - `P1-IMPLEMENTATION-STATUS.md` — estado documental de P1-01…P1-11, de la matriz A/B/C ya cubierta en Base y del criterio de salida cerrado con evidencia del piloto real Nivel C Hache Natación.
+- `P2-IMPLEMENTATION-STATUS.md` — estado de P2-01…P2-07; distingue contrato reusable, evidencia técnica de piloto y revisión humana pendiente.
+- `CONSOLIDATION-2026-09.md` — corte vivo de P0/P1/P2/P3 y matriz exacta de adopción P2-04; no crea controles ni sustituye el Standard.
 - `LEVEL-A-B-C-FIXTURES.md` — contrato ejecutable de fixtures explícitos A/B/C que enlaza clasificación + Checklist (P0) y headers + errores + CUF + budgets (P1) sin auto-PASS.
 - `PRODUCTION-READINESS-NORMALIZATION-REPORT.md` — evidencia histórica de la normalización 126/126 Standard ↔ Checklist; no sustituye la norma.
 - `RESEARCH-SOURCES.md` — fuentes primarias y referencias técnicas.
@@ -119,7 +121,7 @@ P0-12 cierra el baseline P0 con una política reusable de supply chain, mantenie
 
 P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhaustivo; esas capacidades permanecen fuera del baseline P0 y se evalúan en niveles posteriores cuando correspondan.
 
-**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. La matriz explícita `LEVEL-A-B-C-FIXTURES.md` cubre el gate P0 de **clasificación + Checklist** y el gate P1 de **headers + errores + CUF + budgets** sin convertir pruebas de Base en PASS de un proyecto. El **criterio de salida P1 quedó cerrado el 2026-09-06** con Hache Natación como piloto real Nivel C: Field, Restore y Communication status en PASS mediante revisiones humanas documentadas; PR #129 mergeado y deploy automático verificado. Field se limita a `home` desktop/mobile, según la cobertura aceptada del piloto. Ver `P1-IMPLEMENTATION-STATUS.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
+**Estado del roadmap:** P0-01…P0-12 y P1-01…P1-11 están implementados en Hache Base. La matriz explícita `LEVEL-A-B-C-FIXTURES.md` cubre el gate P0 de **clasificación + Checklist** y el gate P1 de **headers + errores + CUF + budgets** sin convertir pruebas de Base en PASS de un proyecto. El **criterio de salida P1 quedó cerrado el 2026-09-06** con Hache Natación como piloto real Nivel C: Field, Restore y Communication status en PASS mediante revisiones humanas documentadas; PR #129 mergeado y deploy automático verificado. Field se limita a `home` desktop/mobile, según la cobertura aceptada del piloto. P2-04 permanece técnicamente verificado pero con adopción incompleta y revisión humana pendiente; P2-05 no está justificado; P2-07 espera la primera evidencia recurrente. Ver `CONSOLIDATION-2026-09.md`. La disponibilidad de una primitive en Hache Base no equivale por sí sola a cumplimiento en un proyecto derivado.
 
 ## Uso en un proyecto derivado
 

@@ -6,6 +6,8 @@
 **Cambio de estado relevante:** PR #10, “Design System 2026: Core, Themes y auditoría controlada”, figura fusionado el 31 de agosto de 2026 (`head_sha`/merge `31eac06ffd77842a36a7c7ae30c7b463dd00f6c4`).  
 **Alcance:** auditoría conceptual/read-only. No hubo código, configuración, commits ni deploy.
 
+> **Nota de lectura actual (2026-09-24):** esta es una fotografía histórica del 2026-09-01. Sus hallazgos marcados como no resueltos describen ese corte, no el estado vivo. Consultar `CONSOLIDATION-2026-09.md` y el roadmap para el avance posterior; esta nota no reescribe la evidencia histórica.
+
 **Normalización documental:** el Standard v1.1 incorpora un registro canónico de 126 controles en su sección 24. Esta auditoría usa esos IDs como referencia; la Checklist es una proyección del registro, no una norma paralela.
 
 ---

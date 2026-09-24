@@ -90,7 +90,7 @@ La elección del proyecto piloto y cualquier cambio sobre su runtime/infraestruc
 
 ## Siguiente frontera segura
 
-Conservar las revisiones y operar el piloto conforme a sus políticas existentes; el criterio de salida P1 ya está cerrado. No se inicia P2: cualquier trabajo posterior requiere una decisión explícita.
+Conservar las revisiones y operar el piloto conforme a sus políticas existentes; el criterio de salida P1 ya está cerrado. P2 fue implementado posteriormente de forma incremental y se reconcilia en `P2-IMPLEMENTATION-STATUS.md` y `CONSOLIDATION-2026-09.md`; este documento no autoriza ni sustituye nuevas adopciones de proyecto.
 
 ## Guardrails
 
@@ -98,4 +98,4 @@ Conservar las revisiones y operar el piloto conforme a sus políticas existentes
 - No crea controles nuevos ni cambia severidades/aplicabilidad.
 - No declara que Hache Base, por sí sola, demuestre producción de un proyecto derivado.
 - No convierte fixtures, templates o CI de Hache Base en evidencia de producción.
-- No inicia P2 ni migra automáticamente Hache Natación, PROA u otro proyecto.
+- No migra automáticamente Hache Natación, PROA u otro proyecto ni convierte P2 disponible en adopción automática.
