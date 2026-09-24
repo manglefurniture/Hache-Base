@@ -72,7 +72,7 @@ Los contratos y fixtures de P0 están **IMPLEMENTED en Hache Base**. Esto acredi
 
 ### Estado del criterio de salida P1
 
-El criterio está **CERRADO** desde el 2026-09-06 en el alcance documentado: Hache Base aporta CI y fixtures A/B/C; Hache Natación, piloto real Nivel C, aportó evidencia humana de Field, Restore y Communication status. El alcance de Field está limitado a `home` desktop/mobile. Ver `P1-IMPLEMENTATION-STATUS.md`.
+El criterio está **CERRADO** desde el 2026-09-06 en el alcance documentado: Hache Base aporta CI y fixtures A/B/C; Hache Natación, piloto real Nivel C, aportó evidencia humana de Field, Restore y Communication status. Un fixture A, B y C demuestra clasificación y checklist. Fixtures A/B/C cubren headers, errores, CUF y budgets. El alcance de Field está limitado a `home` desktop/mobile. Ver `P1-IMPLEMENTATION-STATUS.md`.
 
 ## 5. P2 — Madurez operativa
 
