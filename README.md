@@ -6,7 +6,7 @@ Base técnica reutilizable para proyectos de **Hache Interactive**.
 
 **Hache-Base v1.0 — base implementada.**
 
-Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, security headers configurables, contrato de sesión P0-08, deploy/recovery P0-10, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
+Incluye arquitectura, Design System 2026 Core → Theme → Extensions, Production Readiness v1.1, multisede, permisos, seguridad, auditoría, migraciones, modelos opcionales, utilidades, estados temporales, contratos de read models/métricas/evidencia, contrato de estados asíncronos, inbox/outbox/idempotency opt-in, security headers configurables, contrato de sesión P0-08, deploy/recovery P0-10, patrones UI, correo transaccional HTTPS, pagos/webhooks con credenciales versionadas, n8n, pruebas, backup/rollback, despliegue, configuración, staging y plantillas CI/CD.
 
 El CD de producción queda deliberadamente deshabilitado hasta que cada proyecto configure su GitHub Environment, secretos, staging y VPS.
 
@@ -49,6 +49,8 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 19. CSP/HSTS no se endurecen a ciegas: CSP empieza report-only cuando sea necesario, HSTS exige HTTPS estable y `includeSubDomains`/preload son decisiones explícitas del proyecto.
 20. Una sesión no cruza de anónima a autenticada/privilegiada sin rotar ID; expiración y logout deben demostrarse, no inferirse por la UI.
 21. Un deploy no termina cuando acaba el script: fases, health, smoke, ventana y recuperación deben dejar evidencia; rollback de código nunca se confunde con restore de DB.
+22. Una proyección, métrica o resumen declara su autoridad, corte, zona horaria, cobertura y tratamiento de evidencia; ausencia de evidencia nunca se muestra como cero ni PASS.
+23. La cobertura forward-only empieza en un marcador explícito y no reconstruye historia ficticia; un collector read-only aporta evidencia minimizada, no una aprobación automática.
 
 ## Estructura
 
@@ -56,7 +58,7 @@ Nace de las lecciones de la auditoría integral de Hache Natación y de solucion
 - `templates/` — perfiles, Critical User Flows, ledger de operaciones asíncronas, adopción inbox/outbox, security headers, session security, deploy/recovery y archivos de referencia.
 - `database/` — migraciones, integridad y modelos opcionales, incluida la plantilla P0-06 no automática.
 - `security/` — patrones reutilizables de seguridad, respuesta API, headers configurables, trusted HTTPS y contrato de sesión.
-- `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context, logging mínimo y estados asíncronos.
+- `src/` — módulos genéricos y componentes reutilizables, incluyendo Core, Themes, contrato de Extensions UI, request context, logging mínimo, read models/métricas/evidencia y estados asíncronos.
 - `integrations/` — async delivery opt-in, correo HTTPS, pagos/webhooks, n8n y otras integraciones desacopladas.
 - `tests/` — sintaxis, pruebas básicas, UI, fronteras temporales, estados asíncronos, persistencia idempotente, security headers, sesiones, deploy/recovery, integración, readiness y smoke.
 - `deployment/` — preflight, backup, despliegue por fases, records, liveness/readiness, smoke/observación, runbook de fallo y rollback explícito.

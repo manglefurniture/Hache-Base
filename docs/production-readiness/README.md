@@ -138,6 +138,10 @@ P0-12 no implementa SBOM/provenance, pinning por digest ni history scan exhausti
 13. Usar `LEVEL-A-B-C-FIXTURES.md` como demostración de contrato y clasificación, nunca como sustituto de evidencia del proyecto.
 14. Mantener `NOT EVALUATED` mientras no exista evidencia suficiente. `N/A` exige justificación verificable.
 
+Cuando un collector operativo aporte evidencia para un dashboard, resumen o read model, debe ser read-only y minimizado; puede dejar un resultado técnico/reconciliación, pero conserva `HUMAN_REVIEW_REQUIRED`. Ningún collector convierte por sí mismo `NOT EVALUATED` en `PASS`.
+
+Para comunicar el avance de un incremento sin alterar los estados de negocio ni el Standard, usar estas tres afirmaciones separadas: **Implementado** = código integrado con pruebas/revisión aplicables; **Desplegado** = el artefacto/commit identificado llegó al entorno previsto; **Verificado** = comportamiento revisado con evidencia real, fechada y responsable identificado. Ninguna etapa posterior se infiere de la anterior.
+
 ## Contratos Core implementados
 
 ### Errores y request ID

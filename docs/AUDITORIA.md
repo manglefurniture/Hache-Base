@@ -24,6 +24,17 @@ No convertir la auditoría en un log de absolutamente todo.
 
 `actor_type` permite distinguir `user`, `automation`, `system` u otros actores. `actor_id` y `actor_role` identifican al responsable cuando exista. `organization_id` y `site_id` conservan contexto. `action`, `entity_type` y `entity_id` describen la mutación. `before_data` y `after_data` son opcionales. `source`, `request_id`, `ip_address` y `metadata` ayudan a investigar el origen.
 
+Para un cambio de dominio confirmado, identificar la entidad exacta y conservar actor/contexto cuando estén disponibles. No inventar un actor o un valor anterior ausente: conservar `null` y su límite explícito es mejor que reconstruirlo desde el presente.
+
+## Eventos confirmados, resultados técnicos y no-ops
+
+`AuditLogger` distingue dos clases mediante `event_kind`:
+
+- `domain_change` (default compatible): se registra únicamente después de confirmar la mutación; incluye `entity_id` cuando la entidad tiene una referencia durable y descarta snapshots equivalentes, incluso si cambió el orden de sus claves.
+- `technical_result`: puede documentar un resultado técnico separado, pero no acepta snapshots `before`/`after`; un HTTP 2xx no demuestra por sí mismo un cambio de dominio.
+
+El helper descarta scopes distintos de `administrative`, como `diagnostic`, `telemetry` o `read_only`. Esos datos deben ir a logging/observabilidad apropiados, no contaminar la historia administrativa. `before`/`after` de cambios de dominio deben ser arrays minimizados; el helper aplica `AuditSanitizer` antes de persistirlos. Para distinguir un no-op de un fallo del logger antes de escribir, el proyecto puede llamar `AuditLogger::prepareForRecord()`.
+
 ## Datos sensibles
 
 Nunca registrar contraseñas, hashes, tokens, cookies, secretos, claves API, CVV ni números completos de tarjeta. `AuditSanitizer` ofrece una protección base, pero cada proyecto debe revisar campos específicos de su dominio antes de almacenar snapshots.
@@ -46,6 +57,7 @@ Cuando el orden de dos eventos no pueda determinarse por la precisión temporal 
 
 ```php
 $logger->record([
+    'event_kind' => AuditLogger::DOMAIN_CHANGE,
     'actor_type' => 'user',
     'actor_id' => (string) $user['id'],
     'actor_role' => $user['role'],
@@ -56,6 +68,17 @@ $logger->record([
     'source' => 'admin',
     'before' => AuditSanitizer::sanitize($before),
     'after' => AuditSanitizer::sanitize($after),
+]);
+```
+
+Un resultado técnico separado no debe compartir snapshots con la mutación:
+
+```php
+$logger->record([
+    'event_kind' => AuditLogger::TECHNICAL_RESULT,
+    'action' => 'request.completed',
+    'entity_type' => 'request',
+    'request_id' => $requestId,
 ]);
 ```
 

@@ -13,6 +13,7 @@ Todo archivo de esta carpeta debe:
 
 - `PROJECT-PROFILE.md`: perfil y clasificación inicial del proyecto.
 - `CRITICAL-USER-FLOWS.md`: CUF, estados, pruebas, señales y recovery.
+- `READ-MODEL-CONTRACT.md`: adopción de métricas, proyecciones compuestas, cobertura forward-only, evidencia read-only y ausencia explícita.
 - `ASYNC-OPERATION-LEDGER.md`: operación/event ledger opt-in para estados asíncronos, retry y reconciliación.
 - `INBOX-OUTBOX-IDEMPOTENCY.md`: adopción P0-06 de dedupe inbound, outbox, claims, concurrencia, out-of-order y reprocess.
 - `SECURITY-HEADERS.md`: adopción P0-07 de CSP report-only/enforce, HSTS, inventario de subdominios y frontera TLS/proxy.
