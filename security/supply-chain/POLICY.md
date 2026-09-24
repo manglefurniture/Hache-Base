@@ -14,7 +14,7 @@ P0-12 cubre:
 - registro explícito de mitigaciones/riesgo aceptado para findings SCA con owner, aprobación y expiración;
 - SLA de triage versionado.
 
-No cubre SBOM/provenance, pinning de GitHub Actions/containers por digest ni scans históricos exhaustivos; eso pertenece a madurez posterior/P2-06 o a tooling específico del proyecto.
+Este baseline P0 no cubre SBOM/provenance, pinning de GitHub Actions/containers por digest ni scans históricos exhaustivos. P2-06 aporta por separado SBOM/provenance de enlace y verificación de referencias inmutables; la firma, SLSA y cualquier scan histórico exhaustivo siguen siendo tooling específico del proyecto.
 
 ## Relación normativa
 

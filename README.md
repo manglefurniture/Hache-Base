@@ -80,6 +80,10 @@ P0-08 está implementado como **Core configurable** para SEC-007: cookies segura
 
 P0-10 está implementado como **Core de deploy/recovery**: estados por fases, `DEPLOY_RECORD_FILE`, failure trap/runbook, smoke y ventana configurables, matriz código/DB/assets/config y registro explícito de rollback/manual recovery. No automatiza restore ni rollback inseguro.
 
+P0-11 aporta el contrato reusable de backup completo, freshness frente a RPO y restore drill aislado/RTO; P0-12 aporta el baseline de supply chain para secretos, lockfiles, SCA/licencias y riesgo aceptado, sin declarar evidencia de proyecto inexistente.
+
+P1-01…P1-11 están implementados como tooling, fixtures y Extensions reutilizables. P2 incorpora observabilidad neutral, alertas, failure fixtures, uploads opt-in, SBOM/provenance y restore history con estados de piloto explícitos; el estado vivo y sus límites están en `docs/production-readiness/CONSOLIDATION-2026-09.md`.
+
 Esto **no** significa que cualquier proyecto derivado sea automáticamente Production Ready; debe evaluar sus controles aplicables con evidencia real.
 
 ## Regla de oro
