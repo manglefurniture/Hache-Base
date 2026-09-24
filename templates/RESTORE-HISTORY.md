@@ -20,8 +20,11 @@
 - Zona horaria operativa: `<IANA>`
 - Ventana de baja carga elegida: `<...>`
 - Relación con la cadencia de backup: `<por qué el drill no compite con el backup ni usa evidencia previsiblemente stale>`
+- Dependencia backup → restore: `<workflow dependency / guard fail-closed de frescura>`
 
 La cadencia, RPO y RTO son **project-owned**. P2-07 no introduce defaults globales. Una ruta programada debe usar únicamente los valores ya aprobados por ese proyecto o fallar cerrado. Una ruta manual puede existir, pero no sustituye la evidencia recurrente.
+
+Si el backup que alimenta el drill se produce en otro scheduler/workflow, el restore debe **depender explícitamente de su finalización exitosa** o validar de forma fail-closed que seleccionó el backup esperado de esa ventana antes de comenzar. **Dos cron independientes con una separación horaria no constituyen una dependencia**: cualquiera puede retrasarse y el restore podría consumir un backup stale o producir un falso incumplimiento de RPO.
 
 ## 3. Ejecución programada
 
@@ -83,11 +86,12 @@ P2-07 puede considerarse cubierto en un proyecto Nivel C solo cuando:
 
 1. existe scheduler real activo con cadencia documentada;
 2. RPO/RTO provienen del proyecto y se validan en runtime;
-3. al menos una ejecución programada real fue revisada;
-4. el restore usa backup real, target aislado y verificación específica;
-5. fallos y reruns quedan históricamente distinguibles;
-6. cleanup y minimización de evidencia se verifican;
-7. la retención conserva suficiente historia para evaluar recurrencia;
-8. una revisión humana confirma que la evidencia sigue siendo representativa.
+3. cuando backup y restore son procesos separados, existe una dependencia explícita o un guard fail-closed equivalente que evita consumir un backup stale;
+4. al menos una ejecución programada real fue revisada;
+5. el restore usa backup real, target aislado y verificación específica;
+6. fallos y reruns quedan históricamente distinguibles;
+7. cleanup y minimización de evidencia se verifican;
+8. la retención conserva suficiente historia para evaluar recurrencia;
+9. una revisión humana confirma que la evidencia sigue siendo representativa.
 
 Tener esta plantilla o `deployment/restore-drill.sh` en Hache Base **no** convierte automáticamente P2-07, DB-006 ni DB-007 en PASS para un proyecto derivado.
