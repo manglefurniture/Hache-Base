@@ -140,6 +140,20 @@ Un rol de consulta puede recibir un estado derivado correctamente sin ejecutar r
 
 Si una reconciliación debe escribirse, debe ejecutarla un actor o proceso con permiso explícito de mutación.
 
+## 8.1 Cobertura forward-only e historia no capturada
+
+Una relación temporal, actividad o métrica puede empezar a capturarse después de que ya existían registros del dominio. En ese caso, el proyecto debe conservar un marcador explícito de inicio de cobertura y declarar que la historia previa no fue reconstruida.
+
+Reglas:
+
+- un resultado anterior al marcador queda `out_of_coverage` o `not_evaluated`, no en cero;
+- no atribuir una relación, acción o carga histórica desde la configuración actual;
+- una corrección posterior se registra como corrección, no como reemplazo silencioso de una lectura/snapshot anterior;
+- `history_reconstructed=false` es el default conceptual; una reconstrucción excepcional necesita autoridad, evidencia y decisión explícita del proyecto;
+- una lectura viva/reconciliable debe etiquetarse como tal; un snapshot histórico necesita su corte y significado preservados de forma durable.
+
+`DateRangeState` sigue resolviendo rangos de vigencia. La cobertura de evidencia pertenece al read model que consume esos rangos; no se infiere del estado temporal actual. Consultar `templates/READ-MODEL-CONTRACT.md`.
+
 ## 9. Pruebas mínimas obligatorias
 
 Toda regla temporal debe comprobar como mínimo:

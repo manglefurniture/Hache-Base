@@ -81,6 +81,26 @@ Reglas asociadas:
 - Defensa adicional: separar estado derivado de reconciliación persistida.
 - Pruebas: lectura permitida sin mutaciones; escritura equivalente rechazada.
 
+### VIEW-002 — Un read model no es una autoridad paralela
+
+- Motivo: evitar que dashboards, resúmenes, alertas o expedientes copien reglas, inventen historia o presenten una segunda verdad.
+- Alcance: toda vista/API que compone datos de más de una autoridad.
+- Condición: un consumidor presenta una métrica, agregado, asunto de atención o historia compuesta.
+- Resultado esperado: declara autoridad, corte temporal, zona horaria, cobertura, exclusiones y límites; consume la definición canónica sin recalcularla en otra capa.
+- Fuente de verdad: autoridades de dominio identificadas por cada bloque; la proyección solo compone.
+- Defensa adicional: consulta read-only, marcador explícito para cobertura forward-only y separación entre lectura viva y snapshot histórico.
+- Pruebas: mismo total/detalle bajo el mismo filtro; ausencia de fuente como `null` con estado explícito; periodo fuera de cobertura sin backfill; consulta sin mutaciones.
+
+### VIEW-003 — Ausencia de evidencia no equivale a cero ni aprobación
+
+- Motivo: impedir que un valor desconocido altere decisiones, métricas o evidencia de operación.
+- Alcance: métricas, agregados, collectors y reportes.
+- Condición: falta fuente, denominador, cobertura, evaluación o evidencia suficiente.
+- Resultado esperado: devolver valor `null` y estado explícito (`not_available`, `out_of_coverage`, `not_evaluated`, `not_applicable` o `insufficient_evidence` según corresponda); `0` solo se publica con evidencia disponible.
+- Fuente de verdad: contrato del read model y fuente canónica del bloque.
+- Defensa adicional: collectors con decisión `HUMAN_REVIEW_REQUIRED`; no auto-PASS.
+- Pruebas: cero medido permitido; dato no disponible no se serializa como cero; collector no declara una decisión final.
+
 ## Reglas de diseño
 
 - No duplicar una misma regla con implementaciones contradictorias.

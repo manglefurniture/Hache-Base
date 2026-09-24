@@ -64,6 +64,12 @@ Las consultas read-only deben permanecer libres de escrituras colaterales. Una r
 
 Consultar `docs/ESTADOS-TEMPORALES-E-INTEGRIDAD.md`.
 
+### 7.1 Diseña read models y evidencia si aplica
+
+Para dashboards, reportes, expedientes, alertas o resúmenes compuestos, completar `templates/READ-MODEL-CONTRACT.md` antes de publicar cifras. Declarar autoridad, fórmula, corte, zona horaria, exclusiones, cobertura y tratamiento de ausencia; una UI no debe recalcular la métrica con otra fórmula.
+
+Si la captura comienza a mitad de la vida del proyecto, usar un inicio de cobertura forward-only y mantener la historia anterior como fuera de cobertura/no evaluada, sin backfill ficticio. Los collectors operacionales son read-only, minimizados y terminan en `HUMAN_REVIEW_REQUIRED`; una persona registra la conclusión final por separado.
+
 ## 8. Configura integraciones externas
 
 Antes de conectar un proveedor:

@@ -38,6 +38,12 @@ Un campo de estado derivable del reloj puede persistirse por rendimiento o compa
 
 Correo, n8n, APIs de terceros y mensajería viven fuera del dominio principal. Un fallo de una integración no debe comprometer la integridad del núcleo.
 
+### Read models y proyecciones
+
+Un dashboard, resumen, expediente o lista compuesta es un consumidor de autoridades de dominio, no otra autoridad. Debe declarar por bloque la fuente canónica, corte temporal, zona horaria, cobertura y la diferencia entre un valor medido, un valor no disponible y uno fuera de cobertura.
+
+La composición read-only deriva en memoria y no llama rutas que puedan mutar como efecto lateral. Si necesita sincronizar, generar un snapshot o reconciliar persistentemente, esa acción vive en un caso de uso de escritura separado, con autorización, auditoría y pruebas propias. Consultar `templates/READ-MODEL-CONTRACT.md` y, cuando se use PHP, `src/common/ReadModelContract.php`.
+
 ## Flujo recomendado
 
 `Solicitud -> autenticación -> contexto -> autorización -> validación -> servicio -> persistencia -> auditoría -> respuesta`
@@ -62,6 +68,7 @@ Una reconciliación persistida es una operación distinta y requiere permiso de 
 - Estados derivados y estados persistidos claramente diferenciados.
 - Consistencia entre listados, fichas, detalles y formularios que representan el mismo recurso.
 - Consultas read-only sin efectos secundarios de escritura.
+- Proyecciones y métricas con autoridad, corte, cobertura y ausencia explícitos.
 
 ## Adaptación
 
