@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "status": "pending_final_snapshot",
+  "captured_at": null,
+  "note": "Completar cuando Work termine el vídeo. No incluir secretos.",
+  "system": {},
+  "comfyui": {},
+  "custom_nodes": [],
+  "runtime": {}
+}
