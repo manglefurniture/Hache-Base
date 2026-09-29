@@ -1,0 +1,25 @@
+# Assets GPU pesados: conservarlos en Google Drive, nunca en este repositorio
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+*.gguf
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Datasets y resultados generados
+datasets/
+outputs/
+input/
+temp/
+
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
