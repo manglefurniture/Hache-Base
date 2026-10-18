@@ -1,12 +1,23 @@
 # Dominio Cloudflare para SQL Guard
 
+## Estado DNS y aislamiento real — 18 oct 2026
+
+**Registro creado en Cloudflare:** las consultas a ambos servidores autoritativos y a 1.1.1.1 / 8.8.8.8 devuelven `104.21.27.251` y `172.67.143.209`, **Cloudflare proxy activo (nube naranja)**, no DNS-only. Algunos resolvers del VPS aún muestran NXDOMAIN cacheado.
+
+**Riesgo comprobado:** la petición HTTPS al nuevo nombre responde HTTP 200 desde **una aplicación Hache existente**, con cookie `hache_session`. La petición HTTP directa al origen VPS para ese host devuelve 404; la HTTPS al origen devuelve también la aplicación existente. No hay Nginx vhost separado ni certificado propio para el nuevo nombre.
+
+**Acción de contención inmediata:** no abrir `/enroll` ni mostrar tokens/passkeys bajo este dominio hasta instalar vhost dedicado. Antes de cualquier prueba real, cambiar Cloudflare proxy a **DNS only** y comprobar el nuevo A público `162.243.32.80`. El cambio de proxy por sí mismo NO elimina la respuesta HTTPS de sitio por defecto: el administrador debe instalar un vhost específico y comprobar `nginx -t`/SSL.
+
+**Bloqueo de privilegios:** `gpt-agent` no dispone de sudo; `deploy-hache` solo puede ejecutar `/usr/local/sbin/deploy-hache-natacion` como root, lo que no autoriza configurar Nginx ni ejecutar Certbot para SQL Guard. La instalación exige una sesión administrativa del propietario o un canal de despliegue autorizado y restringido. No usar permisos de otra aplicación ni modificar sitios existentes.
+
+
 **Nombre definitivo:** `aprobaciones.hacheinteractive.com`
 
 **VPS de origen:** `162.243.32.80` (hache-natacion).
 
 El 18 de octubre de 2026 se verificó por DNS público:
 - NS de `hacheinteractive.com`: `megan.ns.cloudflare.com` y `elijah.ns.cloudflare.com`.
-- `aprobaciones.hacheinteractive.com`: NXDOMAIN, aún sin registro.
+- `aprobaciones.hacheinteractive.com`: inicialmente NXDOMAIN; **después creado**, pero actualmente con proxy Cloudflare activo.
 - El VPS tiene Nginx y Certbot para otros sitios. No reutilizar certificados ajenos.
 - No hay conexión de administración DNS Cloudflare disponible desde el agente.
 
