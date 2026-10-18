@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
 MODULE = ROOT / "deploy" / "prepare-approval-credentials.py"
@@ -47,6 +48,28 @@ class ApprovalCredentialPreparationTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 mod.create_pair(e, t, "OVERWRITE", "OVERWRITE", owner_uid=os.geteuid())
             self.assertEqual(e.read_text(), env)
+
+    def test_token_write_failure_removes_partial_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            env, token = mod.create_material()
+            with patch.object(mod.os, "fsync", side_effect=OSError("simulated disk failure")):
+                with self.assertRaises(OSError):
+                    mod.create_pair(root / "approval.env", root / "enrollment-token",
+                                    env, token, owner_uid=os.geteuid())
+            self.assertFalse((root / "enrollment-token").exists())
+            self.assertFalse((root / "approval.env").exists())
+
+    def test_env_write_failure_removes_both_partial_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            env, token = mod.create_material()
+            with patch.object(mod.os, "fsync", side_effect=[None, OSError("simulated disk failure")]):
+                with self.assertRaises(OSError):
+                    mod.create_pair(root / "approval.env", root / "enrollment-token",
+                                    env, token, owner_uid=os.geteuid())
+            self.assertFalse((root / "enrollment-token").exists())
+            self.assertFalse((root / "approval.env").exists())
 
     def test_symlink_destination_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as folder:
