@@ -1,0 +1,30 @@
+[Unit]
+Description=Hache SQL Guard isolated MariaDB mutation runner
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sqlguard-runner
+Group=sqlguard-runner
+SupplementaryGroups=sqlguard-store sqlguard-callers
+WorkingDirectory=/opt/sqlguard/current/extensions/sql-guard
+EnvironmentFile=/etc/sqlguard/runner.env
+ExecStart=/opt/sqlguard/venv/bin/python runner_socket.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/sqlguard /run/sqlguard
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Hache SQL Guard — Aprobaciones</title>
+  <link rel="stylesheet" href="/static/approval.css">
+  <script src="/static/approval.js" defer></script>
+</head>
+<body data-mode="{{ mode }}" data-request-id="{{ request_id }}">
+<main>
+  <h1>Hache SQL Guard</h1>
+  {% if mode == 'enroll' %}
+  <h2>Registrar llave de acceso</h2>
+  <p>Solo el propietario puede completar el registro inicial. Introduce el código de activación proporcionado fuera de ChatGPT.</p>
+  <label for="bootstrap">Código de activación</label>
+  <input type="password" id="bootstrap" autocomplete="off" />
+  <button id="do-enroll" type="button">Registrar passkey</button>
+  {% else %}
+  <h2>Autorizar operación</h2>
+  <p>Comprueba cuidadosamente la base de datos, la condición y los valores antes de aprobar. La autorización caduca y solo sirve una vez.</p>
+  <pre id="operation">Consultando operación…</pre>
+  <button id="do-approve" type="button">Confirmar mediante passkey</button>
+  {% endif %}
+  <p id="result" role="status" aria-live="polite"></p>
+  <small>La firma de tu dispositivo autoriza solo esta operación. ChatGPT no recibe tu passkey.</small>
+</main>
+</body>
+</html>

@@ -1,0 +1,34 @@
+# Temporary HTTPS holding site for aprobaciones.hacheinteractive.com
+# Enable only AFTER Certbot successfully issued this domain's certificate.
+# Explicitly do NOT forward traffic to other Hache applications.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name aprobaciones.hacheinteractive.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/sqlguard-acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name aprobaciones.hacheinteractive.com;
+
+    ssl_certificate /etc/letsencrypt/live/aprobaciones.hacheinteractive.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/aprobaciones.hacheinteractive.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    add_header Strict-Transport-Security "max-age=300" always;
+    add_header Cache-Control "no-store" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+
+    default_type text/plain;
+    location / { return 503 "Hache SQL Guard: servicio en preparacion\n"; }
+}

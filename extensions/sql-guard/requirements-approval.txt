@@ -1,0 +1,6 @@
+# Optional dependencies for the independently operated approval web service.
+# Install into a dedicated virtualenv, never into the applications' Python runtime.
+Flask==3.1.2
+webauthn==2.8.0
+gunicorn==23.0.0
+PyMySQL==1.1.1

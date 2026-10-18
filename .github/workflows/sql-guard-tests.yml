@@ -1,0 +1,50 @@
+name: SQL Guard tests
+on:
+  pull_request:
+    paths:
+      - 'extensions/sql-guard/**'
+      - '.github/workflows/sql-guard-tests.yml'
+  push:
+    paths:
+      - 'extensions/sql-guard/**'
+      - '.github/workflows/sql-guard-tests.yml'
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install passkey verifier for unit tests
+        run: python3 -m pip install --user 'webauthn==2.8.0' 'Flask==3.1.2'
+      - name: Validate root-owned backup template syntax
+        run: bash -n extensions/sql-guard/deploy/create-trusted-backup.sh.example
+      - name: Run SQL guard policy and executor tests
+        run: cd extensions/sql-guard && python3 -m unittest discover -v -p 'test_*.py'
+  mariadb-integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      mariadb:
+        image: mariadb@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa # 11.8
+        env:
+          MARIADB_ROOT_PASSWORD: local-root-password
+          MARIADB_DATABASE: sandbox
+          MARIADB_USER: guardtest
+          MARIADB_PASSWORD: local-test-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install test-only DB driver
+        run: python3 -m pip install --user 'PyMySQL==1.1.1'
+      - name: Isolated MariaDB tests
+        env:
+          SQLGUARD_MARIADB_TEST: "1"
+        run: cd extensions/sql-guard && python3 -m unittest -v test_mariadb_integration.py

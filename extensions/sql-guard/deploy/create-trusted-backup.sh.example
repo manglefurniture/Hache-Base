@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Root-only trusted backup for SQL Guard. Template: review before installing.
+set -euo pipefail
+umask 027
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "Requires root" >&2
+  exit 1
+fi
+
+OUT="/var/lib/sqlguard-trusted"
+EXPECTED_GROUP="sqlguard-store"
+if [[ ! -d "$OUT" || -L "$OUT" ]]; then
+  echo "Trusted directory missing or symlinked" >&2
+  exit 1
+fi
+if [[ "$(stat -c '%u' "$OUT")" != "0" ||
+      "$(stat -c '%G' "$OUT")" != "$EXPECTED_GROUP" ||
+      "$(stat -c '%a' "$OUT")" != "750" ]]; then
+  echo "Invalid trusted directory ownership or permissions" >&2
+  exit 1
+fi
+
+# The root-owned lock prevents concurrent publication or manifest races.
+# Root-only directory cannot be modified by the agent or approval service.
+exec 9>"$OUT/.backup.lock"
+if ! flock -n 9; then
+  echo "Another trusted backup is running" >&2
+  exit 1
+fi
+
+DATABASES=(hache_natacion hache_miner hache_tienda nova_boutique solution_spa)
+stamp="$(date -u +%Y%m%dT%H%M%S%NZ)"
+epoch="$(date -u +%s)"
+archive="hache-databases-${stamp}.sql.gz"
+tmp="$(mktemp -d "$OUT/.backup.XXXXXXXX")"
+cleanup() { rm -rf -- "$tmp"; }
+trap cleanup EXIT
+# MariaDB root uses local unix_socket; no database password in the script.
+mariadb-dump --single-transaction --quick --routines --events --triggers \
+  --databases "${DATABASES[@]}" | gzip -1 > "$tmp/$archive"
+test -s "$tmp/$archive"
+gzip -t "$tmp/$archive"
+checksum="$(sha256sum "$tmp/$archive" | awk '{print $1}')"
+printf '{"archive":"%s","sha256":"%s","created_at":%s,"databases":["hache_natacion","hache_miner","hache_tienda","nova_boutique","solution_spa"]}\n' \
+  "$archive" "$checksum" "$epoch" > "$tmp/manifest.json"
+chmod 0640 "$tmp/$archive" "$tmp/manifest.json"
+chown root:"$EXPECTED_GROUP" "$tmp/$archive" "$tmp/manifest.json"
+# Move completed archive first. Manifest rename is the commit point.
+mv -- "$tmp/$archive" "$OUT/$archive"
+mv -- "$tmp/manifest.json" "$OUT/manifest.json"
+# Retain the committed archive; discard older historical copies after 2h.
+find "$OUT" -maxdepth 1 -type f -name 'hache-databases-*.sql.gz' \
+  ! -name "$archive" -mmin +120 -delete
+echo "TRUSTED_BACKUP_OK name=$archive sha256=$checksum"

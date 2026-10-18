@@ -1,0 +1,29 @@
+[Unit]
+Description=Hache SQL Guard independent passkey approval service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sqlguard-approval
+Group=sqlguard-store
+WorkingDirectory=/opt/sqlguard/current/extensions/sql-guard
+EnvironmentFile=/etc/sqlguard/approval.env
+ExecStart=/opt/sqlguard/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8173 --timeout 30 'approval_web:create_app_from_env()'
+Restart=on-failure
+RestartSec=5
+UMask=0007
+ReadWritePaths=/var/lib/sqlguard
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
