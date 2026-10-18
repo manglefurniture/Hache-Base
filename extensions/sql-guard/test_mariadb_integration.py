@@ -9,6 +9,7 @@ except ImportError:
     pymysql = None
 
 SCHEMA = {"sandbox": {"items": {"id", "status"}}}
+PKS = {"sandbox": {"items": "id"}}
 
 
 @unittest.skipUnless(os.getenv("SQLGUARD_MARIADB_TEST") == "1" and pymysql, "MariaDB integration environment required")
@@ -31,7 +32,7 @@ class MariaDBIntegrationTests(unittest.TestCase):
 
     def test_small_update_and_rollback(self):
         self.assertEqual(apply(self.db, Change("sandbox", "items", "update",
-            {"id": 1}, {"status": "new"}), SCHEMA), 1)
+            {"id": 1}, {"status": "new"}), SCHEMA, primary_keys=PKS), 1)
         with self.db.cursor() as c:
             c.execute("SELECT status FROM items WHERE id=1")
             self.assertEqual(c.fetchone()[0], "new")
@@ -39,18 +40,18 @@ class MariaDBIntegrationTests(unittest.TestCase):
     def test_mass_update_refused(self):
         with self.assertRaises(UnsafeMutation):
             apply(self.db, Change("sandbox", "items", "update",
-                {"status": "old"}, {"status": "new"}), SCHEMA)
+                {"status": "old"}, {"status": "new"}), SCHEMA, primary_keys=PKS)
         with self.db.cursor() as c:
             c.execute("SELECT COUNT(*) FROM items WHERE status='new'")
             self.assertEqual(c.fetchone()[0], 0)
 
     def test_unscoped_delete_refused(self):
         with self.assertRaises(UnsafeMutation):
-            apply(self.db, Change("sandbox", "items", "delete", {}, {}), SCHEMA)
+            apply(self.db, Change("sandbox", "items", "delete", {}, {}), SCHEMA, primary_keys=PKS)
         with self.db.cursor() as c:
             c.execute("SELECT COUNT(*) FROM items")
             self.assertEqual(c.fetchone()[0], 13)
 
     def test_single_delete(self):
         self.assertEqual(apply(self.db, Change("sandbox", "items", "delete",
-            {"id": 1}, {}), SCHEMA), 1)
+            {"id": 1}, {}), SCHEMA, primary_keys=PKS), 1)
