@@ -99,12 +99,28 @@ def create_app(config: dict, backup_checker=None):
         token = request.headers.get("Authorization", "")
         if not hmac.compare_digest(token, "Bearer " + config["AGENT_TOKEN"]):
             abort(401)
-        row = gateway().db.execute("SELECT expires,approved FROM requests WHERE id=?",
-                                   (request_id,)).fetchone()
+        row = gateway().db.execute(
+            "SELECT r.expires,r.approved,r.approval_nonce,a.payload,a.used "
+            "FROM requests r LEFT JOIN approvals a ON a.nonce=r.approval_nonce "
+            "WHERE r.id=?", (request_id,)).fetchone()
         if not row:
             abort(404)
-        return jsonify({"status": "approved" if row[1] else
-                        ("expired" if row[0] <= int(time.time()) else "pending")})
+        timestamp = int(time.time())
+        if row[0] <= timestamp:
+            return jsonify({"status": "expired"})
+        if not row[1]:
+            return jsonify({"status": "pending"})
+        if not row[3]:
+            return jsonify({"status": "unavailable"})
+        import json
+        grant = json.loads(row[3])
+        if grant["expires_at"] <= timestamp:
+            return jsonify({"status": "expired"})
+        if row[4]:
+            return jsonify({"status": "consumed"})
+        # Nonce is only disclosed to the authenticated agent after the
+        # passkey owner has signed the exact operation.
+        return jsonify({"status": "approved", "nonce": row[2]})
 
     @app.post("/api/enroll/start")
     def enroll_start():
