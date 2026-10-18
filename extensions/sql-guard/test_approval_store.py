@@ -28,6 +28,19 @@ class StoreTests(unittest.TestCase):
         self.a.close()
         self.temp.cleanup()
 
+    def test_quota_is_cumulative_and_persistent(self):
+        self.assertTrue(self.a.reserve_daily_budget(4, now=100, daily_limit=10))
+        self.assertTrue(self.a.reserve_daily_budget(6, now=100, daily_limit=10))
+        self.assertFalse(self.a.reserve_daily_budget(1, now=100, daily_limit=10))
+        self.a.close()
+        self.a = ApprovalStore(self.path)
+        self.assertFalse(self.a.reserve_daily_budget(1, now=101, daily_limit=10))
+        self.assertTrue(self.a.reserve_daily_budget(1, now=86401, daily_limit=10))
+
+    def test_invalid_quota_requests_rejected(self):
+        self.assertFalse(self.a.reserve_daily_budget(11, now=100, daily_limit=10))
+        self.assertFalse(self.a.reserve_daily_budget(True, now=100, daily_limit=10))
+
     def test_once_only(self):
         self.a.register(signed("once"))
         self.assertTrue(self.a.consume("once", OP, SECRET, now=100))
