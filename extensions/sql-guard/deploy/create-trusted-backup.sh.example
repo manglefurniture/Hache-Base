@@ -20,6 +20,17 @@ if [[ "$(stat -c '%u' "$OUT")" != "0" ||
   echo "Invalid trusted directory ownership or permissions" >&2
   exit 1
 fi
+# Reject operations that could exhaust the application VPS disk.
+# This threshold is deliberately conservative for the first full dump;
+# it is NOT a promise about future archive size.
+free_bytes="$(df -P -B1 "$OUT" | awk 'NR == 2 {print $4}')"
+if [[ ! "$free_bytes" =~ ^[0-9]+$ ]] || (( free_bytes < 4294967296 )); then
+  echo "Refusing backup: less than 4 GiB free on trusted-backup filesystem" >&2
+  exit 1
+fi
+for cmd in mariadb-dump gzip sha256sum flock mktemp mv; do
+  command -v "$cmd" >/dev/null || { echo "Missing required backup tool: $cmd" >&2; exit 1; }
+done
 
 # The root-owned lock prevents concurrent publication or manifest races.
 # Root-only directory cannot be modified by the agent or approval service.
@@ -49,7 +60,6 @@ chown root:"$EXPECTED_GROUP" "$tmp/$archive" "$tmp/manifest.json"
 # Move completed archive first. Manifest rename is the commit point.
 mv -- "$tmp/$archive" "$OUT/$archive"
 mv -- "$tmp/manifest.json" "$OUT/manifest.json"
-# Retain the committed archive; discard older historical copies after 2h.
-find "$OUT" -maxdepth 1 -type f -name 'hache-databases-*.sql.gz' \
-  ! -name "$archive" -mmin +120 -delete
+# Never delete older root-owned backups during the first staging run.
+# Retention will require a separate reviewed policy and operator approval.
 echo "TRUSTED_BACKUP_OK name=$archive sha256=$checksum"
