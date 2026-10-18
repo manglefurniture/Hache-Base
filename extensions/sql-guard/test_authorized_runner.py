@@ -89,6 +89,15 @@ class GuardedRunnerTests(unittest.TestCase):
             self.execute_change(blocked, small)
         self.assertTrue(blocked.rolled_back)
 
+    def test_zero_match_scans_consume_attempt_quota(self):
+        operation = dict(BASE, operation="update", values={"status": "new"})
+        for _ in range(60):
+            self.assertEqual(self.execute_change(FakeConnection(count=0), operation), 0)
+        blocked = FakeConnection(count=0)
+        with self.assertRaises(UnsafeMutation):
+            self.execute_change(blocked, operation)
+        self.assertEqual(blocked.commands, [])
+
     def test_mass_write_without_approval_does_not_touch_db(self):
         c = FakeConnection(count=11)
         op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
