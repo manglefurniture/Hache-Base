@@ -77,5 +77,42 @@ class ApprovalStore:
             self.db.rollback()
             raise
 
+    def reserve_attempt(self, *, now: int,
+                        hourly_limit: int = 60, daily_limit: int = 300) -> bool:
+        """Charge trusted mutation-attempt budgets before scanning MariaDB.
+
+        Includes zero-match queries, failed operations and replay attempts.
+        Charges are not refunded, and counters are shared by all agent callers.
+        """
+        if (type(now) is not int or type(hourly_limit) is not int
+                or type(daily_limit) is not int
+                or not 1 <= hourly_limit <= daily_limit <= 10000):
+            return False
+        hour, day = now // 3600, now // 86400
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS request_attempt_budget "
+                "(window_type TEXT NOT NULL, window_id INTEGER NOT NULL, "
+                "attempts INTEGER NOT NULL, PRIMARY KEY(window_type,window_id))"
+            )
+            for kind, window, cap in (("hour", hour, hourly_limit),
+                                      ("day", day, daily_limit)):
+                self.db.execute(
+                    "INSERT OR IGNORE INTO request_attempt_budget VALUES (?,?,0)",
+                    (kind, window))
+                charged = self.db.execute(
+                    "UPDATE request_attempt_budget SET attempts=attempts+1 "
+                    "WHERE window_type=? AND window_id=? AND attempts<?",
+                    (kind, window, cap)).rowcount
+                if charged != 1:
+                    self.db.rollback()
+                    return False
+            self.db.commit()
+            return True
+        except Exception:
+            self.db.rollback()
+            raise
+
     def close(self):
         self.db.close()
