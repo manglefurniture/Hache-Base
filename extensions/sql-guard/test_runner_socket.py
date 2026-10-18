@@ -18,7 +18,7 @@ class RunnerSocketTests(unittest.TestCase):
             if operation.get("operation") == "drop":
                 raise PermissionError("No arbitrary DDL")
             return 1
-        self.server = RunnerServer(self.path, perform)
+        self.server = RunnerServer(self.path, perform, allowed_uid=os.getuid())
         self.thread = threading.Thread(target=self.server.serve_forever,
                                        kwargs={"poll_interval": 0.01}, daemon=True)
         self.thread.start()
@@ -29,10 +29,10 @@ class RunnerSocketTests(unittest.TestCase):
         self.thread.join(timeout=2)
         self.tmp.cleanup()
 
-    def send(self, message):
+    def send(self, message, path=None):
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             client.settimeout(2)
-            client.connect(self.path)
+            client.connect(path or self.path)
             client.sendall(message)
             result = b""
             while not result.endswith(b"\n"):
@@ -41,6 +41,21 @@ class RunnerSocketTests(unittest.TestCase):
                     break
                 result += part
             return json.loads(result)
+
+    def test_peer_uid_must_match(self):
+        alt = os.path.join(self.tmp.name, "blocked.sock")
+        other = RunnerServer(alt, lambda *_: 100,
+                             allowed_uid=os.getuid() + 1)
+        thread = threading.Thread(target=other.serve_forever,
+                                  kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        try:
+            answer = self.send(b'{"operation":{},"nonce":null}\\n', alt)
+            self.assertEqual(answer, {"ok": False, "error": "Operation rejected"})
+        finally:
+            other.shutdown()
+            other.server_close()
+            thread.join(timeout=2)
 
     def test_valid_structured_request(self):
         operation = {"database": "sandbox", "operation": "update"}
