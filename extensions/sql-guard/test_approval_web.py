@@ -2,6 +2,11 @@ import hashlib
 import os
 import tempfile
 import unittest
+import sqlite3
+import json
+import time
+from dataclasses import asdict
+from approval import Approval
 
 from approval_web import create_app
 
@@ -47,6 +52,27 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/agent/status/"+rid).status_code, 401)
         self.assertEqual(self.req("GET", "/api/agent/status/"+rid,
             headers=self.agent).json["status"], "pending")
+
+    def test_approved_nonce_only_visible_with_agent_token(self):
+        rid = self.stage()
+        nonce = "one-time-grant-for-approved-operation"
+        expiry = int(time.time()) + 120
+        grant = Approval("digest", "owner-test", expiry, nonce, "a"*64, "signature")
+        with sqlite3.connect(self.config["DB_PATH"]) as conn:
+            conn.execute(
+                "INSERT INTO approvals(nonce,payload,used) VALUES(?,?,0)",
+                (nonce, json.dumps(asdict(grant))))
+            conn.execute(
+                "UPDATE requests SET approved=1,approval_nonce=? WHERE id=?",
+                (nonce, rid))
+        path = "/api/agent/status/" + rid
+        self.assertEqual(self.req("GET", path).status_code, 401)
+        self.assertEqual(self.req("GET", path, headers=self.agent).json,
+                         {"status": "approved", "nonce": nonce})
+        with sqlite3.connect(self.config["DB_PATH"]) as conn:
+            conn.execute("UPDATE approvals SET used=1 WHERE nonce=?", (nonce,))
+        self.assertEqual(self.req("GET", path, headers=self.agent).json,
+                         {"status": "consumed"})
 
     def test_wrong_origin_rejected(self):
         self.assertEqual(self.req("POST", "/api/enroll/start",
