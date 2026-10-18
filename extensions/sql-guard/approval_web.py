@@ -141,16 +141,9 @@ def create_app(config: dict, backup_checker=None):
     def approve_finish():
         body = request.get_json()
         gateway_obj = gateway()
-        req = gateway_obj.db.execute(
-            "SELECT operation_json,backup_digest FROM requests WHERE id=?",
-            (body["request_id"],)).fetchone()
-        if not req:
-            abort(404)
-        import json
-        allowed = verify_backup(json.loads(req[0]), req[1])
         gateway_obj.finish_approval(
             body["request_id"], body["challenge"], body["credential"],
-            int(time.time()), backup_is_verified=allowed)
+            int(time.time()), backup_checker=verify_backup)
         return jsonify({"status": "approved"})
 
     return app
