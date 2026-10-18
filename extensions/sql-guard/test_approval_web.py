@@ -6,7 +6,7 @@ import unittest
 from approval_web import create_app
 
 TOKEN = "a-long-agent-secret-token-at-least-32-characters"
-OP = {"database":"sandbox","table":"items","operation":"delete","where":{"id":1},"values":{},"expected_rows":1}
+OP = {"database":"sandbox","table":"items","operation":"delete","where":{"id":1},"values":{},"expected_rows":1,"expected_primary_keys":[1]}
 
 
 class WebTests(unittest.TestCase):
