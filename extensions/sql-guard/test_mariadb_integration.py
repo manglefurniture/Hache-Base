@@ -67,7 +67,7 @@ class MariaDBIntegrationTests(unittest.TestCase):
         with self.db.cursor() as cur:
             cur.execute("UPDATE items SET status='keep' WHERE id>=12")
         operation = {"database": "sandbox", "table": "items", "operation": "delete",
-                     "where": {"status": "old"}, "values": {}, "expected_rows": 11}
+                     "where": {"status": "old"}, "values": {}, "expected_rows": 11, "expected_primary_keys": list(range(1,12))}
         secret = b"a-trusted-local-test-signing-key-32bytes"
         a = Approval(canonical_operation(operation), "test-owner", 200,
                      "one-use-only", "a"*64, "")
@@ -98,7 +98,7 @@ class MariaDBIntegrationTests(unittest.TestCase):
 
     def test_approved_mass_count_mismatch_rolls_back(self):
         operation = {"database": "sandbox", "table": "items", "operation": "delete",
-                     "where": {"status": "old"}, "values": {}, "expected_rows": 11}
+                     "where": {"status": "old"}, "values": {}, "expected_rows": 11, "expected_primary_keys": list(range(1,12))}
         secret = b"a-trusted-local-test-signing-key-32bytes"
         a = Approval(canonical_operation(operation), "test-owner", 200,
                      "mismatch-only", "a"*64, "")
