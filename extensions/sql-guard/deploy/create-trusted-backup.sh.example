@@ -48,7 +48,8 @@ tmp="$(mktemp -d "$OUT/.backup.XXXXXXXX")"
 cleanup() { rm -rf -- "$tmp"; }
 trap cleanup EXIT
 # MariaDB root uses local unix_socket; no database password in the script.
-mariadb-dump --single-transaction --quick --routines --events --triggers \
+mariadb-dump --no-defaults --user=root --socket=/run/mysqld/mysqld.sock \
+  --single-transaction --quick --routines --events --triggers \
   --databases "${DATABASES[@]}" | gzip -1 > "$tmp/$archive"
 test -s "$tmp/$archive"
 gzip -t "$tmp/$archive"
