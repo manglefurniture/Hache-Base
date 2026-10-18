@@ -45,3 +45,20 @@ El componente `approval.py` verifica un comprobante criptográfico con:
 **Implementado únicamente en código experimental:** página web independiente con ceremonias WebAuthn, almacenamiento de credenciales y desafíos, emisión de comprobantes firmados, vencimiento y anti-replay. Incluye verificador de respaldo root-owned, rechaza autorizaciones si este no se configura, y pruebas automatizadas. **Aún no está desplegado ni registrado ningún dispositivo.** La identidad del chat nunca se equipara a identidad autenticada. Falta conectar a ChatGPT el enlace real, ejecutar un enrolamiento WebAuthn real del propietario, instalar el runner SQL aislado, auditar límites y retirar después los privilegios directos. No insertar claves HMAC en prompts, logs, repositorios ni credenciales de `gpt-agent`.
 
 Ver `DEPLOY-APPROVAL.md` y `CHATGPT-APPROVAL-CONTRACT.md` antes de cualquier puesta en marcha.
+
+## Estado del runner aislado — implementación de laboratorio
+
+`runner_socket.py` añade un canal local Unix para que `gpt-agent` envíe peticiones estructuradas al servicio `sqlguard-runner` **sin conocer las credenciales SQL**. El socket comprueba el UID Linux del cliente, ACL de grupo y límite estricto de tamaño; no admite SQL libre.
+
+`authorized_runner.py` aplica la política actual:
+- Todos los `DELETE` requieren passkey, comprobante firmado de un solo uso, respaldo independiente y recuento exacto.
+- Un `UPDATE` sin aprobación queda limitado a 10 filas por petición **y 10 filas acumuladas por día UTC** en todas las bases; el cupo está protegido en el almacén SQLite del servicio.
+- Los `UPDATE` aprobados permiten entre 11 y 1000 filas, nunca más, si el recuento bloqueado coincide exactamente con el recuento aprobado.
+- Se rechazan siempre las condiciones vacías y los cambios fuera de lista; los comandos DDL no están implementados.
+- El mecanismo prueba las filas directamente modificadas; los efectos indirectos de triggers/cascadas deben auditarse por separado.
+
+`deploy/create-trusted-backup.sh.example` genera un dump y un manifiesto verificable root-owned dentro de `/var/lib/sqlguard-trusted`, ruta separada de cualquier directorio que el servicio de aprobaciones pueda modificar. La plantilla no se ejecutó ni programó en producción.
+
+**La separación de identidades está preparada en código y documentación, no desplegada.** `gpt-agent` todavía tiene acceso directo de escritura a las cinco bases: sigue existiendo el bypass hasta la transición de permisos.
+
+Ver también `DEPLOY-RUNNER.md` y `DEPLOY-APPROVAL.md`.
