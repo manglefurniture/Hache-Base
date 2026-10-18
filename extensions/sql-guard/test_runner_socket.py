@@ -50,7 +50,7 @@ class RunnerSocketTests(unittest.TestCase):
                                   kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         try:
-            answer = self.send(b'{"operation":{},"nonce":null}\\n', alt)
+            answer = self.send(b'{"operation":{},"nonce":null}\n', alt)
             self.assertEqual(answer, {"ok": False, "error": "Operation rejected"})
         finally:
             other.shutdown()
