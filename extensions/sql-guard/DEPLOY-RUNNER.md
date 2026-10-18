@@ -45,8 +45,8 @@ SQLGUARD_RUNNER_ALLOWED_AGENT_UID=<UID Linux verificado de gpt-agent>
 SQLGUARD_RUNNER_SOCKET_GROUP_GID=<GID del grupo sqlguard-callers>
 SQLGUARD_SIGN_KEY_HEX=<clave de verificación compartida solo por los dos servicios>
 SQLGUARD_DB_PATH=/var/lib/sqlguard/approvals.sqlite
-SQLGUARD_BACKUP_MANIFEST=/var/lib/sqlguard/trusted-backups/manifest.json
-SQLGUARD_BACKUP_DIRECTORY=/var/lib/sqlguard/trusted-backups
+SQLGUARD_BACKUP_MANIFEST=/var/lib/sqlguard-trusted/manifest.json
+SQLGUARD_BACKUP_DIRECTORY=/var/lib/sqlguard-trusted
 ```
 
 La lista permitida es un JSON `{"schema":{"sandbox":{"items":["id","status"]}},"primary_keys":{"sandbox":{"items":"id"}}}`. El ejemplo **no se aplica a producción**. En despliegue, todas las tablas permitidas deben tener PK realmente verificada en InnoDB y no deben permitir efectos laterales inesperados.
