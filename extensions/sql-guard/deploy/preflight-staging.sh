@@ -25,6 +25,15 @@ check() {
 }
 user_exists() { getent passwd "$1" >/dev/null 2>&1; }
 group_exists() { getent group "$1" >/dev/null 2>&1; }
+group_includes() {
+  local groups
+  groups="$(id -nG "$1" 2>/dev/null)" || return 1
+  [[ " $groups " == *" $2 "* ]]
+}
+group_excludes() {
+  id -nG "$1" >/dev/null 2>&1 || return 1
+  ! group_includes "$1" "$2"
+}
 unit_exists() { systemctl cat "$1" >/dev/null 2>&1; }
 dir_owned() {
   local path="$1" spec="$2" actual
@@ -45,8 +54,15 @@ check "Approval user" "$(user_exists sqlguard-approval && echo OK || echo MISSIN
 check "Runner user" "$(user_exists sqlguard-runner && echo OK || echo MISSING)"
 check "Shared store group" "$(group_exists sqlguard-store && echo OK || echo MISSING)"
 check "Agent socket group" "$(group_exists sqlguard-callers && echo OK || echo MISSING)"
+check "Approval in store group" "$(group_includes sqlguard-approval sqlguard-store && echo OK || echo MISSING)"
+check "Runner in store group" "$(group_includes sqlguard-runner sqlguard-store && echo OK || echo MISSING)"
+check "Runner in socket group" "$(group_includes sqlguard-runner sqlguard-callers && echo OK || echo MISSING)"
+check "GPT in socket group" "$(group_includes gpt-agent sqlguard-callers && echo OK || echo MISSING)"
+check "GPT excluded from store" "$(group_excludes gpt-agent sqlguard-store && echo OK || echo MISSING)"
+check "Approver excluded from socket" "$(group_excludes sqlguard-approval sqlguard-callers && echo OK || echo MISSING)"
 check "Store directory root/group" "$(dir_owned /var/lib/sqlguard 'root:sqlguard-store:2770' && echo OK || echo MISSING)"
 check "Trusted backup root/group" "$(dir_owned /var/lib/sqlguard-trusted 'root:sqlguard-store:750' && echo OK || echo MISSING)"
+check "Runner socket directory" "$(dir_owned /run/sqlguard 'root:sqlguard-runner:771' && echo OK || echo MISSING)"
 check "Approval code release" "$([[ -f /opt/sqlguard/current/extensions/sql-guard/approval_web.py ]] && echo OK || echo MISSING)"
 check "Approval unit installed" "$(unit_exists sqlguard-approval.service && echo OK || echo MISSING)"
 check "Runner unit installed" "$(unit_exists sqlguard-runner.service && echo OK || echo MISSING)"
