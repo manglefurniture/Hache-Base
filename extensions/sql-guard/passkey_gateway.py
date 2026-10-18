@@ -49,7 +49,8 @@ class PasskeyGateway:
         self.db.execute("""CREATE TABLE IF NOT EXISTS requests (
             id TEXT PRIMARY KEY, operation_json TEXT NOT NULL,
             backup_digest TEXT NOT NULL, expires INTEGER NOT NULL,
-            approved INTEGER NOT NULL DEFAULT 0)""")
+            approved INTEGER NOT NULL DEFAULT 0,
+            approval_nonce TEXT)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS ceremonies (
             challenge BLOB PRIMARY KEY, kind TEXT NOT NULL,
             request_id TEXT NOT NULL, expires INTEGER NOT NULL)""")
@@ -119,7 +120,9 @@ class PasskeyGateway:
         if len(backup_digest) != 64 or any(c not in "0123456789abcdef" for c in backup_digest):
             raise ValueError("Invalid backup checksum")
         request_id = secrets.token_urlsafe(24)
-        self.db.execute("INSERT INTO requests VALUES (?,?,?,?,0)", (
+        self.db.execute("INSERT INTO requests "
+                        "(id,operation_json,backup_digest,expires,approved,approval_nonce) "
+                        "VALUES (?,?,?,?,0,NULL)", (
             request_id,
             json.dumps(operation, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
             backup_digest, now + 300))
@@ -186,8 +189,11 @@ class PasskeyGateway:
                               signature)
             self.db.execute("INSERT INTO approvals VALUES (?,?,0)",
                             (nonce, json.dumps(asdict(signed), sort_keys=True)))
-            self.db.execute("UPDATE requests SET approved=1 WHERE id=? AND approved=0",
-                            (request_id,))
+            updated = self.db.execute(
+                "UPDATE requests SET approved=1,approval_nonce=? "
+                "WHERE id=? AND approved=0", (nonce, request_id)).rowcount
+            if updated != 1:
+                raise CeremonyRejected("Approval was already completed")
             self.db.execute("UPDATE passkeys SET sign_count=? WHERE credential_id=?",
                             (result.new_sign_count, credential_id))
             self.db.execute("DELETE FROM ceremonies WHERE challenge=?", (challenge,))
