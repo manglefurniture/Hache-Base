@@ -56,7 +56,7 @@ Una vez instalado el servicio, Desktop Commander de `gpt-agent` puede enviar un 
 
 ## Verificaciones pendientes antes de producción
 
-1. DNS y certificado TLS real para el dominio de aprobación; no hay un subdominio activo verificado.
+1. DNS y certificado TLS de `aprobaciones.hacheinteractive.com`: comprobados en la fase HTTPS holding (503 intencional). Antes de activar, verificar de nuevo nombre, certificado, proxy y ausencia de exposición pública del backend.
 2. Registro de passkey desde el dispositivo del propietario. Nunca introducir código de activación ni secretos en un chat.
 3. Proceso root que cree un respaldo íntegro, manifiesto y checksum de propiedad root *antes* de cada aprobación; los respaldos actuales de gpt-agent son insuficientes para esta prueba de independencia.
 4. Montar el directorio SQLite compartido con los permisos precisos; probar el socket entre identidades Linux reales, y rechazos desde otros UID.
