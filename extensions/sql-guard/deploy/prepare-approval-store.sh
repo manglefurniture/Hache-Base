@@ -84,6 +84,15 @@ gateway = PasskeyGateway(
     bootstrap_hash="0"*64)
 gateway.close()
 '
+  # SQLite may create its main file with mode 0640 even under umask 0007.
+  # Only for a freshly created database, verify ownership and lack of symlink
+  # before granting the trusted store group write access.
+  [[ -f "$db" && ! -L "$db" ]] || die "New SQLite file is missing or symlinked"
+  expected="$(id -u sqlguard-approval):$(getent group sqlguard-store | cut -d: -f3)"
+  actual="$(stat -c '%u:%g:%a' "$db")"
+  [[ "$actual" == "$expected:640" || "$actual" == "$expected:660" ]] ||
+    die "Unexpected freshly initialized SQLite ownership/mode"
+  chmod 0660 "$db"
 fi
 owner_mode "$db" "$(id -u sqlguard-approval):$(getent group sqlguard-store | cut -d: -f3):660"
 
