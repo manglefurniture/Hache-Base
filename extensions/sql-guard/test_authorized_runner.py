@@ -130,6 +130,15 @@ class GuardedRunnerTests(unittest.TestCase):
         self.assertFalse(c.commands)
         self.assertEqual(self.store.db.execute("SELECT used FROM approvals").fetchone()[0], 0)
 
+    def test_same_row_count_but_different_target_keys_rejected(self):
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(1, 12)))
+        self.approval(op)
+        c = FakeConnection(count=11)
+        with self.assertRaises(UnsafeMutation):
+            self.execute_change(c, op, nonce="only-one", backup_checker=lambda *_: True)
+        self.assertTrue(c.rolled_back)
+        self.assertFalse(c.committed)
+
     def test_unverified_backup_blocks(self):
         op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
