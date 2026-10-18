@@ -55,6 +55,11 @@ def safe_create(path, content, owner_uid=0):
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
+    except BaseException:
+        # O_EXCL guarantees that we created this path. Remove it even if
+        # writing or fsync failed before create_pair recorded its creation.
+        path.unlink(missing_ok=True)
+        raise
     finally:
         if fd >= 0:
             os.close(fd)
