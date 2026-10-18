@@ -141,6 +141,17 @@ def create_app(config: dict, backup_checker=None):
 
 
 def create_app_from_env():
+    from backup_attestation import verify_backup
+
     keys = ["DB_PATH","RP_ID","ORIGIN","OWNER_ID","SIGN_KEY_HEX",
             "BOOTSTRAP_HASH","AGENT_TOKEN"]
-    return create_app({key: os.getenv("SQLGUARD_" + key) for key in keys})
+    manifest = os.getenv("SQLGUARD_BACKUP_MANIFEST")
+    directory = os.getenv("SQLGUARD_BACKUP_DIRECTORY")
+    checker = None
+    if manifest and directory:
+        # The user operating the service cannot forge a root-owned manifest.
+        checker = lambda operation, digest: verify_backup(
+            operation, digest, manifest_path=manifest, archive_dir=directory,
+            owner_uid=0)
+    return create_app({key: os.getenv("SQLGUARD_" + key) for key in keys},
+                      backup_checker=checker)
