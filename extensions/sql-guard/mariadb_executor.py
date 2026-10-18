@@ -31,14 +31,14 @@ class Change:
 
 def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
           *, primary_keys: Mapping[str, Mapping[str, str]],
-          limit: int = 10) -> int:
+          limit: int = 10, expected_rows: int | None = None) -> int:
     """Apply only primary-key rows observed and locked in this transaction.
 
     The trusted configuration MUST name a genuine single-column PRIMARY KEY of
     an InnoDB table. Composite PKs, views and other engines are unsupported.
     A future deployment must audit the actual schema and trigger effects.
     """
-    if limit < 1 or change.operation not in {"update", "delete"}:
+    if limit < 1 or limit > 1000 or change.operation not in {"update", "delete"}:
         raise UnsafeMutation("Unsupported operation")
     if change.database not in schema or change.table not in schema[change.database]:
         raise UnsafeMutation("Database/table not allowed")
@@ -67,6 +67,8 @@ def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
             args + [limit + 1])
         keys = [row[0] for row in cur.fetchall()]
         count = len(keys)
+        if expected_rows is not None and (isinstance(expected_rows, bool) or count != expected_rows):
+            raise UnsafeMutation("Matched row count differs from authorized snapshot")
         if decide(Request(change.operation, change.database, count, True),
                   set(schema), limit) != Decision.ALLOW:
             raise UnsafeMutation("Mass or unscoped operation denied")
