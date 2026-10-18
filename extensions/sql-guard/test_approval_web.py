@@ -6,6 +6,8 @@ import sqlite3
 import json
 import time
 from dataclasses import asdict
+from types import SimpleNamespace
+from unittest.mock import patch
 from approval import Approval
 
 from approval_web import create_app
@@ -73,6 +75,44 @@ class WebTests(unittest.TestCase):
             conn.execute("UPDATE approvals SET used=1 WHERE nonce=?", (nonce,))
         self.assertEqual(self.req("GET", path, headers=self.agent).json,
                          {"status": "consumed"})
+
+    def test_web_backup_only_after_valid_passkey(self):
+        steps = []
+        def checker(operation, digest):
+            steps.append("backup")
+            self.assertEqual(operation, OP)
+            self.assertEqual(digest, "a"*64)
+            return True
+
+        self.app = create_app(self.config, backup_checker=checker)
+        self.client = self.app.test_client()
+        rid = self.stage()
+        with sqlite3.connect(self.config["DB_PATH"]) as conn:
+            conn.execute("INSERT INTO passkeys VALUES (?,?,0)", (b"key1", b"public"))
+        challenge = self.req("POST", "/api/approve/start", headers=self.origin,
+            json={"request_id": rid}).json["challenge"]
+        payload = {"request_id":rid, "challenge":challenge,
+                   "credential":{"rawId":"a2V5MQ"}}
+
+        with patch("passkey_gateway.verify_authentication_response",
+                   side_effect=ValueError("invalid")):
+            rejected = self.req("POST", "/api/approve/finish",
+                headers=self.origin, json=payload)
+        self.assertEqual(rejected.status_code, 403)
+        self.assertEqual(steps, [])
+
+        def valid(**kwargs):
+            steps.append("passkey")
+            return SimpleNamespace(new_sign_count=1)
+
+        with patch("passkey_gateway.verify_authentication_response", side_effect=valid):
+            approved = self.req("POST", "/api/approve/finish",
+                headers=self.origin, json=payload)
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(steps, ["passkey", "backup"])
+        result = self.req("GET", "/api/agent/status/" + rid, headers=self.agent).json
+        self.assertEqual(result["status"], "approved")
+        self.assertTrue(result["nonce"])
 
     def test_wrong_origin_rejected(self):
         self.assertEqual(self.req("POST", "/api/enroll/start",
