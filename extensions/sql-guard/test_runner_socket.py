@@ -50,7 +50,12 @@ class RunnerSocketTests(unittest.TestCase):
                                   kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         try:
-            answer = self.send(b'{"operation":{},"nonce":null}\n', alt)
+            # The runner rejects SO_PEERCRED before reading a payload. Reading
+            # the rejection directly avoids a send-vs-close race (BrokenPipe).
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(2)
+                client.connect(alt)
+                answer = json.loads(client.recv(4096))
             self.assertEqual(answer, {"ok": False, "error": "Operation rejected"})
         finally:
             other.shutdown()
