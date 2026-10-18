@@ -51,12 +51,15 @@ class PasskeyGatewayTests(unittest.TestCase):
         with self.assertRaises(CeremonyRejected):
             self.db.finish_enrollment(opts["challenge"], {"id": "fake"}, 103)
 
-    def test_missing_backup_refused_before_signature(self):
+    def test_missing_backup_refused_after_passkey_signature(self):
         self.enroll()
         rid = self.db.stage_request(OP, "a"*64, 100)
         opts = self.db.begin_approval(rid, 101)
-        with self.assertRaises(CeremonyRejected):
-            self.db.finish_approval(rid, opts["challenge"], {"rawId": "a2V5MQ"}, 102)
+        with patch("passkey_gateway.verify_authentication_response",
+                   return_value=SimpleNamespace(new_sign_count=1)):
+            with self.assertRaises(CeremonyRejected):
+                self.db.finish_approval(rid, opts["challenge"],
+                    {"rawId":"a2V5MQ"}, 102)
 
     def test_authenticated_approval_one_time(self):
         self.enroll()
@@ -121,7 +124,7 @@ class PasskeyGatewayTests(unittest.TestCase):
         steps.clear()
         with patch("passkey_gateway.verify_authentication_response",
                    side_effect=ValueError("invalid WebAuthn signature")):
-            with self.assertRaises(ValueError):
+            with self.assertRaises(CeremonyRejected):
                 self.db.finish_approval(rid, opts["challenge"],
                     {"rawId":"a2V5MQ"}, 103, backup_checker=backup)
         self.assertEqual(steps, [])
