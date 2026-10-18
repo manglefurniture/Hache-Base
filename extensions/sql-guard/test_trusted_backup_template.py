@@ -26,7 +26,9 @@ class TrustedBackupTemplateTests(unittest.TestCase):
     def test_verified_backup_before_atomic_manifest(self):
         src = SCRIPT.read_text()
         self.assertIn('set -euo pipefail', src)
-        self.assertIn('mariadb-dump --single-transaction --quick --routines --events --triggers', src)
+        self.assertIn('mariadb-dump --no-defaults --user=root --socket=/run/mysqld/mysqld.sock', src)
+        self.assertIn('--single-transaction --quick --routines --events --triggers', src)
+        self.assertIn('--databases "${DATABASES[@]}"', src)
         self.assertIn('gzip -t "$tmp/$archive"', src)
         self.assertIn('sha256sum "$tmp/$archive"', src)
         self.assertIn('chown root:"$EXPECTED_GROUP"', src)
