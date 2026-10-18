@@ -10,7 +10,7 @@ from passkey_gateway import CeremonyRejected, PasskeyGateway
 
 SECRET = b"super-secret-approval-gateway-key-with-entropy"
 TOKEN = "human-out-of-band-bootstrap-token"
-OP = {"database":"sandbox","table":"items","operation":"delete","where":{"id":1},"values":{}}
+OP = {"database":"sandbox","table":"items","operation":"delete","where":{"id":1},"values":{},"expected_rows":1}
 
 
 class PasskeyGatewayTests(unittest.TestCase):
