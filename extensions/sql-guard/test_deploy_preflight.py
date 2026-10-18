@@ -23,6 +23,14 @@ class StagingPreflightTests(unittest.TestCase):
                            capture_output=True, text=True, timeout=5)
         self.assertEqual(p.returncode, 2)
 
+    def test_shared_sqlite_units_require_group_umask(self):
+        deploy = ROOT / "deploy"
+        for unit in ("sqlguard-approval.service.example",
+                     "sqlguard-runner.service.example"):
+            body = (deploy / unit).read_text()
+            self.assertIn("UMask=0007", body)
+            self.assertNotIn("UMask=0077", body)
+
     def test_no_mutation_commands_in_inspection_source(self):
         src = SCRIPT.read_text()
         # Safeguard against accidentally adding shell installers to the diagnostic.
