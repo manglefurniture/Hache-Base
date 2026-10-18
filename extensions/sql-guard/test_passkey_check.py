@@ -77,8 +77,9 @@ class OwnerPasskeyCheckTests(unittest.TestCase):
                 {"rawId": "dGVzdC1wYXNza2V5"}, 221)
         self.g.begin_passkey_check(221)
         self.g.begin_passkey_check(222)
+        self.g.begin_passkey_check(223)
         with self.assertRaises(CeremonyRejected):
-            self.g.begin_passkey_check(223)
+            self.g.begin_passkey_check(224)
         self.g.begin_passkey_check(344)
         self.g.begin_passkey_check(345)
         with self.assertRaises(CeremonyRejected):
