@@ -17,7 +17,8 @@ class BackupAttestationTests(unittest.TestCase):
         self.archive = os.path.join(self.folder, "backup.sql.gz")
         with gzip.open(self.archive, "wb") as f:
             f.write(b"CREATE TABLE example (id INT);\n")
-        self.digest = hashlib.sha256(open(self.archive, "rb").read()).hexdigest()
+        with open(self.archive, "rb") as f:
+            self.digest = hashlib.sha256(f.read()).hexdigest()
         self.manifest = os.path.join(self.folder, "manifest.json")
         self.data = {"archive": "backup.sql.gz", "sha256": self.digest,
                      "created_at": 100, "databases": ["sandbox"]}
