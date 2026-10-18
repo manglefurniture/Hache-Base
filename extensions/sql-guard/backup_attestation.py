@@ -50,7 +50,7 @@ def verify_backup(operation: dict, digest: str, *, manifest_path: str,
         with open(manifest_path, encoding="utf-8") as f:
             metadata = json.load(f)
         name = metadata["archive"]
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}\\.sql\\.gz", name):
+        if not isinstance(name, str) or not name.endswith(".sql.gz") or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", name):
             return False
         if metadata["sha256"] != digest:
             return False
