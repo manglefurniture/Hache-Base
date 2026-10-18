@@ -15,7 +15,16 @@ cuentas root, no cambia MariaDB, no expone el servicio Gunicorn fuera de
    aprobaciones.hacheinteractive.com\` devuelve 200, y \`POST
    /api/agent/stage\` sin token devuelve 401.
 4. El certificado HTTPS debe ser válido y el sitio público seguir en 503.
-5. No leer ni mostrar \`/etc/sqlguard/approval.env\` ni el token de registro
+5. **DNS-only gate**: `aprobaciones.hacheinteractive.com` must point directly
+   to the VPS public A/AAAA address (without Cloudflare orange-cloud proxy).
+   Compare `getent ahostsv4 aprobaciones.hacheinteractive.com` against the
+   known origin address from DigitalOcean. If any A/AAAA resolves to a CDN or
+   unknown address, **do not deploy this staging config**. Recheck this
+   during the enrollment window and do not change the record while it is open.
+   This requirement is mandatory because Nginx uses `$binary_remote_addr`
+   for rate limiting; a proxied Cloudflare edge shares buckets across users.
+   A future proxy mode needs an independently reviewed real-IP trust policy.
+6. No leer ni mostrar \`/etc/sqlguard/approval.env\` ni el token de registro
    desde herramientas conectadas a ChatGPT. Cuentas privadas y respaldos
    permanecen inaccesibles a \`gpt-agent\`.
 
