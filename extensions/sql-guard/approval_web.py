@@ -73,6 +73,21 @@ def create_app(config: dict, backup_checker=None):
     def invalid(err):
         return jsonify({"error": "Invalid request"}), 400
 
+    @app.get("/verify-passkey")
+    def passkey_check_page():
+        return render_template("passkey_check.html")
+
+    @app.post("/api/passkey-check/start")
+    def passkey_check_start():
+        return jsonify(gateway().begin_passkey_check(int(time.time())))
+
+    @app.post("/api/passkey-check/finish")
+    def passkey_check_finish():
+        body = request.get_json()
+        gateway().finish_passkey_check(
+            body["challenge"], body["credential"], int(time.time()))
+        return jsonify({"status": "verified", "grants_issued": 0})
+
     @app.get("/enroll")
     def enroll_page():
         return render_template("approval.html", mode="enroll", request_id="")

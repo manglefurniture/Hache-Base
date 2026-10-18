@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hache SQL Guard — Verificar passkey</title>
+<link rel="stylesheet" href="/static/approval.css">
+<script src="/static/passkey_check.js" defer></script>
+</head>
+<body>
+<main>
+<h1>Hache SQL Guard</h1>
+<h2>Comprobar mi passkey</h2>
+<p>Esta prueba verifica que puedes autenticarte con la passkey registrada. No aprueba operaciones, no crea permisos y no modifica bases de datos de producción.</p>
+<button type="button" id="verify-passkey">Verificar con mi passkey</button>
+<p id="result" role="status" aria-live="polite"></p>
+<small>Las claves privadas permanecen en tu dispositivo. Al terminar la prueba, se cerrará este acceso temporal.</small>
+</main>
+</body>
+</html>
