@@ -21,8 +21,12 @@ Antes de desplegar un ejecutor:
 7. Auditoría append-only en ubicación inaccesible para la cuenta que invoca, pruebas de concurrencia, rollback, doble envío y denegación por defecto.
 8. Desplegar desde GitHub con checks, revisión, merge y verificación; nunca editar código versionado en el VPS.
 
+## Ejecutor experimental
+
+`executor.py` implementa un ejecutor limitado para pruebas SQLite (UPDATE/DELETE por igualdad, lista explícita de identificadores, conteo transaccional). **No está preparado para MariaDB ni producción**: usa `BEGIN IMMEDIATE` de SQLite y requiere aislamiento de credenciales, mecanismo autenticado de aprobación, auditoría y pruebas específicas de concurrencia en MariaDB. La ejecución masiva se rechaza incluso si se aporta una aprobación; esa capacidad todavía no está construida.
+
 ## Probar sin dependencias externas
 
-`cd extensions/sql-guard && python3 -m unittest -v test_policy.py`
+`cd extensions/sql-guard && python3 -m unittest discover -v -p 'test_*.py'`
 
 No habilitar en aplicaciones ni modificar permisos MariaDB como parte de este PR.
