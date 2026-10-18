@@ -120,7 +120,9 @@ fi
 owner_mode "$db" "$(id -u sqlguard-approval):$(getent group sqlguard-store | cut -d: -f3):660"
 
 # Validate actual runner access, without writing or issuing approvals.
-runuser -u sqlguard-runner -g sqlguard-runner -- \
+# runuser -g replaces the group list unless -G is given explicitly.
+# Match the service's SupplementaryGroups=sqlguard-store for this check.
+runuser -u sqlguard-runner -g sqlguard-runner -G sqlguard-store -- \
   "$VENV" -c '
 import sqlite3
 db = sqlite3.connect("file:/var/lib/sqlguard/approvals.sqlite?mode=ro", uri=True)
