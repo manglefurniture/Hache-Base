@@ -21,6 +21,7 @@ class RunnerConfig:
     primary_keys: dict
     small_limit: int = 10
     absolute_limit: int = 1000
+    unapproved_daily_limit: int = 10
 
 
 def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConfig,
@@ -33,7 +34,9 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
     The server operator MUST protect both databases and the runtime.
     """
     canonical_operation(operation)
-    if not isinstance(config.small_limit, int) or not 1 <= config.small_limit < config.absolute_limit <= 1000:
+    if (not isinstance(config.small_limit, int)
+            or not 1 <= config.small_limit < config.absolute_limit <= 1000
+            or not 1 <= config.unapproved_daily_limit <= 100):
         raise ValueError("Invalid runner limits")
     if operation["operation"] not in {"update", "delete"}:
         raise UnsafeMutation("Runner only handles UPDATE/DELETE")
@@ -48,7 +51,10 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
     if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int)):
         raise UnsafeMutation("Invalid expected row count")
     stamp = int(time.time()) if now is None else now
-    if expected is not None and expected > config.small_limit:
+    needs_approval = operation["operation"] == "delete" or (expected is not None and expected > config.small_limit)
+    if needs_approval:
+        if expected is None or expected < 1:
+            raise ApprovalRequired("Exact expected row count required for approved writes")
         if expected > config.absolute_limit or not nonce or not verifier_key or not backup_checker:
             raise ApprovalRequired("Signed human approval and independent backup required")
         # The only accepted backup digest is the one signed and stored by
@@ -84,7 +90,10 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
             "INSERT INTO execution_events(nonce,phase,created_at) VALUES(?,?,?)",
             (nonce, "committed", stamp))
         return count
-    # A small operation requires no approval, but remains capped by the runner.
+    # All unapproved DELETEs are blocked, and small UPDATEs burn a GLOBAL
+    # UTC daily quota, preventing large changes split into small requests.
     return apply(conn, change, config.schema,
                  primary_keys=config.primary_keys, limit=config.small_limit,
-                 expected_rows=expected)
+                 expected_rows=expected,
+                 before_write=lambda rows: approval_store.reserve_daily_budget(
+                     rows, now=stamp, daily_limit=config.unapproved_daily_limit))
