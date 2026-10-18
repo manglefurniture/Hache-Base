@@ -232,11 +232,14 @@ class PasskeyGateway:
                 (credential_id,)).fetchone()
             if not key:
                 raise CeremonyRejected("Unknown credential")
-            result = verify_authentication_response(
-                credential=credential, expected_challenge=challenge,
-                expected_rp_id=self.rp_id, expected_origin=self.origin,
-                credential_public_key=key[0], credential_current_sign_count=key[1],
-                require_user_verification=True)
+            try:
+                result = verify_authentication_response(
+                    credential=credential, expected_challenge=challenge,
+                    expected_rp_id=self.rp_id, expected_origin=self.origin,
+                    credential_public_key=key[0], credential_current_sign_count=key[1],
+                    require_user_verification=True)
+            except Exception as exc:
+                raise CeremonyRejected("Invalid passkey assertion") from exc
             operation = json.loads(row[0])
             if backup_checker is None or backup_checker(operation, row[1]) is not True:
                 raise CeremonyRejected("Independent backup verification required")
