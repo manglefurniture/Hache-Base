@@ -33,6 +33,9 @@ class ApprovalStorePreparationTests(unittest.TestCase):
         self.assertIn('runuser -u gpt-agent --', content)
         self.assertIn('required = {"passkeys", "requests", "ceremonies", "approvals", "stage_budget"}', content)
         self.assertIn('owner_mode "$db"', content)
+        self.assertIn('[[ "$actual" == "$expected:640" || "$actual" == "$expected:660" ]]', content)
+        self.assertIn('chmod 0660 "$db"', content)
+        self.assertIn('if [[ "$dbstatus" == "ABSENT" ]]; then', content)
 
     def test_unknown_option_fails(self):
         result = subprocess.run(["bash", str(SCRIPT), "--unknown"],
