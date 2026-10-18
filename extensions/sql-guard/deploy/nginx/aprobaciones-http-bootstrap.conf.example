@@ -1,0 +1,19 @@
+# Nginx bootstrap: DNS + Certbot HTTP-01 only
+# Domain: aprobaciones.hacheinteractive.com
+# INSTALL ONLY after Cloudflare A record resolves to this VPS.
+# Do not expose the approval app on HTTP.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name aprobaciones.hacheinteractive.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/sqlguard-acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}
