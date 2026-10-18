@@ -13,12 +13,21 @@ from dataclasses import dataclass
 def canonical_operation(payload: dict) -> str:
     fields = {"database", "table", "operation", "where", "values"}
     keys = set(payload)
-    if keys not in (fields, fields | {"expected_rows"}):
+    if keys not in (fields, fields | {"expected_rows"},
+                    fields | {"expected_rows", "expected_primary_keys"}):
         raise ValueError("Unexpected operation fields")
     if "expected_rows" in payload:
         count = payload["expected_rows"]
         if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 1000:
             raise ValueError("Expected row count must be an integer from 0 to 1000")
+    if "expected_primary_keys" in payload:
+        values = payload["expected_primary_keys"]
+        if (not isinstance(values, list) or len(values) != payload["expected_rows"]
+                or any(type(v) not in (int, str) or
+                       (isinstance(v, str) and not 1 <= len(v) <= 128)
+                       for v in values)
+                or len(set((type(v).__name__, v) for v in values)) != len(values)):
+            raise ValueError("Exact unique primary key list is required")
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
