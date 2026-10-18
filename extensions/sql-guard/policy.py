@@ -44,7 +44,7 @@ def decide(request: Request, allowed_databases: set[str], threshold: int = 10) -
     if request.affected_rows is None or request.affected_rows < 0:
         return Decision.DENY
     if operation in {"update", "delete"} and not request.has_where:
-        return Decision.APPROVAL_REQUIRED
+        return Decision.DENY
     if request.affected_rows > threshold:
         return (Decision.ALLOW if request.approved and request.backed_up
                 else Decision.APPROVAL_REQUIRED)
