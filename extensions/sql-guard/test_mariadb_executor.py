@@ -2,6 +2,7 @@ import unittest
 from mariadb_executor import Change, UnsafeMutation, apply
 
 SCHEMA = {"sandbox": {"items": {"id", "status"}}}
+PKS = {"sandbox": {"items": "id"}}
 
 class Cursor:
     def __init__(self, count=1, rowcount=1):
@@ -29,7 +30,7 @@ class Connection:
 class MariaDBExecutorTests(unittest.TestCase):
     def test_small_update(self):
         db = Connection()
-        n = apply(db, Change("sandbox", "items", "update", {"id": 1}, {"status": "ok"}), SCHEMA)
+        n = apply(db, Change("sandbox", "items", "update", {"id": 1}, {"status": "ok"}), SCHEMA, primary_keys=PKS)
         self.assertEqual(n, 1)
         self.assertTrue(db.committed)
         self.assertIn("FOR UPDATE", db.cur.commands[1][0])
@@ -37,24 +38,24 @@ class MariaDBExecutorTests(unittest.TestCase):
     def test_mass_delete_rollback(self):
         db = Connection(count=11)
         with self.assertRaises(UnsafeMutation):
-            apply(db, Change("sandbox", "items", "delete", {"status": "x"}, {}), SCHEMA)
+            apply(db, Change("sandbox", "items", "delete", {"status": "x"}, {}), SCHEMA, primary_keys=PKS)
         self.assertTrue(db.rolled_back)
         self.assertEqual(len(db.cur.commands), 2)
     def test_delete_count_mismatch_rollback(self):
         db = Connection(count=2, rowcount=1)
         with self.assertRaises(UnsafeMutation):
-            apply(db, Change("sandbox", "items", "delete", {"status": "x"}, {}), SCHEMA)
+            apply(db, Change("sandbox", "items", "delete", {"status": "x"}, {}), SCHEMA, primary_keys=PKS)
         self.assertTrue(db.rolled_back)
     def test_unscoped_refused(self):
         with self.assertRaises(UnsafeMutation):
-            apply(Connection(), Change("sandbox", "items", "delete", {}, {}), SCHEMA)
+            apply(Connection(), Change("sandbox", "items", "delete", {}, {}), SCHEMA, primary_keys=PKS)
     def test_identifier_injection_refused(self):
         with self.assertRaises(UnsafeMutation):
-            apply(Connection(), Change("sandbox", "items; DROP TABLE items", "update", {"id": 1}, {"status": "x"}), SCHEMA)
+            apply(Connection(), Change("sandbox", "items; DROP TABLE items", "update", {"id": 1}, {"status": "x"}), SCHEMA, primary_keys=PKS)
     def test_value_bound(self):
         db = Connection()
         payload = "x'; DROP TABLE items;--"
-        apply(db, Change("sandbox", "items", "update", {"id": 1}, {"status": payload}), SCHEMA)
+        apply(db, Change("sandbox", "items", "update", {"id": 1}, {"status": payload}), SCHEMA, primary_keys=PKS)
         self.assertEqual(db.cur.commands[2][1][0], payload)
 
 if __name__ == "__main__":
