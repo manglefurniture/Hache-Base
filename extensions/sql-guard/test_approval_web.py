@@ -57,7 +57,7 @@ class WebTests(unittest.TestCase):
         rid = self.stage()
         response = self.req("GET", "/approve/"+rid)
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Web", response.data) if False else None
+        self.assertIn(b"Hache SQL Guard", response.data)
         self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
         self.assertEqual(self.req("GET", "/api/pending/"+rid).json, OP)
 
