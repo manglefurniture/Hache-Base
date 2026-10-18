@@ -21,8 +21,16 @@ if [[ "$(stat -c '%u' "$OUT")" != "0" ||
   exit 1
 fi
 
+# The root-owned lock prevents concurrent publication or manifest races.
+# Root-only directory cannot be modified by the agent or approval service.
+exec 9>"$OUT/.backup.lock"
+if ! flock -n 9; then
+  echo "Another trusted backup is running" >&2
+  exit 1
+fi
+
 DATABASES=(hache_natacion hache_miner hache_tienda nova_boutique solution_spa)
-stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+stamp="$(date -u +%Y%m%dT%H%M%S%NZ)"
 epoch="$(date -u +%s)"
 archive="hache-databases-${stamp}.sql.gz"
 tmp="$(mktemp -d "$OUT/.backup.XXXXXXXX")"
