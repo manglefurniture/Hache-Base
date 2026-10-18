@@ -29,7 +29,9 @@ class ApprovalStorePreparationTests(unittest.TestCase):
     def test_user_isolation_and_schema_validation(self):
         content = SCRIPT.read_text()
         self.assertIn('runuser -u sqlguard-approval -g sqlguard-store', content)
-        self.assertIn('runuser -u sqlguard-runner -g sqlguard-runner', content)
+        # runuser -g clears supplementary groups unless -G is explicit.
+        self.assertIn('runuser -u sqlguard-runner -g sqlguard-runner -G sqlguard-store --', content)
+        self.assertNotIn('runuser -u sqlguard-runner -g sqlguard-runner --', content)
         self.assertIn('runuser -u gpt-agent --', content)
         self.assertIn('required = {"passkeys", "requests", "ceremonies", "approvals", "stage_budget"}', content)
         self.assertIn('owner_mode "$db"', content)
