@@ -8,6 +8,7 @@ import json
 import os
 import socket
 import socketserver
+import struct
 import stat
 from typing import Callable
 
@@ -18,8 +19,9 @@ from backup_attestation import verify_backup
 
 class RunnerServer(socketserver.UnixStreamServer):
     request_queue_size = 8
-    def __init__(self, path: str, execute_callback: Callable):
+    def __init__(self, path: str, execute_callback: Callable, *, allowed_uid: int | None = None):
         self.execute_callback = execute_callback
+        self.allowed_uid = allowed_uid
         super().__init__(path, RunnerHandler)
 
 
@@ -27,6 +29,11 @@ class RunnerHandler(socketserver.StreamRequestHandler):
     def handle(self):
         self.request.settimeout(10)
         try:
+            if self.server.allowed_uid is not None:
+                cred = self.request.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+                peer_uid = struct.unpack("3i", cred)[1]
+                if peer_uid != self.server.allowed_uid:
+                    raise PermissionError("Peer UID not authorized")
             raw = self.rfile.readline(8193)
             if not raw or len(raw) > 8192 or not raw.endswith(b"\n"):
                 raise ValueError("Malformed or oversized request")
@@ -90,6 +97,7 @@ def run_from_env():
         "SQLGUARD_RUNNER_DB_USER", "SQLGUARD_RUNNER_DB_PASSWORD",
         "SQLGUARD_SIGN_KEY_HEX", "SQLGUARD_DB_PATH",
         "SQLGUARD_BACKUP_MANIFEST", "SQLGUARD_BACKUP_DIRECTORY",
+        "SQLGUARD_RUNNER_ALLOWED_AGENT_UID", "SQLGUARD_RUNNER_SOCKET_GROUP_GID",
     ]
     env = {k: os.environ.get(k) for k in required}
     if any(not v for v in env.values()):
@@ -125,7 +133,9 @@ def run_from_env():
         backup_directory=env["SQLGUARD_BACKUP_DIRECTORY"])
     previous_umask = os.umask(0o117)
     try:
-        with RunnerServer(path, executor) as server:
+        with RunnerServer(path, executor,
+                          allowed_uid=int(env["SQLGUARD_RUNNER_ALLOWED_AGENT_UID"])) as server:
+            os.chown(path, -1, int(env["SQLGUARD_RUNNER_SOCKET_GROUP_GID"]))
             os.chmod(path, 0o660)
             try:
                 server.serve_forever(poll_interval=0.5)
