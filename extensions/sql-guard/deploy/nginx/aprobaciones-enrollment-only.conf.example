@@ -2,6 +2,12 @@
 # All SQL Guard agent/approval/status endpoints stay unavailable publicly.
 # Include this file in the nginx http {} context as a replacement for the 503
 # placeholder only after owner-approved staging and a successful nginx -t.
+#
+# SECURITY PRECONDITION: the "aprobaciones" DNS record MUST be DNS-only,
+# resolving directly to this origin's A/AAAA address throughout the entire
+# enrollment window. Never deploy this rate-limit with Cloudflare HTTP proxy
+# enabled: remote_addr would be a shared edge IP rather than the owner's IP.
+# Future CDN mode requires a separately reviewed trusted real-IP policy.
 limit_req_zone $binary_remote_addr zone=sqlguard_enroll_api:1m rate=6r/m;
 
 server {
