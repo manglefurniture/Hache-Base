@@ -44,5 +44,38 @@ class ApprovalStore:
             self.db.rollback()
             raise
 
+    def reserve_daily_budget(self, rows: int, *, now: int, daily_limit: int = 10) -> bool:
+        """Atomically burn global UTC write allowance before touching MariaDB.
+
+        Budget is intentionally not refunded if MariaDB fails: no ambiguity
+        or retries can be used to increase the unapproved write allowance.
+        """
+        if (type(rows) is not int or type(now) is not int or type(daily_limit) is not int
+                or rows < 0 or not 1 <= daily_limit <= 100 or rows > daily_limit):
+            return False
+        bucket = now // 86400
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS daily_write_budget "
+                "(utc_day INTEGER PRIMARY KEY, rows_used INTEGER NOT NULL)"
+            )
+            self.db.execute(
+                "INSERT OR IGNORE INTO daily_write_budget VALUES (?, 0)", (bucket,)
+            )
+            changed = self.db.execute(
+                "UPDATE daily_write_budget SET rows_used=rows_used+? "
+                "WHERE utc_day=? AND rows_used+? <= ?",
+                (rows, bucket, rows, daily_limit),
+            ).rowcount
+            if changed != 1:
+                self.db.rollback()
+                return False
+            self.db.commit()
+            return True
+        except Exception:
+            self.db.rollback()
+            raise
+
     def close(self):
         self.db.close()
