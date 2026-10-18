@@ -91,14 +91,14 @@ class GuardedRunnerTests(unittest.TestCase):
 
     def test_mass_write_without_approval_does_not_touch_db(self):
         c = FakeConnection(count=11)
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         with self.assertRaises(ApprovalRequired):
             self.execute_change(c, op)
         self.assertFalse(c.commands)
 
     def test_approved_mass_delete(self):
         c = FakeConnection(count=11)
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
         checked = []
         def verify(operation, checksum):
@@ -112,7 +112,7 @@ class GuardedRunnerTests(unittest.TestCase):
         ).fetchone()[0], "committed")
 
     def test_replay_is_rejected_without_new_write(self):
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
         self.execute_change(FakeConnection(count=11), op, nonce="only-one", backup_checker=lambda *_: True)
         c = FakeConnection(count=11)
@@ -121,7 +121,7 @@ class GuardedRunnerTests(unittest.TestCase):
         self.assertFalse(c.commands)
 
     def test_changed_operation_rejected_and_nonce_retained(self):
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
         mutated = dict(op, where={"status": "active"})
         c = FakeConnection(count=11)
@@ -131,14 +131,14 @@ class GuardedRunnerTests(unittest.TestCase):
         self.assertEqual(self.store.db.execute("SELECT used FROM approvals").fetchone()[0], 0)
 
     def test_unverified_backup_blocks(self):
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
         with self.assertRaises(ApprovalRequired):
             self.execute_change(FakeConnection(11), op, nonce="only-one", backup_checker=lambda *_: False)
         self.assertEqual(self.store.db.execute("SELECT used FROM approvals").fetchone()[0], 0)
 
     def test_locked_row_count_change_burns_approval(self):
-        op = dict(BASE, expected_rows=11)
+        op = dict(BASE, expected_rows=11, expected_primary_keys=list(range(11)))
         self.approval(op)
         c = FakeConnection(count=12)
         with self.assertRaises(UnsafeMutation):
