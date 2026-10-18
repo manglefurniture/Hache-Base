@@ -135,6 +135,90 @@ class PasskeyGateway:
             self.db.rollback()
             raise
 
+    def begin_passkey_check(self, now: int) -> dict:
+        """Owner-only authentication ceremony; creates NO operation or grant."""
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self._purge_expired(now)
+            credentials = self._passkeys()
+            if len(credentials) != 1:
+                raise CeremonyRejected("Exactly one owner passkey required")
+            if self.db.execute(
+                "SELECT COUNT(*) FROM ceremonies WHERE kind='passkey_check'"
+            ).fetchone()[0] >= 3:
+                raise CeremonyRejected("Too many active verification ceremonies")
+            hour = now // 3600
+            self.db.execute(
+                "DELETE FROM stage_budget WHERE window_type='passkey_check_hour' "
+                "AND window_id<?", (hour - 24,))
+            self.db.execute(
+                "INSERT OR IGNORE INTO stage_budget VALUES ('passkey_check_hour',?,0)",
+                (hour,))
+            charged = self.db.execute(
+                "UPDATE stage_budget SET requests=requests+1 "
+                "WHERE window_type='passkey_check_hour' AND window_id=? AND requests<6",
+                (hour,)).rowcount
+            if charged != 1:
+                raise CeremonyRejected("Hourly passkey verification limit reached")
+            options = generate_authentication_options(
+                rp_id=self.rp_id,
+                allow_credentials=[PublicKeyCredentialDescriptor(id=credentials[0][0])],
+                user_verification=UserVerificationRequirement.REQUIRED)
+            self.db.execute(
+                "INSERT INTO ceremonies VALUES (?,?,?,?)",
+                (options.challenge, "passkey_check", "", now + 120))
+            self.db.commit()
+            return json.loads(options_to_json(options))
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def finish_passkey_check(self, challenge_text: str, credential: dict,
+                             now: int) -> bool:
+        """Verify owner signature but do not issue approvals or authorization nonces."""
+        if not isinstance(credential, dict) or not isinstance(credential.get("rawId"), str):
+            raise CeremonyRejected("Missing passkey credential")
+        try:
+            challenge = base64url_to_bytes(challenge_text)
+        except Exception as exc:
+            raise CeremonyRejected("Invalid verification challenge") from exc
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            row = self.db.execute(
+                "SELECT expires FROM ceremonies "
+                "WHERE challenge=? AND kind='passkey_check'",
+                (challenge,)).fetchone()
+            if not row or row[0] <= now:
+                raise CeremonyRejected("Unknown or expired verification challenge")
+            credential_id = base64url_to_bytes(credential["rawId"])
+            stored = self.db.execute(
+                "SELECT public_key,sign_count FROM passkeys WHERE credential_id=?",
+                (credential_id,)).fetchone()
+            if not stored:
+                raise CeremonyRejected("Unknown owner credential")
+            try:
+                result = verify_authentication_response(
+                    credential=credential,
+                    expected_challenge=challenge,
+                    expected_rp_id=self.rp_id,
+                    expected_origin=self.origin,
+                    credential_public_key=stored[0],
+                    credential_current_sign_count=stored[1],
+                    require_user_verification=True)
+            except Exception as exc:
+                raise CeremonyRejected("Invalid passkey signature") from exc
+            self.db.execute(
+                "UPDATE passkeys SET sign_count=? WHERE credential_id=?",
+                (result.new_sign_count, credential_id))
+            self.db.execute(
+                "DELETE FROM ceremonies WHERE challenge=? AND kind='passkey_check'",
+                (challenge,))
+            self.db.commit()
+            return True
+        except Exception:
+            self.db.rollback()
+            raise
+
     def stage_request(self, operation: dict, backup_digest: str, now: int) -> str:
         """ONLY called after authenticating agent. backup_digest is NOT proof of backup."""
         canonical_operation(operation)
