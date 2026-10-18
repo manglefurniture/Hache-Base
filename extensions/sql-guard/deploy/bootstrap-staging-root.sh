@@ -32,7 +32,7 @@ if [[ "$mode" == "--check" ]]; then
   exit 0
 fi
 [[ "$(id -u)" == 0 ]] || die "Apply requires a root session"
-for util in groupadd useradd usermod install stat systemd-tmpfiles cmp; do
+for util in groupadd useradd usermod install stat systemd-tmpfiles cmp awk; do
   command -v "$util" >/dev/null || die "Missing $util"
 done
 ensure_group() {
@@ -63,6 +63,44 @@ account_check() {
 }
 account_check sqlguard-approval sqlguard-store sqlguard-store
 account_check sqlguard-runner sqlguard-runner "sqlguard-store sqlguard-callers"
+
+# Never accept an existing account with root's UID, the agent's UID or any
+# alias UID. A shared UID defeats filesystem and systemd user isolation.
+unique_unprivileged_uid() {
+  local user="$1" uid names
+  uid="$(id -u "$user")"
+  [[ "$uid" =~ ^[0-9]+$ && "$uid" -gt 0 ]] ||
+    die "$user has privileged or invalid UID"
+  names="$(getent passwd | awk -F: -v wanted="$uid" '$3 == wanted {print $1}')"
+  [[ "$names" == "$user" ]] || die "$user has a reused UID"
+}
+unique_unprivileged_uid gpt-agent
+unique_unprivileged_uid sqlguard-approval
+unique_unprivileged_uid sqlguard-runner
+
+# Inspect both explicit group lists and primary-GID accounts before creating
+# any group-writable secret store. Reject all unexpected service memberships.
+verify_private_group() {
+  local group="$1" allowed="$2" details gid explicit user pw uid primary rest
+  details="$(getent group "$group")" || die "Missing private group: $group"
+  gid="$(printf '%s\n' "$details" | cut -d: -f3)"
+  explicit="$(printf '%s\n' "$details" | cut -d: -f4)"
+  local -a group_members=()
+  IFS=',' read -r -a group_members <<< "$explicit"
+  for user in "${group_members[@]}"; do
+    [[ -z "$user" ]] && continue
+    [[ " $allowed " == *" $user "* ]] ||
+      die "Unexpected explicit member $user in $group"
+  done
+  while IFS=: read -r user pw uid primary rest; do
+    if [[ "$primary" == "$gid" && " $allowed " != *" $user "* ]]; then
+      die "Unexpected primary-GID member $user in $group"
+    fi
+  done < <(getent passwd)
+}
+verify_private_group sqlguard-store "sqlguard-approval sqlguard-runner"
+verify_private_group sqlguard-callers "gpt-agent sqlguard-runner"
+
 ensure_directory() {
   local path="$1" owner="$2" group="$3" mode="$4" current
   [[ ! -L "$path" ]] || die "Symlink forbidden: $path"
