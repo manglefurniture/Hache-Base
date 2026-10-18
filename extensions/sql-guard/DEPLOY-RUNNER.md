@@ -1,13 +1,13 @@
 # SQL Guard — aislamiento del ejecutor (preparación, NO desplegado)
 
-Esta extensión implementa un servidor de socket Unix exclusivamente local en `runner_socket.py`; el agente manda una operación JSON tipada (no SQL) y opcionalmente un identificador de autorización. El servicio funciona como `sqlguard-runner`, cuenta **diferente** de `gpt-agent`. Las credenciales de escritura jamás se entregan al agente.
+Esta extensión implementa un servidor de socket Unix exclusivamente local en `runner_socket.py`; el agente manda una operación JSON tipada (no SQL) y opcionalmente un identificador de autorización. Las aprobaciones deben incluir `expected_rows` y `expected_primary_keys` (lista explícita de IDs), vinculados al hash firmado. El servicio funciona como `sqlguard-runner`, cuenta **diferente** de `gpt-agent`. Las credenciales de escritura jamás se entregan al agente.
 
 ## Política actual
 
 - Consultas SELECT del agente: continuarían a través de su conexión MariaDB de lectura.
 - UPDATE: se permite sin aprobación hasta **10 filas acumuladas por día UTC** a través del runner. El cupo persiste en SQLite y no se devuelve si una operación falla.
 - DELETE: siempre requiere passkey y comprobación de respaldo, incluso para una sola fila.
-- UPDATE de más de 10 filas: autorización autenticada y recuento exacto firmado de 11 a 1000 registros.
+- UPDATE de más de 10 filas: autorización autenticada y recuento exacto firmado y lista de claves primarias de 11 a 1000 registros.
 - No se permite DROP, TRUNCATE, ALTER, INSERT, SQL arbitrario, condiciones vacías, columnas fuera de lista, ni modificar claves primarias por este servicio.
 - Los cambios solo afectan claves primarias simples de tablas InnoDB configuradas, sin confiar en una segunda evaluación de un filtro amplio.
 - Se rechaza si el recuento bloqueado difiere del recuento previamente aprobado. Si se consume un permiso y MariaDB da un error, queda marcado como gastado y no se reintenta automáticamente.
