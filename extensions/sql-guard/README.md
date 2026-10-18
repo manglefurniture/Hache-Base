@@ -30,3 +30,16 @@ Antes de desplegar un ejecutor:
 `cd extensions/sql-guard && python3 -m unittest discover -v -p 'test_*.py'`
 
 No habilitar en aplicaciones ni modificar permisos MariaDB como parte de este PR.
+
+## Aprobación elegida: desde ChatGPT
+La interfaz conversacional puede presentar la solicitud y los detalles, pero **una respuesta de texto «sí» no constituye autorización autenticada del servidor**.
+
+El componente `approval.py` verifica un comprobante criptográfico con:
+- hash canónico de la operación exacta;
+- identidad del aprobador verificada por un servicio independiente;
+- vencimiento máximo de cinco minutos;
+- nonce de un solo uso, consumido de forma atómica por un almacén persistente;
+- referencia a respaldo verificado;
+- firma HMAC con secreto custodio del servidor de aprobaciones, no accesible al agente.
+
+**Pendiente:** construir un endpoint de aprobación autenticado que se abra desde ChatGPT y conectarlo con el ejecutor privilegiado. No existe actualmente emisión real de tokens firmados, ni integración con el estado de autenticación de la conversación. Las pruebas solo verifican el componente criptográfico y no implican autorización efectiva de ChatGPT. Nunca insertar la clave HMAC en prompts, logs, el repositorio o credenciales de `gpt-agent`.
