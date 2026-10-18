@@ -41,6 +41,16 @@ class StoreTests(unittest.TestCase):
         self.assertFalse(self.a.reserve_daily_budget(11, now=100, daily_limit=10))
         self.assertFalse(self.a.reserve_daily_budget(True, now=100, daily_limit=10))
 
+    def test_attempt_budget_covers_zero_match_scans_and_persists(self):
+        self.assertTrue(self.a.reserve_attempt(now=100, hourly_limit=2, daily_limit=3))
+        self.assertTrue(self.a.reserve_attempt(now=100, hourly_limit=2, daily_limit=3))
+        self.assertFalse(self.a.reserve_attempt(now=100, hourly_limit=2, daily_limit=3))
+        self.a.close()
+        self.a = ApprovalStore(self.path)
+        self.assertTrue(self.a.reserve_attempt(now=3700, hourly_limit=2, daily_limit=3))
+        self.assertFalse(self.a.reserve_attempt(now=3700, hourly_limit=2, daily_limit=3))
+        self.assertTrue(self.a.reserve_attempt(now=86401, hourly_limit=2, daily_limit=3))
+
     def test_once_only(self):
         self.a.register(signed("once"))
         self.assertTrue(self.a.consume("once", OP, SECRET, now=100))
