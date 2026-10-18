@@ -37,6 +37,30 @@ class MariaDBIntegrationTests(unittest.TestCase):
             c.execute("DELETE FROM items")
             c.executemany("INSERT INTO items VALUES (%s,%s)", [(i, "old") for i in range(1, 14)])
 
+    def test_unapproved_daily_quota_on_real_mariadb(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = ApprovalStore(os.path.join(tmp, "quota.db"))
+            try:
+                config = RunnerConfig(SCHEMA, PKS)
+                for i in range(1, 11):
+                    operation = {"database": "sandbox", "table": "items",
+                                 "operation": "update", "where": {"id": i},
+                                 "values": {"status": "changed"}}
+                    self.assertEqual(execute_guarded(
+                        self.db, store, operation, config=config, now=100), 1)
+                blocked = {"database": "sandbox", "table": "items",
+                           "operation": "update", "where": {"id": 11},
+                           "values": {"status": "changed"}}
+                with self.assertRaises(UnsafeMutation):
+                    execute_guarded(self.db, store, blocked, config=config, now=100)
+                with self.db.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM items WHERE status='changed'")
+                    self.assertEqual(cur.fetchone()[0], 10)
+                    cur.execute("SELECT status FROM items WHERE id=11")
+                    self.assertEqual(cur.fetchone()[0], "old")
+            finally:
+                store.close()
+
     def test_signed_mass_delete_one_time(self):
         # Isolated MariaDB test: the approval and trusted backup are fixtures,
         # NOT a test of production credentials or human WebAuthn.
