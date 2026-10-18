@@ -41,9 +41,32 @@ id -nG sqlguard-runner | tr ' ' '\n' | grep -qx sqlguard-store ||
 if id -nG gpt-agent | tr ' ' '\n' | grep -qx sqlguard-store; then
   die "Untrusted agent can access private store"
 fi
+
+# Both explicit and primary-GID private group members must be allowlisted.
+verify_store_members() {
+  local line gid explicit user pw uid primary rest
+  line="$(getent group sqlguard-store)" || die "Private store group missing"
+  gid="$(printf '%s\n' "$line" | cut -d: -f3)"
+  explicit="$(printf '%s\n' "$line" | cut -d: -f4)"
+  local -a members=()
+  IFS=',' read -r -a members <<< "$explicit"
+  for user in "${members[@]}"; do
+    [[ -z "$user" ]] && continue
+    [[ " sqlguard-approval sqlguard-runner " == *" $user "* ]] ||
+      die "Unexpected explicit member of sqlguard-store: $user"
+  done
+  while IFS=: read -r user pw uid primary rest; do
+    if [[ "$primary" == "$gid" &&
+          " sqlguard-approval sqlguard-runner " != *" $user "* ]]; then
+      die "Unexpected primary-GID member of sqlguard-store: $user"
+    fi
+  done < <(getent passwd)
+}
+verify_store_members
+
 for unit in sqlguard-approval.service sqlguard-runner.service; do
-  [[ "$(systemctl is-active "$unit" 2>/dev/null || true)" != "active" ]] ||
-    die "Service unexpectedly active: $unit"
+  [[ "$(systemctl is-active "$unit" 2>/dev/null || true)" == "inactive" ]] ||
+    die "Service not fully inactive: $unit"
   [[ "$(systemctl is-enabled "$unit" 2>/dev/null || true)" == "disabled" ]] ||
     die "Service should remain disabled: $unit"
 done
