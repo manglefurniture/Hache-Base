@@ -23,7 +23,8 @@ class PolicyTests(unittest.TestCase):
     def test_small_scoped_write(self):
         self.assertEqual(decide(Request("update", "hache_natacion", 2, True), DATABASES), Decision.ALLOW)
     def test_unscoped_delete(self):
-        self.assertEqual(decide(Request("delete", "hache_natacion", 1, False), DATABASES), Decision.APPROVAL_REQUIRED)
+        self.assertEqual(decide(Request("delete", "hache_natacion", 1, False), DATABASES), Decision.DENY)
+        self.assertEqual(decide(Request("delete", "hache_natacion", 1, False, True, True), DATABASES), Decision.DENY)
 
 if __name__ == "__main__":
     unittest.main()
