@@ -30,6 +30,13 @@ El aprobador solo aceptará un archivo `.sql.gz` y manifiesto `manifest.json` *p
 
 **Importante:** el backup de `gpt-agent` por sí solo no cumple esta garantía (escribible por el agente). Un proceso separado con privilegios root deberá crear y validar una copia congelada root-owned y publicar el manifiesto atómicamente. Sin ambos archivos válidos, la página rechaza toda autorización. No dar permisos de escritura del directorio trusted-backups a `sqlguard-approval` o `gpt-agent`.
 
+## Límites defensivos implementados en código (no activados en el VPS)
+- Máximo **20 solicitudes de aprobación por hora**, **100 por día UTC** y **30 solicitudes activas** en el almacén SQLite compartido.
+- Operaciones JSON de hasta **8 KiB**; solicitudes vigentes durante cinco minutos. La limpieza de solicitudes y desafíos vencidos se ejecuta al proponer o iniciar una aprobación.
+- Máximo tres desafíos de aprobación activos por solicitud y tres de registro inicial simultáneos.
+- La verificación costosa del respaldo se realiza **después** de comprobar criptográficamente la passkey, dentro de la transacción de emisión; cualquier fallo impide emitir el permiso.
+- Estos límites no protegen contra accesos directos SQL existentes ni sustituyen rate limiting en Nginx, permisos mínimos o monitoreo de disco en producción.
+
 ## Operación
 - Un cliente con `SQLGUARD_AGENT_TOKEN` puede proponer solicitudes mediante `POST /api/agent/stage` con operación estructurada y sha256 de respaldo; **no puede aprobarlas**. El servidor devuelve un enlace de caducidad corta.
 - En la página `/approve/<id>` el propietario revisa la operación y firma una *challenge* WebAuthn usando la passkey registrada; ninguna contraseña, llave privada ni firma llega al chat.
