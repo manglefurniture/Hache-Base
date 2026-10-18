@@ -19,8 +19,8 @@ SQLGUARD_OWNER_ID=<id estable del propietario, configurado fuera del chat>
 SQLGUARD_SIGN_KEY_HEX=<64 caracteres hex aleatorios, solo aprobación>
 SQLGUARD_BOOTSTRAP_HASH=<sha256 del token de registro, secreto mostrado solo al propietario>
 SQLGUARD_AGENT_TOKEN=<token aleatorio de 32+ caracteres, solo capacidad de crear solicitudes>
-SQLGUARD_BACKUP_MANIFEST=/var/lib/sqlguard/trusted-backups/manifest.json
-SQLGUARD_BACKUP_DIRECTORY=/var/lib/sqlguard/trusted-backups
+SQLGUARD_BACKUP_MANIFEST=/var/lib/sqlguard-trusted/manifest.json
+SQLGUARD_BACKUP_DIRECTORY=/var/lib/sqlguard-trusted
 ```
 
 El ejemplo `approve.example.com` **no es una URL configurada**. El origen debe ser exactamente el host con HTTPS: navegador, RP ID, cabecera Host y certificado deben coincidir. Registrar passkey exige un código de activación de un solo uso proporcionado localmente y luego un gesto de usuario en el teléfono.
