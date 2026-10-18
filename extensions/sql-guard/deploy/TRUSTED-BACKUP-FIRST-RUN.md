@@ -16,7 +16,9 @@ automáticas actuales ni valida por sí misma una restauración.
 
 ## Garantías y alcance
 El script verifica identidad root, permisos y espacio, obtiene \`flock\`,
-y ejecuta \`mariadb-dump --single-transaction --quick --routines --events
+y ejecuta \`mariadb-dump --no-defaults --user=root --socket=/run/mysqld/mysqld.sock\`
+por la conexión Unix root, sin cargar opciones heredadas de cliente, con
+\`--single-transaction --quick --routines --events
 --triggers\` para \`hache_natacion\`, \`hache_miner\`, \`hache_tienda\`,
 \`nova_boutique\` y \`solution_spa\`. Bajo Bash \`pipefail\`, un error de
 MariaDB o gzip impide publicar el resultado.
