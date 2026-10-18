@@ -37,6 +37,14 @@ class ApprovalStorePreparationTests(unittest.TestCase):
         self.assertIn('chmod 0660 "$db"', content)
         self.assertIn('if [[ "$dbstatus" == "ABSENT" ]]; then', content)
 
+    def test_private_group_invariant_and_service_state(self):
+        content = SCRIPT.read_text()
+        self.assertIn("verify_store_members", content)
+        self.assertIn("Unexpected explicit member of sqlguard-store", content)
+        self.assertIn("Unexpected primary-GID member of sqlguard-store", content)
+        self.assertIn('[[ "$(systemctl is-active "$unit" 2>/dev/null || true)" == "inactive" ]]', content)
+        self.assertNotIn('!= "active"', content)
+
     def test_unknown_option_fails(self):
         result = subprocess.run(["bash", str(SCRIPT), "--unknown"],
                                 capture_output=True, text=True, timeout=5)
