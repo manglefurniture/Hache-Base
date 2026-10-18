@@ -23,7 +23,7 @@ jobs:
       contents: read
     services:
       mariadb:
-        image: mariadb:11.8
+        image: mariadb@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa # 11.8
         env:
           MARIADB_ROOT_PASSWORD: local-root-password
           MARIADB_DATABASE: sandbox
