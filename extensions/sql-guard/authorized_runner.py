@@ -53,8 +53,10 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
     stamp = int(time.time()) if now is None else now
     needs_approval = operation["operation"] == "delete" or (expected is not None and expected > config.small_limit)
     if needs_approval:
-        if expected is None or expected < 1:
-            raise ApprovalRequired("Exact expected row count required for approved writes")
+        if (expected is None or expected < 1
+                or not isinstance(operation.get("expected_primary_keys"), list)
+                or len(operation["expected_primary_keys"]) != expected):
+            raise ApprovalRequired("Exact target keys and row count required for approval")
         if expected > config.absolute_limit or not nonce or not verifier_key or not backup_checker:
             raise ApprovalRequired("Signed human approval and independent backup required")
         # The only accepted backup digest is the one signed and stored by
@@ -95,6 +97,6 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
     # UTC daily quota, preventing large changes split into small requests.
     return apply(conn, change, config.schema,
                  primary_keys=config.primary_keys, limit=config.small_limit,
-                 expected_rows=expected,
+                 expected_rows=expected, expected_keys=operation.get("expected_primary_keys"),
                  before_write=lambda rows: approval_store.reserve_daily_budget(
                      rows, now=stamp, daily_limit=config.unapproved_daily_limit))
