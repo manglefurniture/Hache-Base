@@ -42,4 +42,6 @@ El componente `approval.py` verifica un comprobante criptográfico con:
 - referencia a respaldo verificado;
 - firma HMAC con secreto custodio del servidor de aprobaciones, no accesible al agente.
 
-**Pendiente:** construir un endpoint de aprobación autenticado que se abra desde ChatGPT y conectarlo con el ejecutor privilegiado. No existe actualmente emisión real de tokens firmados, ni integración con el estado de autenticación de la conversación. Las pruebas solo verifican el componente criptográfico y no implican autorización efectiva de ChatGPT. Nunca insertar la clave HMAC en prompts, logs, el repositorio o credenciales de `gpt-agent`.
+**Implementado únicamente en código experimental:** página web independiente con ceremonias WebAuthn, almacenamiento de credenciales y desafíos, emisión de comprobantes firmados, vencimiento y anti-replay. Incluye verificador de respaldo root-owned, rechaza autorizaciones si este no se configura, y pruebas automatizadas. **Aún no está desplegado ni registrado ningún dispositivo.** La identidad del chat nunca se equipara a identidad autenticada. Falta conectar a ChatGPT el enlace real, ejecutar un enrolamiento WebAuthn real del propietario, instalar el runner SQL aislado, auditar límites y retirar después los privilegios directos. No insertar claves HMAC en prompts, logs, repositorios ni credenciales de `gpt-agent`.
+
+Ver `DEPLOY-APPROVAL.md` y `CHATGPT-APPROVAL-CONTRACT.md` antes de cualquier puesta en marcha.
