@@ -13,7 +13,9 @@ EnvironmentFile=/etc/sqlguard/runner.env
 ExecStart=/opt/sqlguard/venv/bin/python runner_socket.py
 Restart=on-failure
 RestartSec=5
-UMask=0077
+UMask=0007
+# The runner and approval processes share a group-owned SQLite store.
+# SQLite journal/temporary files must remain accessible to sqlguard-store only.
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes

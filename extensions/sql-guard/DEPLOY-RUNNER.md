@@ -32,6 +32,13 @@ Grupos aislados:
 - `/etc/sqlguard/approval.env` y `/etc/sqlguard/runner.env`: archivos root 0600, secretos no versionados.
 - `/etc/sqlguard/allowlist.json`: root 0644 o más restrictivo, columnas permitidas y sus claves primarias verificadas.
 
+**Permisos SQLite:** tanto `sqlguard-approval` como `sqlguard-runner` deben
+usar `UMask=0007`, nunca `0077`, porque ambos abren el mismo almacén y SQLite
+puede necesitar ficheros temporales/journal con acceso al grupo `sqlguard-store`.
+Mantener el directorio `2770`, archivo `0660`, usuarios sin privilegios
+adicionales, y ensayar transacciones entre procesos con sus UID efectivos.
+Comprobar los permisos de cada archivo generado y rechazar a `gpt-agent`.
+
 El socket también consulta las credenciales Linux del par (`SO_PEERCRED`) y rechaza usuarios distintos al UID autorizado de `gpt-agent`; nunca aceptar el UID del cliente como un parámetro HTTP.
 
 ## Variables adicionales del ejecutor
