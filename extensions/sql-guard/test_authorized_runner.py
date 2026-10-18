@@ -70,8 +70,24 @@ class GuardedRunnerTests(unittest.TestCase):
 
     def test_small_change_needs_no_approval(self):
         c = FakeConnection(count=2)
-        self.assertEqual(self.execute_change(c, BASE), 2)
+        small = dict(BASE, operation="update", values={"status": "active"})
+        self.assertEqual(self.execute_change(c, small), 2)
         self.assertTrue(c.committed)
+
+    def test_small_delete_requires_human_approval(self):
+        c = FakeConnection(count=1)
+        with self.assertRaises(ApprovalRequired):
+            self.execute_change(c, BASE)
+        self.assertFalse(c.commands)
+
+    def test_split_updates_respect_cumulative_daily_cap(self):
+        small = dict(BASE, operation="update", values={"status": "active"})
+        for _ in range(5):
+            self.assertEqual(self.execute_change(FakeConnection(count=2), small), 2)
+        blocked = FakeConnection(count=1)
+        with self.assertRaises(UnsafeMutation):
+            self.execute_change(blocked, small)
+        self.assertTrue(blocked.rolled_back)
 
     def test_mass_write_without_approval_does_not_touch_db(self):
         c = FakeConnection(count=11)
