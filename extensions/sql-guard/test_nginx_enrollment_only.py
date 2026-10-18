@@ -36,6 +36,8 @@ class EnrollmentOnlyNginxContractTests(unittest.TestCase):
         self.assertEqual(self.text.count("limit_except GET { deny all; }"), 3)
         self.assertEqual(self.text.count("limit_req zone=sqlguard_enroll_api"), 2)
         self.assertIn("limit_req_zone $binary_remote_addr", self.text)
+        self.assertIn('MUST be DNS-only', self.text)
+        self.assertIn("Cloudflare HTTP proxy", self.text)
         self.assertIn("limit_req_status 429", self.text)
         self.assertIn("client_max_body_size 16k", self.text)
 
