@@ -1,0 +1,88 @@
+# Stage 1: HTTPS-only owner WebAuthn verification.
+# All SQL Guard agent/approval/status endpoints stay unavailable publicly.
+# Include this file in the nginx http {} context as a replacement for the 503
+# placeholder only after owner-approved staging and a successful nginx -t.
+#
+# SECURITY PRECONDITION: the "aprobaciones" DNS record MUST be DNS-only,
+# resolving directly to this origin's A/AAAA address throughout the entire
+# verification window. Never deploy this rate-limit with Cloudflare HTTP proxy
+# enabled: remote_addr would be a shared edge IP rather than the owner's IP.
+# Future CDN mode requires a separately reviewed trusted real-IP policy.
+limit_req_zone $binary_remote_addr zone=sqlguard_check_api:1m rate=6r/m;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name aprobaciones.hacheinteractive.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/sqlguard-acme;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name aprobaciones.hacheinteractive.com;
+    server_tokens off;
+
+    ssl_certificate /etc/letsencrypt/live/aprobaciones.hacheinteractive.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/aprobaciones.hacheinteractive.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 16k;
+    client_body_timeout 15s;
+    send_timeout 15s;
+    limit_req_status 429;
+
+    add_header Strict-Transport-Security "max-age=300" always;
+    add_header Cache-Control "no-store" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # Never trust client-provided X-Forwarded-Proto for the passkey origin.
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Connection "";
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 20s;
+    proxy_send_timeout 20s;
+    proxy_hide_header Server;
+    proxy_buffering off;
+
+    # Exact-match allowlist: only registration page and its two local assets.
+    location = /verify-passkey {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:8173;
+    }
+    location = /static/passkey_check.js {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:8173;
+    }
+    location = /static/approval.css {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:8173;
+    }
+    location = /api/passkey-check/start {
+        limit_except POST { deny all; }
+        limit_req zone=sqlguard_check_api burst=4 nodelay;
+        proxy_pass http://127.0.0.1:8173;
+    }
+    location = /api/passkey-check/finish {
+        limit_except POST { deny all; }
+        limit_req zone=sqlguard_check_api burst=4 nodelay;
+        proxy_pass http://127.0.0.1:8173;
+    }
+
+    # Everything else, including /api/agent, /approve, /api/approve, status
+    # and arbitrary paths, stays closed while verification-only staging runs.
+    location / {
+        default_type text/plain;
+        return 503 "Hache SQL Guard: verification-only staging\n";
+    }
+}
