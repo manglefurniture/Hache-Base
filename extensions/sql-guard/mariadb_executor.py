@@ -5,7 +5,7 @@ Only small, typed UPDATE and DELETE operations; larger changes always denied.
 """
 import re
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Callable
 
 from policy import Decision, Request, decide
 
@@ -31,7 +31,8 @@ class Change:
 
 def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
           *, primary_keys: Mapping[str, Mapping[str, str]],
-          limit: int = 10, expected_rows: int | None = None) -> int:
+          limit: int = 10, expected_rows: int | None = None,
+          before_write: Callable[[int], bool] | None = None) -> int:
     """Apply only primary-key rows observed and locked in this transaction.
 
     The trusted configuration MUST name a genuine single-column PRIMARY KEY of
@@ -75,6 +76,8 @@ def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
         if count == 0:
             conn.commit()
             return 0
+        if before_write is not None and before_write(count) is not True:
+            raise UnsafeMutation("Trusted daily mutation budget exhausted")
         holders = ",".join(["%s"] * count)
         target = f"{primary} IN ({holders})"
         if change.operation == "delete":
