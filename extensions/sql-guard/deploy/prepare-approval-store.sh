@@ -70,6 +70,8 @@ fi
 # The temporary placeholders below are never persisted; runtime secrets are
 # read only by systemd on actual service start.
 if [[ "$dbstatus" == "ABSENT" ]]; then
+  # SQLite needs group-readable/writable files for the independent runner.
+  umask 0007
   runuser -u sqlguard-approval -g sqlguard-store -- \
     env PYTHONPATH="$CODE" "$VENV" -c '
 from passkey_gateway import PasskeyGateway
