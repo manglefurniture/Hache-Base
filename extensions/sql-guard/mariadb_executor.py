@@ -32,6 +32,7 @@ class Change:
 def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
           *, primary_keys: Mapping[str, Mapping[str, str]],
           limit: int = 10, expected_rows: int | None = None,
+          expected_keys: list | None = None,
           before_write: Callable[[int], bool] | None = None) -> int:
     """Apply only primary-key rows observed and locked in this transaction.
 
@@ -70,6 +71,12 @@ def apply(conn, change: Change, schema: Mapping[str, Mapping[str, set[str]]],
         count = len(keys)
         if expected_rows is not None and (isinstance(expected_rows, bool) or count != expected_rows):
             raise UnsafeMutation("Matched row count differs from authorized snapshot")
+        if expected_keys is not None:
+            if (not isinstance(expected_keys, list)
+                    or any(type(x) not in (int, str) for x in keys + expected_keys)
+                    or sorted((type(x).__name__, str(x)) for x in keys) !=
+                       sorted((type(x).__name__, str(x)) for x in expected_keys)):
+                raise UnsafeMutation("Matched target keys differ from approved snapshot")
         if decide(Request(change.operation, change.database, count, True),
                   set(schema), limit) != Decision.ALLOW:
             raise UnsafeMutation("Mass or unscoped operation denied")
