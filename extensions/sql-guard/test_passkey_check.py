@@ -110,6 +110,13 @@ class OwnerPasskeyWebTests(unittest.TestCase):
         }
         self.app = create_app(self.config)
         self.client = self.app.test_client()
+        # Initialize the private schema as the trusted service would on start.
+        gateway = PasskeyGateway(
+            self.config["DB_PATH"], rp_id=self.config["RP_ID"],
+            origin=self.config["ORIGIN"], owner_id=self.config["OWNER_ID"],
+            signing_key=bytes.fromhex(self.config["SIGN_KEY_HEX"]),
+            bootstrap_hash=self.config["BOOTSTRAP_HASH"])
+        gateway.close()
 
     def tearDown(self):
         self.tmp.cleanup()
