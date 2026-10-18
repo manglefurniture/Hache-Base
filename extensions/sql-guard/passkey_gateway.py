@@ -105,6 +105,15 @@ class PasskeyGateway:
     def stage_request(self, operation: dict, backup_digest: str, now: int) -> str:
         """ONLY called after authenticating agent. backup_digest is NOT proof of backup."""
         canonical_operation(operation)
+        if (operation["operation"] not in ("update", "delete")
+                or not isinstance(operation["where"], dict)
+                or not operation["where"]
+                or not isinstance(operation["values"], dict)
+                or (operation["operation"] == "update" and not operation["values"])
+                or (operation["operation"] == "delete" and operation["values"])
+                or type(operation.get("expected_rows")) is not int
+                or not 1 <= operation["expected_rows"] <= 1000):
+            raise ValueError("Only scoped, explicitly counted UPDATE/DELETE can be approved")
         if len(backup_digest) != 64 or any(c not in "0123456789abcdef" for c in backup_digest):
             raise ValueError("Invalid backup checksum")
         request_id = secrets.token_urlsafe(24)
