@@ -7,7 +7,7 @@
 2. Dominio HTTPS elegido por el propietario y apuntando al VPS, certificado válido, firewall y Nginx que reenvíe `Host` al proceso local `127.0.0.1:8173`. No exponer Gunicorn al público.
 3. Cuenta Linux independiente `sqlguard-approval`, sin sudo, sin home interactivo y sin acceso de escritura para `gpt-agent`.
 4. Repositorio solo lectura en `/opt/sqlguard/current`, venv exclusivo `/opt/sqlguard/venv`, dependencias de `requirements-approval.txt`, unidad de referencia en `deploy/sqlguard-approval.service.example`.
-5. Base SQLite de aprobaciones en `/var/lib/sqlguard/approvals.sqlite`, uid `sqlguard-approval`, modo 0600 y directorio 0700. Respaldo de esta base *sin secretos* en ruta separada.
+5. Almacén SQLite compartido **solo por los dos servicios confiables**: `/var/lib/sqlguard` con propietario `root:sqlguard-store` y modo `2770`; `approvals.sqlite` con propietario `sqlguard-approval:sqlguard-store` y modo `0660`. Ambos servicios deben pertenecer al grupo `sqlguard-store` y crear archivos temporales/journal con permisos de grupo compatibles. `gpt-agent` **no** debe pertenecer al grupo ni poder atravesar el directorio. Respaldo de la base en ruta protegida sin exportar secretos.
 6. Archivo `/etc/sqlguard/approval.env` propiedad root, 0600; nunca subirlo a GitHub ni mostrarlo en ChatGPT.
 
 ## Variables del servicio
