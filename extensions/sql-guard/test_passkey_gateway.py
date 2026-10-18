@@ -73,6 +73,18 @@ class PasskeyGatewayTests(unittest.TestCase):
             self.db.finish_approval(rid, opts["challenge"],
                 {"rawId": "a2V5MQ"}, 103, backup_is_verified=True)
 
+    def test_staging_rejects_unspecified_delete_count(self):
+        with self.assertRaises(ValueError):
+            self.db.stage_request(dict(OP, expected_rows=None), "a"*64, 100)
+
+    def test_staging_rejects_unsupported_action(self):
+        with self.assertRaises(ValueError):
+            self.db.stage_request(dict(OP, operation="drop"), "a"*64, 100)
+
+    def test_staging_rejects_unscoped_request(self):
+        with self.assertRaises(ValueError):
+            self.db.stage_request(dict(OP, where={}), "a"*64, 100)
+
     def test_operation_stable_and_expires(self):
         rid = self.db.stage_request(OP, "b"*64, 100)
         self.assertEqual(self.db.pending(rid, 110), OP)
