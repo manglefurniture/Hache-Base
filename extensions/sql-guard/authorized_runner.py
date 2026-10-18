@@ -80,7 +80,8 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
         try:
             count = apply(conn, change, config.schema,
                           primary_keys=config.primary_keys,
-                          limit=expected, expected_rows=expected)
+                          limit=expected, expected_rows=expected,
+                          expected_keys=operation["expected_primary_keys"])
         except Exception:
             approval_store.db.execute(
                 "INSERT INTO execution_events(nonce,phase,created_at) VALUES(?,?,?)",
