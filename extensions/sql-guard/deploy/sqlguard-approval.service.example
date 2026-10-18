@@ -9,10 +9,15 @@ User=sqlguard-approval
 Group=sqlguard-store
 WorkingDirectory=/opt/sqlguard/current/extensions/sql-guard
 EnvironmentFile=/etc/sqlguard/approval.env
-ExecStart=/opt/sqlguard/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8173 --timeout 30 'approval_web:create_app_from_env()'
+ExecStart=/opt/sqlguard/venv/bin/gunicorn --workers 1 --bind 127.0.0.1:8173 --timeout 30 'approval_web:create_app_from_env()'
 Restart=on-failure
 RestartSec=5
 UMask=0007
+# The production VPS has 1 vCPU / 1 GiB RAM; keep the isolated approval
+# web process bounded rather than allowing it to compete with MariaDB.
+MemoryHigh=160M
+MemoryMax=224M
+TasksMax=48
 ReadWritePaths=/var/lib/sqlguard
 NoNewPrivileges=yes
 PrivateTmp=yes
