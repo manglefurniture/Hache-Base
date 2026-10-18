@@ -57,12 +57,39 @@ class PasskeyGateway:
         self.db.execute("""CREATE TABLE IF NOT EXISTS approvals (
             nonce TEXT PRIMARY KEY, payload TEXT NOT NULL,
             used INTEGER NOT NULL DEFAULT 0)""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS stage_budget (
+            window_type TEXT NOT NULL, window_id INTEGER NOT NULL,
+            requests INTEGER NOT NULL,
+            PRIMARY KEY (window_type,window_id))""")
 
     def close(self):
         self.db.close()
 
     def _passkeys(self):
         return self.db.execute("SELECT credential_id,public_key,sign_count FROM passkeys").fetchall()
+
+    def _purge_expired(self, now: int):
+        """Called inside a write transaction; do not retain expired untrusted blobs."""
+        self.db.execute("DELETE FROM ceremonies WHERE expires<=?", (now,))
+        self.db.execute("DELETE FROM requests WHERE expires<=?", (now,))
+        self.db.execute(
+            "DELETE FROM stage_budget WHERE "
+            "(window_type='hour' AND window_id<?) OR "
+            "(window_type='day' AND window_id<?)",
+            (now // 3600 - 48, now // 86400 - 2))
+
+    def _charge_stage_budget(self, now: int):
+        """Durable global limits, charged atomically with the staged request."""
+        for kind, window, cap in (
+                ("hour", now // 3600, 20), ("day", now // 86400, 100)):
+            self.db.execute(
+                "INSERT OR IGNORE INTO stage_budget VALUES (?,?,0)", (kind, window))
+            changed = self.db.execute(
+                "UPDATE stage_budget SET requests=requests+1 "
+                "WHERE window_type=? AND window_id=? AND requests<?",
+                (kind, window, cap)).rowcount
+            if changed != 1:
+                raise CeremonyRejected("Request staging quota exhausted")
 
     def begin_enrollment(self, bootstrap_token: str, now: int) -> dict:
         if not hmac.compare_digest(hashlib.sha256(bootstrap_token.encode()).hexdigest(),
@@ -78,6 +105,11 @@ class PasskeyGateway:
                 resident_key=ResidentKeyRequirement.PREFERRED,
                 user_verification=UserVerificationRequirement.REQUIRED),
         )
+        self.db.execute("DELETE FROM ceremonies WHERE expires<=?", (now,))
+        if self.db.execute(
+                "SELECT COUNT(*) FROM ceremonies WHERE kind='enroll'"
+        ).fetchone()[0] >= 3:
+            raise CeremonyRejected("Too many enrollment ceremonies")
         self.db.execute("INSERT INTO ceremonies VALUES (?,?,?,?)",
                         (opts.challenge, "enroll", "", now + 180))
         return json.loads(options_to_json(opts))
@@ -119,14 +151,29 @@ class PasskeyGateway:
             raise ValueError("Only scoped, explicitly counted UPDATE/DELETE can be approved")
         if len(backup_digest) != 64 or any(c not in "0123456789abcdef" for c in backup_digest):
             raise ValueError("Invalid backup checksum")
+        operation_json = json.dumps(
+            operation, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if len(operation_json.encode("utf-8")) > 8192:
+            raise ValueError("Staged operation is too large")
         request_id = secrets.token_urlsafe(24)
-        self.db.execute("INSERT INTO requests "
-                        "(id,operation_json,backup_digest,expires,approved,approval_nonce) "
-                        "VALUES (?,?,?,?,0,NULL)", (
-            request_id,
-            json.dumps(operation, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
-            backup_digest, now + 300))
-        return request_id
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self._purge_expired(now)
+            if self.db.execute(
+                    "SELECT COUNT(*) FROM requests"
+            ).fetchone()[0] >= 30:
+                raise CeremonyRejected("Too many live requests")
+            self._charge_stage_budget(now)
+            self.db.execute(
+                "INSERT INTO requests "
+                "(id,operation_json,backup_digest,expires,approved,approval_nonce) "
+                "VALUES (?,?,?,?,0,NULL)",
+                (request_id, operation_json, backup_digest, now + 300))
+            self.db.commit()
+            return request_id
+        except Exception:
+            self.db.rollback()
+            raise
 
     def pending(self, request_id: str, now: int) -> dict:
         row = self.db.execute("SELECT operation_json,expires,approved FROM requests WHERE id=?",
@@ -136,27 +183,38 @@ class PasskeyGateway:
         return json.loads(row[0])
 
     def begin_approval(self, request_id: str, now: int) -> dict:
-        self.pending(request_id, now)
-        credentials = self._passkeys()
-        if not credentials:
-            raise CeremonyRejected("Owner passkey not registered")
-        opts = generate_authentication_options(
-            rp_id=self.rp_id,
-            allow_credentials=[PublicKeyCredentialDescriptor(id=r[0]) for r in credentials],
-            user_verification=UserVerificationRequirement.REQUIRED)
-        self.db.execute("INSERT INTO ceremonies VALUES (?,?,?,?)",
-                        (opts.challenge, "approve", request_id, min(now + 180, now + 300)))
-        return json.loads(options_to_json(opts))
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self._purge_expired(now)
+            self.pending(request_id, now)
+            if self.db.execute(
+                    "SELECT COUNT(*) FROM ceremonies WHERE kind='approve' "
+                    "AND request_id=?", (request_id,)
+            ).fetchone()[0] >= 3:
+                raise CeremonyRejected("Too many active approval ceremonies")
+            credentials = self._passkeys()
+            if not credentials:
+                raise CeremonyRejected("Owner passkey not registered")
+            opts = generate_authentication_options(
+                rp_id=self.rp_id,
+                allow_credentials=[
+                    PublicKeyCredentialDescriptor(id=r[0]) for r in credentials],
+                user_verification=UserVerificationRequirement.REQUIRED)
+            self.db.execute("INSERT INTO ceremonies VALUES (?,?,?,?)",
+                            (opts.challenge, "approve", request_id, now + 180))
+            self.db.commit()
+            return json.loads(options_to_json(opts))
+        except Exception:
+            self.db.rollback()
+            raise
 
     def finish_approval(self, request_id: str, challenge_text: str, credential: dict,
-                        now: int, *, backup_is_verified: bool = False) -> str:
-        """Issue and persist exactly one grant under one transaction.
+                        now: int, *, backup_checker=None) -> str:
+        """Verify the passkey BEFORE expensive independent backup verification.
 
-        backup_is_verified must come from an independent trusted service, never
-        from agent input or the browser. Returns a nonce, not the signed token.
+        The trusted checker is server-side only, never provided by the agent
+        or browser. All checks and grant issuance happen under one transaction.
         """
-        if backup_is_verified is not True:
-            raise CeremonyRejected("Independent backup verification required")
         challenge = base64url_to_bytes(challenge_text)
         try:
             self.db.execute("BEGIN IMMEDIATE")
@@ -180,6 +238,8 @@ class PasskeyGateway:
                 credential_public_key=key[0], credential_current_sign_count=key[1],
                 require_user_verification=True)
             operation = json.loads(row[0])
+            if backup_checker is None or backup_checker(operation, row[1]) is not True:
+                raise CeremonyRejected("Independent backup verification required")
             nonce = secrets.token_urlsafe(24)
             approval = Approval(canonical_operation(operation), self.owner_id,
                                 min(now + 180, row[2]), nonce, row[1], "")
