@@ -35,6 +35,13 @@ class MariaDBExecutorTests(unittest.TestCase):
         self.assertTrue(db.committed)
         self.assertIn("FOR UPDATE", db.cur.commands[1][0])
         self.assertEqual(db.cur.commands[2][1], ["ok", 1])
+        self.assertIn("WHERE `id` IN", db.cur.commands[2][0])
+    def test_primary_key_required(self):
+        with self.assertRaises(UnsafeMutation):
+            apply(Connection(), Change("sandbox", "items", "update", {"id": 1}, {"status": "x"}), SCHEMA, primary_keys={})
+    def test_primary_key_cannot_be_changed(self):
+        with self.assertRaises(UnsafeMutation):
+            apply(Connection(), Change("sandbox", "items", "update", {"id": 1}, {"id": 2}), SCHEMA, primary_keys=PKS)
     def test_mass_delete_rollback(self):
         db = Connection(count=11)
         with self.assertRaises(UnsafeMutation):
