@@ -69,6 +69,9 @@ class PasskeyGatewayTests(unittest.TestCase):
             self.assertTrue(mock.call_args.kwargs["require_user_verification"])
         self.assertTrue(self.db.db.execute(
             "SELECT COUNT(*) FROM approvals WHERE nonce=?", (nonce,)).fetchone()[0])
+        linked = self.db.db.execute(
+            "SELECT approved,approval_nonce FROM requests WHERE id=?", (rid,)).fetchone()
+        self.assertEqual(linked, (1, nonce))
         with self.assertRaises(CeremonyRejected):
             self.db.finish_approval(rid, opts["challenge"],
                 {"rawId": "a2V5MQ"}, 103, backup_is_verified=True)
