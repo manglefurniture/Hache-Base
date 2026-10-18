@@ -38,6 +38,18 @@ class BootstrapStagingTests(unittest.TestCase):
         self.assertNotIn("mariadb -e ", src)
         self.assertNotIn("curl | bash", src)
 
+    def test_private_group_and_uid_isolation_guards(self):
+        src = SCRIPT.read_text()
+        self.assertIn("unique_unprivileged_uid gpt-agent", src)
+        self.assertIn("unique_unprivileged_uid sqlguard-approval", src)
+        self.assertIn("unique_unprivileged_uid sqlguard-runner", src)
+        self.assertIn('[[ "$uid" =~ ^[0-9]+$ && "$uid" -gt 0 ]]', src)
+        self.assertIn("names=\"$(getent passwd | awk", src)
+        self.assertIn('verify_private_group sqlguard-store "sqlguard-approval sqlguard-runner"', src)
+        self.assertIn('verify_private_group sqlguard-callers "gpt-agent sqlguard-runner"', src)
+        self.assertIn('Unexpected primary-GID member', src)
+        self.assertIn('Unexpected explicit member', src)
+
     def test_root_private_paths_and_tmpfiles(self):
         src = SCRIPT.read_text()
         self.assertEqual(TMPFILES.read_text().strip(),
