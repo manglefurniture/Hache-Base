@@ -51,6 +51,10 @@ def execute_guarded(conn, approval_store, operation: dict, *, config: RunnerConf
     if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int)):
         raise UnsafeMutation("Invalid expected row count")
     stamp = int(time.time()) if now is None else now
+    # Charge every structured mutation request *before* MariaDB SELECT/locks.
+    # A daily affected-row quota alone cannot stop unlimited zero-match scans.
+    if not approval_store.reserve_attempt(now=stamp):
+        raise UnsafeMutation("Mutation attempt rate limit exceeded")
     needs_approval = operation["operation"] == "delete" or (expected is not None and expected > config.small_limit)
     if needs_approval:
         if (expected is None or expected < 1
