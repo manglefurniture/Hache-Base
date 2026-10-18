@@ -112,7 +112,9 @@ class PasskeyGateway:
                 or (operation["operation"] == "update" and not operation["values"])
                 or (operation["operation"] == "delete" and operation["values"])
                 or type(operation.get("expected_rows")) is not int
-                or not 1 <= operation["expected_rows"] <= 1000):
+                or not 1 <= operation["expected_rows"] <= 1000
+                or not isinstance(operation.get("expected_primary_keys"), list)
+                or len(operation["expected_primary_keys"]) != operation["expected_rows"]):
             raise ValueError("Only scoped, explicitly counted UPDATE/DELETE can be approved")
         if len(backup_digest) != 64 or any(c not in "0123456789abcdef" for c in backup_digest):
             raise ValueError("Invalid backup checksum")
