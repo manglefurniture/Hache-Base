@@ -5,6 +5,9 @@ No Vast rental, start, stop, shell API, HMAC transfer, or miner start.
 """
 import argparse
 import hashlib
+import os
+import stat
+import time
 import json
 from pathlib import Path
 import re
@@ -19,6 +22,7 @@ FILES = frozenset({'vast-auto-prepare.py','vast-instance-prepare.py',
 COMMIT = re.compile(r'[a-f0-9]{40}\Z')
 SHA = re.compile(r'[a-f0-9]{64}\Z')
 MAX_BUNDLE = 2 * 1024 * 1024
+APPROVAL = '/etc/hache-mining-operator/approved-vast-release.json'
 REMOTE_BASE = '/root/hache-vast/releases'
 
 
@@ -26,14 +30,72 @@ class DeployError(Exception):
     pass
 
 
-def validate_archive(filename, expected_hash):
+def git_blob(data):
+    """Compare bytes with the precise Git blob IDs trusted by root."""
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\\x00' + data).hexdigest()
+
+
+def load_approval(path=APPROVAL, now=None):
+    """Root-controlled, per-instance, per-action authorization. Not writable by GPT."""
+    now = int(time.time() if now is None else now)
+    file=Path(path)
+    try:
+        info=file.lstat()
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
+                info.st_nlink != 1 or info.st_mode & 0o077):
+            raise DeployError('unsafe_root_approval')
+        with file.open('rb') as h:
+            raw=h.read(8193)
+        if len(raw)>8192:
+            raise DeployError('approval_too_large')
+        a=json.loads(raw)
+    except (OSError,ValueError):
+        raise DeployError('approval_not_available') from None
+    fields={'repository','commit','instance_id','machine_id','host_id',
+            'gpu_count','ssh_host','ssh_port','approved_action',
+            'not_before','expires_at','archive_sha256','files'}
+    if not isinstance(a,dict) or set(a)!=fields:
+        raise DeployError('invalid_root_approval')
+    if (a['repository']!='manglefurniture/HACHE-MINER' or
+            type(a['not_before']) is not int or type(a['expires_at']) is not int or
+            not a['not_before']<=now<=a['expires_at'] or
+            not 0<a['expires_at']-a['not_before']<=900 or
+            a['approved_action'] not in ('stage','apply') or
+            not COMMIT.fullmatch(a['commit']) or
+            not SHA.fullmatch(a['archive_sha256']) or
+            not isinstance(a['files'],dict) or set(a['files'])!=FILES or
+            any(not COMMIT.fullmatch(h) for h in a['files'].values()) or
+            not re.fullmatch(r'[1-9][0-9]{3,14}',str(a['instance_id'])) or
+            not isinstance(a['machine_id'],int) or a['machine_id']<=0 or
+            not isinstance(a['host_id'],int) or a['host_id']<=0 or
+            type(a['gpu_count']) is not int or not 1<=a['gpu_count']<=16 or
+            not isinstance(a['ssh_host'],str) or
+            not gateway.HOST.fullmatch(a['ssh_host']) or
+            type(a['ssh_port']) is not int or not 1<=a['ssh_port']<=65535):
+        raise DeployError('invalid_or_expired_root_approval')
+    return a
+
+
+def check_approval(a, p, action, commit, now=None):
+    now=int(time.time() if now is None else now)
+    if not isinstance(a,dict) or action!=a['approved_action'] or commit!=a['commit']:
+        raise DeployError('action_or_commit_not_approved')
+    if not a['not_before']<=now<=a['expires_at']:
+        raise DeployError('root_approval_expired')
+    if (p['provider']!='vast' or p['instance_id']!=str(a['instance_id']) or
+            p['machine_id']!=a['machine_id'] or p['host_id']!=a['host_id'] or
+            p['gpu_count']!=a['gpu_count'] or p['host']!=a['ssh_host'] or
+            p['port']!=a['ssh_port']):
+        raise DeployError('profile_not_approved')
+
+
+def validate_archive(filename, approval):
+    """Tar digest alone is not trust: require root-pinned, per-file Git blobs."""
     file = Path(gateway.safe_file(filename, private=True))
-    if not SHA.fullmatch(expected_hash):
-        raise DeployError('invalid_bundle_checksum')
     if file.stat().st_size > MAX_BUNDLE:
         raise DeployError('bundle_too_large')
     raw = file.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != expected_hash:
+    if hashlib.sha256(raw).hexdigest() != approval['archive_sha256']:
         raise DeployError('bundle_sha256_mismatch')
     import io
     with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
@@ -43,6 +105,10 @@ def validate_archive(filename, expected_hash):
                 any(not e.isfile() or e.size<=0 or e.size>300000
                     for e in entries)):
             raise DeployError('unexpected_bundle_contents')
+        for member in entries:
+            inp=archive.extractfile(member)
+            if inp is None or git_blob(inp.read())!=approval['files'][member.name]:
+                raise DeployError('unapproved_github_blob')
     return raw
 
 
@@ -113,7 +179,6 @@ def main():
     parser.add_argument('--instance-id',required=True)
     parser.add_argument('--release-commit',required=True)
     parser.add_argument('--bundle')
-    parser.add_argument('--bundle-sha256')
     parser.add_argument('--stage',action='store_true')
     parser.add_argument('--apply',action='store_true')
     parser.add_argument('--confirm-instance')
@@ -129,19 +194,21 @@ def main():
             raise DeployError('profile_instance_mismatch')
         if not COMMIT.fullmatch(args.release_commit):
             raise DeployError('invalid_release_commit')
-        bundle=None
-        if args.stage:
-            if not args.bundle or not args.bundle_sha256:
-                raise DeployError('bundle_and_sha256_required')
-            bundle=validate_archive(args.bundle,args.bundle_sha256)
         if not args.stage and not args.apply:
             print(json.dumps({'ok':True,'status':'offline_plan_only',
                              'instance_id':args.instance_id,
                              'release_commit':args.release_commit}))
             return 0
+        action='stage' if args.stage else 'apply'
+        approval=load_approval()
+        check_approval(approval,p,action,args.release_commit)
+        bundle=None
+        if args.stage:
+            if not args.bundle:
+                raise DeployError('approved_bundle_required')
+            bundle=validate_archive(args.bundle,approval)
         verify_target(p,args.instance_id)
-        result=run_remote(p,'stage' if args.stage else 'apply',
-                          args.release_commit,bundle=bundle)
+        result=run_remote(p,action,args.release_commit,bundle=bundle)
         print(json.dumps({'ok':True,'result':result}))
         return 0
     except (gateway.AccessError,DeployError,OSError,ValueError,tarfile.TarError):
