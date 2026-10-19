@@ -95,7 +95,7 @@ class GateTests(unittest.TestCase):
         pid=plan['plan_id']
         self.assertEqual(plan['snapshot']['repository'],'manglefurniture/HACHE-MINER')
         self.assertEqual(self.calls,[])
-        with self.assertRaises(FileNotFoundError):
+        with self.assertRaisesRegex(d.Rejected,'owner_authorization_required'):
             self.gate.handle({'method':'execute','plan_id':pid})
         self.grant(plan)
         result=self.gate.handle({'method':'execute','plan_id':pid})
