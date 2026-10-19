@@ -102,7 +102,7 @@ def profile_from_file(path, name):
 
 
 def verify_profile(p):
-    base = {'provider', 'instance_id', 'host', 'port', 'user', 'identity_file', 'known_hosts'}
+    base = {'provider', 'instance_id', 'machine_id', 'host_id', 'gpu_count', 'host', 'port', 'user', 'identity_file', 'known_hosts'}
     salad = {'organization', 'project', 'group'}
     if not isinstance(p, dict) or p.get('provider') not in ('vast', 'salad'):
         raise AccessError('invalid_profile')
@@ -112,6 +112,10 @@ def verify_profile(p):
         raise AccessError('invalid_ssh_host')
     if p['user'] != 'root' or type(p['port']) is not int or not 1 <= p['port'] <= 65535:
         raise AccessError('invalid_ssh_endpoint')
+    if (type(p['machine_id']) is not int or p['machine_id'] <= 0 or
+            type(p['host_id']) is not int or p['host_id'] <= 0 or
+            type(p['gpu_count']) is not int or not 1 <= p['gpu_count'] <= 16):
+        raise AccessError('invalid_pinned_hardware')
     for key in ('instance_id',) + (('organization', 'project', 'group') if p['provider'] == 'salad' else ()):
         if not isinstance(p[key], str) or not IDENT.fullmatch(p[key]):
             raise AccessError('invalid_ssh_identity')
@@ -128,6 +132,18 @@ def require_running(p, send=broker):
             'vast.status', {'instance_id': p['instance_id']})})
         if str(result.get('id')) != p['instance_id'] or result.get('actual_status') != 'running':
             raise AccessError('vast_not_running_or_identity_changed')
+        # The relay and hardware identities are part of the authorised target.
+        # Missing SSH metadata from an old broker fails closed until upgraded.
+        if (type(result.get('machine_id')) is not int or
+                type(result.get('host_id')) is not int or
+                type(result.get('num_gpus')) is not int or
+                result['machine_id'] != p['machine_id'] or
+                result['host_id'] != p['host_id'] or
+                result['num_gpus'] != p['gpu_count'] or
+                result.get('ssh_host') != p['host'] or
+                type(result.get('ssh_port')) is not int or
+                result['ssh_port'] != p['port']):
+            raise AccessError('vast_endpoint_or_hardware_changed')
     else:
         fields = {name: p[name] for name in ('organization', 'project', 'group', 'instance_id')}
         result = send({'method': 'query', 'operation': operation('salad.instance', fields)})
@@ -155,6 +171,8 @@ def ssh_args(p, probe):
 def remote_probe(p, probe, send=broker, runner=subprocess.run):
     # API confirmation first. SSH is a read-only fixed diagnostic, never a shell bridge.
     verify_profile(p)
+    if p['provider'] == 'salad':
+        raise AccessError('salad_ssh_endpoint_unverified')  # Needs provider-signed endpoint, not a saved IP.
     require_running(p, send)
     command = ssh_args(p, probe)
     try:
@@ -165,6 +183,10 @@ def remote_probe(p, probe, send=broker, runner=subprocess.run):
         raise AccessError('ssh_probe_failed')
     if len(result.stdout) > 16384:
         raise AccessError('ssh_response_too_large')
+    if probe == 'gpu':
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) != p['gpu_count']:
+            raise AccessError('ssh_gpu_count_mismatch')
     return {'provider': p['provider'], 'instance_id': p['instance_id'],
             'probe': probe, 'output': result.stdout.strip()}
 
