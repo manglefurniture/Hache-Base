@@ -53,6 +53,9 @@ function op_vast_registered(string $id): void {
 }
 function op_vast_status(string $id): array {
     op_vast_registered($id);
+    return op_vast_inspect($id);
+}
+function op_vast_inspect(string $id): array {
     $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
     $row=$r['data']['instances']??null;
     if(!is_array($row)||!isset($row['id'])||(string)$row['id']!==$id)op_fail('resource_not_found');
@@ -89,6 +92,7 @@ function op_query(array $operation): array {
             'partial'=>!empty($r['data']['next_token']),'total_instances'=>$r['data']['total_instances']??null];
     }
     if($action==='vast.status')return op_vast_status($operation['instance_id']);
+    if($action==='vast.inspect')return op_vast_inspect($operation['instance_id']);
     if($action==='vast.search'){
         $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],'rented'=>['eq'=>false],
             'gpu_name'=>['eq'=>$operation['gpu_name']],'num_gpus'=>['eq'=>$operation['gpu_count']],
@@ -140,6 +144,13 @@ function op_start_quote(array $row,array $operation): array {
 }
 
 function op_prepare(array $operation): array {
+    if($operation['action']==='vast.register'){
+        $live=op_vast_inspect($operation['instance_id']);
+        require_once '/srv/hache-miner/current/app/vast-enrollment.php';
+        try{miner_vast_enrollment_from_provider($live);}
+        catch(DomainException){op_fail('target_not_ready');}
+        return $live;
+    }
     if($operation['action']==='vast.start'){
         $row=op_vast_status($operation['instance_id']);
         return op_start_quote($row,$operation);
@@ -200,6 +211,13 @@ function op_guard_stop(array $operation,array $snapshot): array {
 function op_execute(array $operation,array $snapshot): array {
     $now=op_prepare($operation);
     if(!op_snapshot_equal($now,$snapshot))op_fail('target_state_changed');
+    if($operation['action']==='vast.register'){
+        require_once '/srv/hache-miner/current/app/vast-enrollment.php';
+        try{
+            $exact=miner_vast_enrollment_from_provider($now);
+            return miner_vast_enrollment_write(miner_db(),$exact);
+        }catch(DomainException){op_fail('target_state_changed');}
+    }
     if($operation['action']==='vast.start'){
         // Only after the broker has durably armed a deadline in its private DB.
         $r=op_vast('/api/v0/instances/'.rawurlencode($operation['instance_id']).'/',
@@ -250,7 +268,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
         $reads=['vast.list','vast.status','vast.search','salad.targets','salad.groups','salad.instances','salad.instance','telemetry'];
-        $writes=['vast.stop','vast.start','salad.stop','salad.reallocate'];
+        $writes=['vast.stop','vast.start','vast.register','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);
         elseif($mode==='execute'&&in_array($operation['action'],$writes,true)&&is_array($request['snapshot']??null))$result=op_execute($operation,$request['snapshot']);
