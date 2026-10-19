@@ -121,9 +121,7 @@ function op_query(array $operation): array {
     }
     op_fail('unsupported_action');
 }
-function op_prepare(array $operation): array {
-    if($operation['action']==='vast.start'){
-        $row=op_vast_status($operation['instance_id']);
+function op_start_quote(array $row,array $operation): array {
         if($row['actual_status']!=='exited'||$row['intended_status']!=='stopped')
             op_fail('target_not_ready');
         if(!is_numeric($row['dph_total'])||!is_finite((float)$row['dph_total'])||
@@ -139,6 +137,12 @@ function op_prepare(array $operation): array {
         if($estimate>(int)floor($operation['max_total_usd']*100+0.00001))
             op_fail('estimated_budget_exceeded');
         return $row+['estimated_cost_cents'=>$estimate];
+}
+
+function op_prepare(array $operation): array {
+    if($operation['action']==='vast.start'){
+        $row=op_vast_status($operation['instance_id']);
+        return op_start_quote($row,$operation);
     }
     if($operation['action']==='vast.stop'){
         $row=op_vast_status($operation['instance_id']);
