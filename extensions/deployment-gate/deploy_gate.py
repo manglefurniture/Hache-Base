@@ -187,7 +187,8 @@ def extract_fixed_archive(archive, work):
                 raise Rejected('archive_read_failed')
             with open(path,'xb') as out:
                 shutil.copyfileobj(stream,out,1024*1024)
-            path.chmod(0o644)
+            # Preserve executable intent for approved scripts, never write bits.
+            path.chmod(0o755 if member.mode & 0o111 else 0o644)
     for folder, subs, files in os.walk(root):
         Path(folder).chmod(0o755)
     return names
