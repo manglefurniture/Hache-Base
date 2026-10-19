@@ -2,6 +2,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 import stat
 import tarfile
@@ -123,6 +126,57 @@ class VastProvisionTests(unittest.TestCase):
                     st_mode=stat.S_IFREG | 0o600,st_uid=1001,st_nlink=1)):
                 with self.assertRaisesRegex(v.DeployError,'unsafe_root_approval'):
                     v.load_approval(path,now=1100)
+
+
+    def test_one_use_claim_survives_failure_and_excludes_untrusted_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory=Path(tmp)/'claims'
+            directory.mkdir(mode=0o700)
+            a=approval()
+            claim=v.claim_approval(a,directory=directory,executor_uid=os.geteuid())
+            self.assertEqual(len(claim),64)
+            with self.assertRaisesRegex(v.DeployError,'approval_already_consumed'):
+                v.claim_approval(a,directory=directory,executor_uid=os.geteuid())
+            with self.assertRaisesRegex(v.DeployError,'trusted_executor_required'):
+                v.claim_approval(dict(a,commit='b'*40),directory=directory,
+                                 executor_uid=os.geteuid()+1)
+            directory.chmod(0o777)
+            with self.assertRaisesRegex(v.DeployError,'unsafe_claim_store'):
+                v.claim_approval(dict(a,commit='c'*40),directory=directory,
+                                 executor_uid=os.geteuid())
+
+    def test_remote_stage_atomic_idempotent_and_recoverable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            archive=root/'bundle.tar.gz'
+            contents=build_tar(archive)
+            digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+            expected={name:v.git_blob(data) for name,data in contents.items()}
+            dest=root/'releases'/('a'*40)
+            conf=root/'etc-hache-vast'
+            binding=dict(instance_id='56667162',machine_id='151300',
+                         host_id='467312',gpu_count=8,
+                         ssh_host='ssh8.vast.ai',ssh_port=10566)
+            argv=[sys.executable,'-c',v.REMOTE_STAGE_PY,str(dest),
+                  json.dumps(expected),digest,json.dumps(binding),str(conf)]
+            good=subprocess.run(argv,input=archive.read_bytes(),capture_output=True)
+            self.assertEqual(good.returncode,0,good.stderr.decode()[:500])
+            self.assertEqual(json.loads((conf/'host-binding.json').read_text()),binding)
+            self.assertEqual({p.name:p.read_bytes() for p in dest.iterdir()},contents)
+            again=subprocess.run(argv,input=archive.read_bytes(),capture_output=True)
+            self.assertEqual(again.returncode,0,again.stderr.decode()[:500])
+            self.assertEqual(list((root/'releases').glob('.stage-*')),[])
+            other=list(argv)
+            other[3]=str(root/'releases'/('b'*40))
+            truncated=subprocess.run(other,input=archive.read_bytes()[:20],capture_output=True)
+            self.assertNotEqual(truncated.returncode,0)
+            self.assertFalse(Path(other[3]).exists())
+            self.assertEqual(list((root/'releases').glob('.stage-*')),[])
+            retry=subprocess.run(other,input=archive.read_bytes(),capture_output=True)
+            self.assertEqual(retry.returncode,0,retry.stderr.decode()[:500])
+            (Path(other[3])/'vast-onstart.sh').write_text('tamper')
+            conflict=subprocess.run(other,input=archive.read_bytes(),capture_output=True)
+            self.assertNotEqual(conflict.returncode,0)
 
     def test_profile_does_not_allow_other_instance(self):
         with patch.object(v.gateway,'verify_profile'):
