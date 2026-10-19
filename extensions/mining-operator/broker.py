@@ -20,7 +20,7 @@ from vast_start_guard import arm as arm_financial_lease, install_tables as insta
 
 READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry'}
-WRITES = {'vast.stop', 'vast.start', 'vast.register', 'salad.stop', 'salad.reallocate'}
+WRITES = {'vast.stop', 'vast.start', 'vast.register', 'vast.provision', 'salad.stop', 'salad.reallocate'}
 FIELDS = {
     'vast.list': set(), 'vast.status': {'instance_id'}, 'vast.inspect': {'instance_id'},
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
@@ -30,6 +30,7 @@ FIELDS = {
     'telemetry': set(), 'vast.stop': {'instance_id'},
     'vast.start': {'instance_id', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
     'vast.register': {'instance_id'},
+    'vast.provision': {'instance_id', 'release_commit', 'step'},
     'salad.stop': {'organization', 'project', 'group'},
     'salad.reallocate': {'organization', 'project', 'group', 'instance_id'},
 }
@@ -56,7 +57,13 @@ def validate_operation(value):
     for name, item in value.items():
         if name == 'action':
             continue
-        if name == 'max_minutes':
+        if name == 'step':
+            if action!='vast.provision' or item not in ('stage','configure','apply'):
+                raise Rejected('invalid_provision_step')
+        elif name == 'release_commit':
+            if action!='vast.provision' or type(item) is not str or not re.fullmatch(r'[a-f0-9]{40}',item):
+                raise Rejected('invalid_release_commit')
+        elif name == 'max_minutes':
             if type(item) is not int or not 1 <= item <= 1440:
                 raise Rejected('invalid_duration')
         elif name == 'gpu_count':
@@ -95,12 +102,12 @@ def protected_json(path, owner_uid=0, private_directory=False):
         return json.loads(content)
 
 
-def safe_helper(command, mode, operation, snapshot=None):
+def safe_helper(command, mode, operation, snapshot=None, *, timeout=35):
     request = {'mode': mode, 'operation': operation}
     if snapshot is not None:
         request['snapshot'] = snapshot
     result = subprocess.run(command, input=canonical(request), capture_output=True,
-                            text=True, timeout=35)
+                            text=True, timeout=timeout)
     # Helper returns only sanitized projections, never stderr or provider bodies.
     if len(result.stdout) > 131072:
         raise Rejected('provider_response_too_large')
@@ -159,6 +166,7 @@ class Broker:
         method = request['method']
         if method == 'capabilities' and set(request) == {'method'}:
             return {'reads': sorted(READS), 'writes_with_root_grant': sorted(WRITES),
+                    'vast.provision': 'requires active lease, pinned forced-command SSH and root one-use grant',
                     'rent_restart_destroy_ssh': 'not_enabled',
                     'vast.start': 'requires specific root grant, live financial supervisor, price and duration caps',
                     'authorization': 'exact plan, root-owned grant, one use, expires within 5 minutes'}
@@ -256,8 +264,13 @@ def serve(config):
     cfg = protected_json(config)
     if os.getenv('LISTEN_FDS') != '1' or os.getenv('LISTEN_PID') != str(os.getpid()):
         raise RuntimeError('systemd socket activation required')
-    helper = lambda mode, operation, snapshot=None: safe_helper(
-        cfg['helper_command'], mode, operation, snapshot)
+    def helper(mode, operation, snapshot=None):
+        if operation['action']=='vast.provision':
+            return safe_helper(
+                ['/usr/bin/python3',
+                 '/opt/hache-mining-operator/current/vast_provision_helper.py'],
+                mode, operation, snapshot, timeout=198)
+        return safe_helper(cfg['helper_command'], mode, operation, snapshot)
     broker = Broker(cfg['database'], cfg['grants'], helper)
     server = socketserver.UnixStreamServer('', Handler, bind_and_activate=False)
     server.socket.close()
