@@ -31,6 +31,11 @@ function op_pick(array $data,array $fields): array {
         $out[$field]=is_scalar($v)||$v===null?$v:null;
     }return $out;
 }
+function op_rows(array $data,string $key): array {
+    if(!isset($data[$key])||!is_array($data[$key])||!array_is_list($data[$key]))op_fail('provider_unavailable');
+    foreach($data[$key] as $row)if(!is_array($row))op_fail('provider_unavailable');
+    return $data[$key];
+}
 function op_vast_key(): string {
     $file='/etc/hache-miner/vast-stop-api-key';
     if(!is_file($file)||is_link($file)||!is_readable($file))op_fail('credential_unavailable');
@@ -77,8 +82,8 @@ function op_instance(array $row): array {
 function op_query(array $operation): array {
     $action=$operation['action'];
     if($action==='vast.list'){
-        $r=op_vast('/api/v1/instances/?limit=25');$rows=$r['data']['instances']??[];
-        if(!is_array($rows)||count($rows)>25)op_fail('provider_unavailable');
+        $r=op_vast('/api/v1/instances/?limit=25');$rows=op_rows($r['data'],'instances');
+        if(count($rows)>25)op_fail('provider_unavailable');
         return ['instances'=>array_map(static fn(array $r):array=>op_pick($r,
             ['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total']),$rows),
             'partial'=>!empty($r['data']['next_token']),'total_instances'=>$r['data']['total_instances']??null];
@@ -90,8 +95,7 @@ function op_query(array $operation): array {
             'dph_total'=>['lte'=>$operation['max_hourly_usd']],'type'=>'on-demand',
             'limit'=>10,'order'=>[['dph_total','asc']],'allocated_storage'=>5];
         $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
-        $rows=$r['data']['offers']??[];
-        if(!is_array($rows))op_fail('provider_unavailable');
+        $rows=op_rows($r['data'],'offers');
         return ['offers'=>array_map(static fn(array $r):array=>op_pick($r,
             ['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),array_slice($rows,0,10)),
             'pricing_note'=>'offer quote for 5 GiB storage; verify final rental and additional charges before creating resources'];
@@ -104,13 +108,11 @@ function op_query(array $operation): array {
     }
     [$url,$headers]=op_target($operation);
     if($action==='salad.groups'){
-        $r=op_http($url,$headers);$rows=$r['data']['items']??$r['data']['container_groups']??null;
-        if(!is_array($rows))op_fail('provider_unavailable');
+        $r=op_http($url,$headers);$rows=op_rows($r['data'],array_key_exists('items',$r['data'])?'items':'container_groups');
         return ['groups'=>array_map('op_group',array_slice($rows,0,100)),'partial'=>count($rows)>100];
     }
     if($action==='salad.instances'){
-        $r=op_http($url.'/instances',$headers);$rows=$r['data']['instances']??null;
-        if(!is_array($rows))op_fail('provider_unavailable');
+        $r=op_http($url.'/instances',$headers);$rows=op_rows($r['data'],'instances');
         return ['instances'=>array_map('op_instance',array_slice($rows,0,100)),'partial'=>count($rows)>100];
     }
     if($action==='salad.instance'){
