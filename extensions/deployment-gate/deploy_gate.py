@@ -313,9 +313,36 @@ class Gate:
         return (Path(self.cfg['inbox'])/op['target']/
                 (op['commit']+'.tar.gz'))
 
+    def gc_archives(self, *, now=None):
+        """Prune old unreferenced root-owned bundles; never delete a live plan."""
+        now=int(self.now() if now is None else now)
+        directory=Path(self.cfg['state_dir'])/'approved-sources'
+        directory.mkdir(mode=0o700,exist_ok=True)
+        protected=set()
+        for raw,expires,phase in self.db.execute(
+                "SELECT operation,expires,phase FROM deploy_plans "
+                "WHERE phase IN ('prepared','claimed')"):
+            try:
+                op=json.loads(raw)
+                if expires+3600>now and HASH.fullmatch(op['archive_sha256']):
+                    protected.add(op['archive_sha256'])
+            except (ValueError,TypeError,KeyError):
+                raise Rejected('plan_archive_index_corrupt') from None
+        for item in directory.glob('*.tar.gz'):
+            st=item.lstat()
+            if (not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or
+                    st.st_nlink!=1 or st.st_mode & 0o022):
+                raise Rejected('unsafe_root_cache_entry')
+            digest=item.name[:-7]
+            if (HASH.fullmatch(digest) and digest not in protected and
+                    st.st_mtime<now-3600):
+                item.unlink()
+        return protected
+
     def cache_archive(self, op):
         destdir=Path(self.cfg['state_dir'])/'approved-sources'
         destdir.mkdir(mode=0o700,exist_ok=True)
+        self.gc_archives()
         dest=destdir/(op['archive_sha256']+'.tar.gz')
         if dest.exists():
             if hashlib.sha256(dest.read_bytes()).hexdigest()!=op['archive_sha256']:
