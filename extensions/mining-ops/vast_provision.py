@@ -182,6 +182,7 @@ dest = Path(sys.argv[1])
 expected = json.loads(sys.argv[2])
 expected_archive = sys.argv[3]
 binding = json.loads(sys.argv[4])
+conf = Path(sys.argv[5])
 root = dest.parent
 if root.is_symlink() or root.parent.is_symlink():
     raise SystemExit('unsafe staging directory')
@@ -192,7 +193,7 @@ lock_fd = os.open(root/'.deploy.lock', os.O_RDWR | os.O_CREAT |
                   getattr(os, 'O_NOFOLLOW', 0), 0o600)
 with os.fdopen(lock_fd, 'rb') as lock:
     info = os.fstat(lock.fileno())
-    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
         raise SystemExit('untrusted staging lock')
     fcntl.flock(lock, fcntl.LOCK_EX)
     archive = sys.stdin.buffer.read(2097153)
@@ -238,7 +239,6 @@ with os.fdopen(lock_fd, 'rb') as lock:
             if temporary.exists():
                 shutil.rmtree(temporary)
     inspect_existing(dest)
-    conf = Path('/etc/hache-vast')
     if conf.is_symlink():
         raise SystemExit('unsafe configuration directory')
     conf.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -248,7 +248,7 @@ with os.fdopen(lock_fd, 'rb') as lock:
         if target.is_symlink() or not target.is_file() or target.read_bytes()!=content:
             raise SystemExit('conflicting host binding')
         info = target.stat()
-        if info.st_uid != 0 or info.st_mode & 0o077:
+        if info.st_uid != os.geteuid() or info.st_mode & 0o077:
             raise SystemExit('unsafe host binding')
     else:
         fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
@@ -306,7 +306,8 @@ def run_remote(p, action, commit, *, bundle=None, approval=None,
             shlex.quote(dest) + ' ' +
             shlex.quote(json.dumps(approval['files'], sort_keys=True)) + ' ' +
             shlex.quote(approval['archive_sha256']) + ' ' +
-            shlex.quote(json.dumps(host_binding, sort_keys=True))
+            shlex.quote(json.dumps(host_binding, sort_keys=True)) + ' ' +
+            shlex.quote('/etc/hache-vast')
         )
         data = bundle
     elif action=='apply':
