@@ -165,6 +165,100 @@ def verify_target(p, instance_id, send=gateway.broker):
     return True
 
 
+REMOTE_STAGE_PY = r"""
+import fcntl
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import stat
+import sys
+import tarfile
+import tempfile
+
+dest = Path(sys.argv[1])
+expected = json.loads(sys.argv[2])
+expected_archive = sys.argv[3]
+binding = json.loads(sys.argv[4])
+root = dest.parent
+if root.is_symlink() or root.parent.is_symlink():
+    raise SystemExit('unsafe staging directory')
+root.mkdir(mode=0o700, parents=True, exist_ok=True)
+if root.is_symlink() or not root.is_dir():
+    raise SystemExit('unsafe staging directory')
+lock_fd = os.open(root/'.deploy.lock', os.O_RDWR | os.O_CREAT |
+                  getattr(os, 'O_NOFOLLOW', 0), 0o600)
+with os.fdopen(lock_fd, 'rb') as lock:
+    info = os.fstat(lock.fileno())
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o077:
+        raise SystemExit('untrusted staging lock')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    archive = sys.stdin.buffer.read(2097153)
+    if len(archive) > 2097152 or hashlib.sha256(archive).hexdigest() != expected_archive:
+        raise SystemExit('wrong archive')
+    with tarfile.open(fileobj=io.BytesIO(archive), mode='r:gz') as tar:
+        members = tar.getmembers()
+        if (len(members) != len(expected) or
+                {m.name for m in members} != set(expected) or
+                any(not m.isfile() or m.size < 1 or m.size > 300000
+                    for m in members)):
+            raise SystemExit('unapproved tar')
+        blobs = {}
+        for member in members:
+            data = tar.extractfile(member).read()
+            digest = hashlib.sha1(b'blob ' + str(len(data)).encode() +
+                                  bytes([0]) + data).hexdigest()
+            if digest != expected[member.name]:
+                raise SystemExit('unapproved Git blob')
+            blobs[member.name] = data
+    def inspect_existing(where):
+        if where.is_symlink() or not where.is_dir():
+            raise SystemExit('staged release is unsafe')
+        for name, data in blobs.items():
+            item = where/name
+            if item.is_symlink() or not item.is_file() or item.read_bytes() != data:
+                raise SystemExit('staged release differs')
+    if not dest.exists() and not dest.is_symlink():
+        temporary = Path(tempfile.mkdtemp(prefix='.stage-', dir=root))
+        try:
+            for name, data in blobs.items():
+                item = temporary/name
+                fd = os.open(item, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                             getattr(os, 'O_NOFOLLOW', 0), 0o700)
+                with os.fdopen(fd, 'wb') as out:
+                    out.write(data)
+                    out.flush()
+                    os.fsync(out.fileno())
+            inspect_existing(temporary)
+            # Under the filesystem lock, renaming a validated directory is atomic.
+            os.rename(temporary, dest)
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+    inspect_existing(dest)
+    conf = Path('/etc/hache-vast')
+    if conf.is_symlink():
+        raise SystemExit('unsafe configuration directory')
+    conf.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target = conf/'host-binding.json'
+    content = (json.dumps(binding, sort_keys=True, separators=(',', ':'))+'\\n').encode()
+    if target.exists() or target.is_symlink():
+        if target.is_symlink() or not target.is_file() or target.read_bytes()!=content:
+            raise SystemExit('conflicting host binding')
+        info = target.stat()
+        if info.st_uid != 0 or info.st_mode & 0o077:
+            raise SystemExit('unsafe host binding')
+    else:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                     getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        with os.fdopen(fd, 'wb') as out:
+            out.write(content)
+            out.flush()
+            os.fsync(out.fileno())
+"""
+
 def remote_integrity_command(approval, dest):
     """Check bytes on the GPU before executing even if a staged file changed."""
     verifier = (
@@ -197,15 +291,22 @@ def run_remote(p, action, commit, *, bundle=None, approval=None,
     if action=='stage':
         if bundle is None:
             raise DeployError('bundle_required')
+        host_binding = {
+            'instance_id': p['instance_id'],
+            'machine_id': str(p['machine_id']),
+            'host_id': str(p['host_id']),
+            'gpu_count': p['gpu_count'],
+            'ssh_host': p['host'], 'ssh_port': p['port'],
+        }
+        # Python on the GPU verifies archive, exact Git bytes and host binding.
+        # A private flock serializes staging; a temporary directory is renamed
+        # only after validation. Incomplete transfers clean up automatically.
         command = (
-            'set -eu; umask 077; '
-            'test ! -L /root/hache-vast && '
-            'install -d -m 0700 /root/hache-vast /root/hache-vast/releases && '
-            'test ! -L /root/hache-vast/releases && '
-            'test ! -e '+dest+' && '
-            'install -d -m 0700 '+dest+' && '
-            'tar --no-same-owner --no-same-permissions -xzf - -C '+dest+' && '
-            'chmod 0700 '+dest+'/*.py '+dest+'/*.sh && ' + integrity
+            'python3 -c ' + shlex.quote(REMOTE_STAGE_PY) + ' ' +
+            shlex.quote(dest) + ' ' +
+            shlex.quote(json.dumps(approval['files'], sort_keys=True)) + ' ' +
+            shlex.quote(approval['archive_sha256']) + ' ' +
+            shlex.quote(json.dumps(host_binding, sort_keys=True))
         )
         data = bundle
     elif action=='apply':
