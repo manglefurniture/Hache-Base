@@ -78,6 +78,19 @@ class GateTests(unittest.TestCase):
         p.chmod(0o600)
         return p
 
+    def test_rate_limit_and_root_cache_capacity(self):
+        for _ in range(120):
+            self.gate.charge()
+        with self.assertRaisesRegex(d.Rejected,'rate_limited'):
+            self.gate.charge()
+        incoming=self.op()
+        private=self.state/'approved-sources'
+        private.mkdir()
+        for i in range(8):
+            (private/(format(i,'064x')+'.tar.gz')).write_bytes(b'fixture')
+        with self.assertRaisesRegex(d.Rejected,'cache_full'):
+            self.gate.handle(incoming)
+
     def test_only_fixed_targets_and_40_char_commit(self):
         for req in (
           {'method':'prepare','target':'../../tmp','commit':'b'*40,'archive_sha256':'0'*64},
