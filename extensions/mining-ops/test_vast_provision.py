@@ -128,6 +128,12 @@ class VastProvisionTests(unittest.TestCase):
                     v.load_approval(path,now=1100)
 
 
+    def test_direct_untrusted_ssh_execution_is_rejected(self):
+        with patch.object(v.pwd,'getpwnam',return_value=types.SimpleNamespace(pw_uid=os.geteuid()+1)):
+            with self.assertRaisesRegex(v.DeployError,'trusted_executor_required'):
+                v.run_remote(profile(),'stage','a'*40,approval=approval(),
+                             bundle=b'fake',runner=lambda *a,**kw:self.fail('SSH called'))
+
     def test_one_use_claim_survives_failure_and_excludes_untrusted_user(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory=Path(tmp)/'claims'
@@ -205,7 +211,7 @@ class VastProvisionTests(unittest.TestCase):
 
     def test_only_fixed_ssh_commands_are_emitted(self):
         with patch.object(v.gateway,'ssh_args',return_value=['ssh','-T','root@host','date -u']), \
-             patch.object(v,'check_approval'):
+             patch.object(v,'check_approval'), patch.object(v,'require_executor'):
             calls=[]
             def runner(command,**kwargs):
                 calls.append((command,kwargs))
@@ -223,7 +229,7 @@ class VastProvisionTests(unittest.TestCase):
 
     def test_never_print_ssh_errors(self):
         with patch.object(v.gateway,'ssh_args',return_value=['ssh','host','date']), \
-             patch.object(v,'check_approval'):
+             patch.object(v,'check_approval'), patch.object(v,'require_executor'):
             def fail(*args,**kwargs):
                 return types.SimpleNamespace(returncode=255,stdout=b'',stderr=b'PRIVATE KEY MATERIAL')
             with self.assertRaisesRegex(v.DeployError,'ssh_stage_failed') as caught:
