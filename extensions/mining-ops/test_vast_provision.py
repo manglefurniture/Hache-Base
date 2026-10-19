@@ -204,9 +204,10 @@ class VastProvisionTests(unittest.TestCase):
         stage=v.remote_integrity_command(a,'/root/hache-vast/releases/'+'a'*40)
         self.assertIn('python3 -c ',stage)
         self.assertIn('actual==expected',stage)
-        with self.assertRaisesRegex(v.DeployError,'root_approval_required'):
-            v.run_remote(profile(),'apply','a'*40,runner=lambda *a,**kw:
-                         self.fail('unapproved SSH access'))
+        with patch.object(v,'require_executor'):
+            with self.assertRaisesRegex(v.DeployError,'root_approval_required'):
+                v.run_remote(profile(),'apply','a'*40,runner=lambda *a,**kw:
+                             self.fail('unapproved SSH access'))
         self.assertNotIn('rm -rf',stage)
 
     def test_only_fixed_ssh_commands_are_emitted(self):
