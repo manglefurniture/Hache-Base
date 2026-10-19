@@ -112,6 +112,7 @@ def safe_helper(command, mode, operation, snapshot=None):
         allowed = {'credential_unavailable', 'provider_forbidden', 'resource_not_found',
                    'provider_rate_limited', 'provider_unavailable', 'target_not_enabled',
                    'target_state_changed', 'cooldown_active', 'target_not_ready',
+                   'price_limit_exceeded', 'estimated_budget_exceeded',
                    'unsupported_action', 'provider_outcome_unknown'}
         raise Rejected(error if error in allowed else 'provider_unavailable')
     return answer.get('result', {})
