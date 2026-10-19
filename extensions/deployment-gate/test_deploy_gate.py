@@ -183,16 +183,43 @@ class GateTests(unittest.TestCase):
         plan=self.gate.handle(self.op())
         op=plan['operation'];snapshot=plan['snapshot']
         self.gate.deploy_fn=self.gate.activate
-        with patch.object(d,'run_checks'), patch.object(d,'check_health',side_effect=d.Rejected('service_unhealthy')):
+        with patch.object(d,'run_checks'), patch.object(d,'check_financial_guard_clear'), patch.object(d,'check_health',side_effect=d.Rejected('service_unhealthy')):
             with self.assertRaises(d.Rejected):
                 self.gate.activate(op,snapshot)
         self.assertEqual((self.rr/'current').resolve(),Path(snapshot['previous_release']))
         self.assertTrue((self.rr/'releases'/('b'*40)).exists())
 
+    def test_financial_lease_blocks_activation(self):
+        plan=self.gate.handle(self.op())
+        with patch.object(d,'run_checks'), patch.object(d,'check_financial_guard_clear',
+                               side_effect=d.Rejected('active_financial_lease_blocks_deployment')), \
+             patch.object(d,'check_health') as health:
+            with self.assertRaisesRegex(d.Rejected,'active_financial_lease'):
+                self.gate.activate(plan['operation'],plan['snapshot'])
+        health.assert_not_called()
+        self.assertEqual((self.rr/'current').resolve(),Path(plan['snapshot']['previous_release']))
+        self.assertFalse((self.rr/'releases'/('b'*40)).exists())
+
+    def test_manifest_mode_keeps_executable_scripts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive=Path(tmp)/'bundle.tar.gz'
+            with tarfile.open(archive,'w:gz') as tar:
+                contents={'deploy/activate.sh':(b'#!/usr/bin/env bash\\n',0o755),
+                          'app/core.php':(b'<?php\\n',0o644)}
+                for name,(data,mode) in contents.items():
+                    item=tarfile.TarInfo(name)
+                    item.size=len(data);item.mode=mode
+                    tar.addfile(item,io.BytesIO(data))
+            dest=Path(tmp)/'output'
+            dest.mkdir()
+            d.extract_fixed_archive(archive,dest)
+            self.assertEqual((dest/'deploy/activate.sh').stat().st_mode & 0o777,0o755)
+            self.assertEqual((dest/'app/core.php').stat().st_mode & 0o777,0o644)
+
     def test_activate_calls_fixed_health_only(self):
         plan=self.gate.handle(self.op('hache-base'))
         self.gate.deploy_fn=self.gate.activate
-        with patch.object(d,'run_checks'),patch.object(d,'check_health') as hc:
+        with patch.object(d,'run_checks'),patch.object(d,'check_financial_guard_clear'),patch.object(d,'check_health') as hc:
             r=self.gate.activate(plan['operation'],plan['snapshot'])
         self.assertEqual(r['status'],'activated')
         hc.assert_called_once_with('hache-base',restart=True)
