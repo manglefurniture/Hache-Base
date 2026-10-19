@@ -162,6 +162,30 @@ class BrokerTests(unittest.TestCase):
         self.assertEqual(result['phase'],'failed_or_unknown')
         self.assertNotIn('execute',self.calls)
 
+    def test_vast_registration_requires_exact_one_use_root_grant(self):
+        operation={'action':'vast.register','instance_id':'56667162'}
+        plan=self.broker.handle({'method':'prepare','operation':operation})
+        self.assertEqual(plan['operation'],operation)
+        self.assertEqual(self.calls,['prepare'])
+        with self.assertRaisesRegex(Rejected,'authorization_required'):
+            self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.grant(plan)
+        answer=self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.assertEqual(answer['phase'],'submitted')
+        self.assertEqual(self.calls.count('execute'),1)
+        again=self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.assertEqual(again,answer)
+        self.assertEqual(self.calls.count('execute'),1)
+
+    def test_vast_inspect_is_read_only(self):
+        value=self.broker.handle({'method':'query','operation':
+                    {'action':'vast.inspect','instance_id':'56667162'}})
+        self.assertEqual(value['id'],'56667162')
+        self.assertEqual(self.calls,['query'])
+        with self.assertRaisesRegex(Rejected,'query_cannot_mutate'):
+            self.broker.handle({'method':'query','operation':
+                    {'action':'vast.register','instance_id':'56667162'}})
+
     def test_rate_limit_fails_closed(self):
         for _ in range(120):
             self.broker.charge()
