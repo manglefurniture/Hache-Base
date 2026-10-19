@@ -72,7 +72,7 @@ def load_target(instance_id, directory=ROOT):
     for field in ('key_file','known_hosts'):
         path=config[field]
         if type(path) is not str or not re.fullmatch(
-                r'/etc/hache-mining-operator/ssh/[a-zA-Z0-9_-]{1,70}\\.(?:key|known_hosts)',path):
+                r'/etc/hache-mining-operator/ssh/[a-zA-Z0-9_-]{1,70}[.](?:key|known_hosts)',path):
             raise Reject('unapproved_ssh_credential_path')
         owner_file(path,secret=(field=='key_file'),limit=262144)
     return config
