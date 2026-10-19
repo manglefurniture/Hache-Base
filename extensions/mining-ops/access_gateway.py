@@ -129,7 +129,7 @@ def register_vast(instance_id, *, socket_path=DEFAULT_SOCKET,
     if dest.exists() or dest.is_symlink():
         raise AccessError('profiles_exist_no_overwrite')
     content = json.dumps({'profiles': {'vast-' + instance_id: p}},
-                         indent=2).encode() + b'\\n'
+                         indent=2).encode() + bytes([10])
     try:
         fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
                      getattr(os, 'O_NOFOLLOW', 0), 0o600)
