@@ -113,6 +113,9 @@ class VastProvisionTests(unittest.TestCase):
                 with self.assertRaisesRegex(v.DeployError,'invalid_or_expired_root_approval'):
                     v.load_approval(path,now=1401)
             with patch.object(v.Path,'lstat',return_value=types.SimpleNamespace(
+                    st_mode=stat.S_IFREG | 0o644,st_uid=0,st_nlink=1)):
+                self.assertEqual(v.load_approval(path,now=1100)['approved_action'],'stage')
+            with patch.object(v.Path,'lstat',return_value=types.SimpleNamespace(
                     st_mode=stat.S_IFREG | 0o666,st_uid=0,st_nlink=1)):
                 with self.assertRaisesRegex(v.DeployError,'unsafe_root_approval'):
                     v.load_approval(path,now=1100)
