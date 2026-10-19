@@ -269,7 +269,7 @@ def serve(config):
             return safe_helper(
                 ['/usr/bin/python3',
                  '/opt/hache-mining-operator/current/vast_provision_helper.py'],
-                mode, operation, snapshot, timeout=198)
+                mode, operation, snapshot, timeout=290)
         return safe_helper(cfg['helper_command'], mode, operation, snapshot)
     broker = Broker(cfg['database'], cfg['grants'], helper)
     server = socketserver.UnixStreamServer('', Handler, bind_and_activate=False)
