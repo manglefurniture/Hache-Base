@@ -32,7 +32,7 @@ class DeployError(Exception):
 
 def git_blob(data):
     """Compare bytes with the precise Git blob IDs trusted by root."""
-    return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\\x00' + data).hexdigest()
+    return hashlib.sha1(b'blob ' + str(len(data)).encode() + bytes([0]) + data).hexdigest()
 
 
 def load_approval(path=APPROVAL, now=None):
