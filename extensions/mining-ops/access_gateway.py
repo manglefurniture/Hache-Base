@@ -101,8 +101,53 @@ def profile_from_file(path, name):
     return target
 
 
+def register_vast(instance_id, *, socket_path=DEFAULT_SOCKET,
+                  profiles_path=DEFAULT_PROFILES, identity='~/.ssh/id_ed25519',
+                  known_hosts='~/.ssh/known_hosts', send=broker):
+    operation('vast.status', {'instance_id': instance_id})
+    metadata = send({'method': 'query', 'operation': {
+        'action': 'vast.status', 'instance_id': instance_id}}, socket_path=socket_path)
+    if str(metadata.get('id')) != instance_id:
+        raise AccessError('vast_identity_changed')
+    p = {
+        'provider': 'vast', 'instance_id': instance_id,
+        'machine_id': metadata.get('machine_id'), 'host_id': metadata.get('host_id'),
+        'gpu_count': metadata.get('num_gpus'),
+        'host': metadata.get('ssh_host'), 'port': metadata.get('ssh_port'),
+        'user': 'root', 'identity_file': str(Path(identity).expanduser()),
+        'known_hosts': str(Path(known_hosts).expanduser()),
+    }
+    verify_profile(p)
+    safe_file(p['identity_file'], private=True)
+    dest = Path(profiles_path).expanduser()
+    directory = dest.parent
+    directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    info = directory.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or
+            (hasattr(os, 'getuid') and info.st_uid != os.getuid())):
+        raise AccessError('unsafe_profile_directory')
+    if dest.exists() or dest.is_symlink():
+        raise AccessError('profiles_exist_no_overwrite')
+    content = json.dumps({'profiles': {'vast-' + instance_id: p}},
+                         indent=2).encode() + bytes([10])
+    try:
+        fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                     getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError:
+        raise AccessError('profile_creation_failed') from None
+    # Trust is intentionally NOT bootstrapped automatically from SSH keyscan.
+    return {'profile': 'vast-' + instance_id, 'registered': True,
+            'ssh_host': p['host'], 'ssh_port': p['port'],
+            'ssh_trust': 'unverified_must_pin_verified_host_key',
+            'provider_state': metadata.get('actual_status')}
+
+
 def verify_profile(p):
-    base = {'provider', 'instance_id', 'host', 'port', 'user', 'identity_file', 'known_hosts'}
+    base = {'provider', 'instance_id', 'machine_id', 'host_id', 'gpu_count', 'host', 'port', 'user', 'identity_file', 'known_hosts'}
     salad = {'organization', 'project', 'group'}
     if not isinstance(p, dict) or p.get('provider') not in ('vast', 'salad'):
         raise AccessError('invalid_profile')
@@ -112,6 +157,10 @@ def verify_profile(p):
         raise AccessError('invalid_ssh_host')
     if p['user'] != 'root' or type(p['port']) is not int or not 1 <= p['port'] <= 65535:
         raise AccessError('invalid_ssh_endpoint')
+    if (type(p['machine_id']) is not int or p['machine_id'] <= 0 or
+            type(p['host_id']) is not int or p['host_id'] <= 0 or
+            type(p['gpu_count']) is not int or not 1 <= p['gpu_count'] <= 16):
+        raise AccessError('invalid_pinned_hardware')
     for key in ('instance_id',) + (('organization', 'project', 'group') if p['provider'] == 'salad' else ()):
         if not isinstance(p[key], str) or not IDENT.fullmatch(p[key]):
             raise AccessError('invalid_ssh_identity')
@@ -128,6 +177,18 @@ def require_running(p, send=broker):
             'vast.status', {'instance_id': p['instance_id']})})
         if str(result.get('id')) != p['instance_id'] or result.get('actual_status') != 'running':
             raise AccessError('vast_not_running_or_identity_changed')
+        # The relay and hardware identities are part of the authorised target.
+        # Missing SSH metadata from an old broker fails closed until upgraded.
+        if (type(result.get('machine_id')) is not int or
+                type(result.get('host_id')) is not int or
+                type(result.get('num_gpus')) is not int or
+                result['machine_id'] != p['machine_id'] or
+                result['host_id'] != p['host_id'] or
+                result['num_gpus'] != p['gpu_count'] or
+                result.get('ssh_host') != p['host'] or
+                type(result.get('ssh_port')) is not int or
+                result['ssh_port'] != p['port']):
+            raise AccessError('vast_endpoint_or_hardware_changed')
     else:
         fields = {name: p[name] for name in ('organization', 'project', 'group', 'instance_id')}
         result = send({'method': 'query', 'operation': operation('salad.instance', fields)})
@@ -155,6 +216,8 @@ def ssh_args(p, probe):
 def remote_probe(p, probe, send=broker, runner=subprocess.run):
     # API confirmation first. SSH is a read-only fixed diagnostic, never a shell bridge.
     verify_profile(p)
+    if p['provider'] == 'salad':
+        raise AccessError('salad_ssh_endpoint_unverified')  # Needs provider-signed endpoint, not a saved IP.
     require_running(p, send)
     command = ssh_args(p, probe)
     try:
@@ -165,6 +228,10 @@ def remote_probe(p, probe, send=broker, runner=subprocess.run):
         raise AccessError('ssh_probe_failed')
     if len(result.stdout) > 16384:
         raise AccessError('ssh_response_too_large')
+    if probe == 'gpu':
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) != p['gpu_count']:
+            raise AccessError('ssh_gpu_count_mismatch')
     return {'provider': p['provider'], 'instance_id': p['instance_id'],
             'probe': probe, 'output': result.stdout.strip()}
 
@@ -190,6 +257,9 @@ def main(argv=None):
     q.add_argument('action', choices=sorted(READ_FIELDS))
     for field in ('instance_id', 'organization', 'project', 'group'):
         q.add_argument('--' + field.replace('_', '-'))
+    reg = sub.add_parser('register-vast')
+    reg.add_argument('--instance-id', required=True)
+    reg.add_argument('--profiles', default=DEFAULT_PROFILES)
     p = sub.add_parser('probe')
     p.add_argument('--profiles', default=DEFAULT_PROFILES)
     p.add_argument('--profile', required=True)
@@ -198,6 +268,9 @@ def main(argv=None):
     try:
         if args.verb == 'status':
             result = local_status()
+        elif args.verb == 'register-vast':
+            result = register_vast(args.instance_id, socket_path=args.socket,
+                                   profiles_path=args.profiles)
         elif args.verb == 'query':
             provided = {field: getattr(args, field) for field in
                         ('instance_id', 'organization', 'project', 'group')
