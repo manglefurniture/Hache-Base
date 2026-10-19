@@ -8,6 +8,7 @@ import threading
 import unittest
 
 from broker import Broker, Handler, Rejected, canonical, validate_operation
+from unittest.mock import patch
 
 
 @unittest.skipUnless(hasattr(os, 'getuid'), 'Broker requires Linux ownership and Unix sockets')
@@ -125,12 +126,41 @@ class BrokerTests(unittest.TestCase):
     def test_targets_and_financial_actions_rejected(self):
         for operation in ({'action': 'vast.destroy', 'instance_id': '123'},
                           {'action': 'vast.start', 'instance_id': '123'},
+                          {'action': 'vast.start', 'instance_id': '123', 'max_hourly_usd': float('nan'), 'max_total_usd': 20, 'max_minutes': 5},
+                          {'action': 'vast.start', 'instance_id': '123', 'max_hourly_usd': 4, 'max_total_usd': 20, 'max_minutes': True},
                           {'action': 'vast.status', 'instance_id': '../123'},
                           {'action': 'vast.status', 'instance_id': True},
                           {'action': 'salad.groups', 'organization': 'x/y', 'project': 'p'},
                           {'action': 'vast.search', 'gpu_name': 'RTX', 'gpu_count': True, 'max_hourly_usd': 1}):
             with self.subTest(operation=operation), self.assertRaises(Rejected):
                 validate_operation(operation)
+
+
+    def test_start_exact_grant_and_independent_lease_before_provider_call(self):
+        op={'action':'vast.start','instance_id':'56667162','max_minutes':20,
+            'max_hourly_usd':5,'max_total_usd':2}
+        plan=self.broker.handle({'method':'prepare','operation':op})
+        self.assertEqual(plan['snapshot']['id'],'56667162')
+        self.assertNotIn('execute',self.calls)
+        self.grant(plan)
+        with patch('broker.arm_financial_lease',return_value={'deadline_unix':2200}) as lease:
+            result=self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.assertEqual(result['phase'],'submitted')
+        lease.assert_called_once()
+        self.assertEqual(self.calls.count('execute'),1)
+        self.assertEqual(result['result']['financial_lease']['deadline_unix'],2200)
+        self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.assertEqual(self.calls.count('execute'),1)
+
+    def test_start_no_timer_never_calls_provider_mutation(self):
+        op={'action':'vast.start','instance_id':'56667162','max_minutes':20,
+            'max_hourly_usd':5,'max_total_usd':2}
+        plan=self.broker.handle({'method':'prepare','operation':op})
+        self.grant(plan)
+        with patch('broker.arm_financial_lease',side_effect=RuntimeError('timer disabled')):
+            result=self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+        self.assertEqual(result['phase'],'failed_or_unknown')
+        self.assertNotIn('execute',self.calls)
 
     def test_rate_limit_fails_closed(self):
         for _ in range(120):
