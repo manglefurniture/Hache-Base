@@ -285,12 +285,29 @@ class Gate:
             result TEXT);
           CREATE TABLE IF NOT EXISTS deploy_events(
             id INTEGER PRIMARY KEY,plan_id TEXT,phase TEXT,at INTEGER);
+          CREATE TABLE IF NOT EXISTS deploy_requests(at INTEGER NOT NULL);
         ''')
         self.owner_uid=owner_uid
         self.deploy_fn=deploy_fn or self.activate
 
     def close(self):
         self.db.close()
+
+    def charge(self):
+        # A compromised agent must not fill root's archive cache or plan DB.
+        stamp=int(self.now())
+        try:
+            self.db.execute('BEGIN IMMEDIATE')
+            self.db.execute('DELETE FROM deploy_requests WHERE at<?',(stamp-86400,))
+            count=self.db.execute('SELECT COUNT(*) FROM deploy_requests WHERE at>?',
+                                  (stamp-3600,)).fetchone()[0]
+            if count>=120:
+                raise Rejected('deployment_request_rate_limited')
+            self.db.execute('INSERT INTO deploy_requests(at) VALUES(?)',(stamp,))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def srcpath(self, op):
         return (Path(self.cfg['inbox'])/op['target']/
@@ -305,6 +322,8 @@ class Gate:
                 raise Rejected('cached_archive_changed')
             safe_archive(dest)
             return dest
+        if sum(1 for _ in destdir.glob('*.tar.gz'))>=8:
+            raise Rejected('private_archive_cache_full')
         temp=destdir/('.pending-'+secrets.token_hex(12))
         try:
             found=own_file_copy(self.srcpath(op),temp,self.cfg['agent_uid'])
@@ -446,6 +465,7 @@ class Handler(socketserver.StreamRequestHandler):
                 socket.SOL_SOCKET,socket.SO_PEERCRED,12))
             if creds[1]!=self.server.allowed_uid:
                 raise Rejected('peer_denied')
+            self.server.gate.charge()
             raw=self.rfile.readline(8193)
             if not raw.endswith(b'\n') or len(raw)>8192:
                 raise Rejected('invalid_request_size')
