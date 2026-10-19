@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -15,9 +16,11 @@ import struct
 import subprocess
 import time
 
+from vast_start_guard import arm as arm_financial_lease, install_tables as install_lease_tables
+
 READS = {'vast.list', 'vast.status', 'vast.search', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry'}
-WRITES = {'vast.stop', 'salad.stop', 'salad.reallocate'}
+WRITES = {'vast.stop', 'vast.start', 'salad.stop', 'salad.reallocate'}
 FIELDS = {
     'vast.list': set(), 'vast.status': {'instance_id'},
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
@@ -25,6 +28,7 @@ FIELDS = {
     'salad.instances': {'organization', 'project', 'group'},
     'salad.instance': {'organization', 'project', 'group', 'instance_id'},
     'telemetry': set(), 'vast.stop': {'instance_id'},
+    'vast.start': {'instance_id', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
     'salad.stop': {'organization', 'project', 'group'},
     'salad.reallocate': {'organization', 'project', 'group', 'instance_id'},
 }
@@ -51,11 +55,16 @@ def validate_operation(value):
     for name, item in value.items():
         if name == 'action':
             continue
-        if name == 'gpu_count':
+        if name == 'max_minutes':
+            if type(item) is not int or not 1 <= item <= 1440:
+                raise Rejected('invalid_duration')
+        elif name == 'gpu_count':
             if type(item) is not int or not 1 <= item <= 16:
                 raise Rejected('invalid_gpu_count')
-        elif name == 'max_hourly_usd':
-            if type(item) not in (int, float) or not 0 < item <= 100:
+        elif name in ('max_hourly_usd', 'max_total_usd'):
+            ceiling = 100 if name == 'max_hourly_usd' else 1000
+            if (type(item) not in (int, float) or not math.isfinite(item)
+                    or not 0 < item <= ceiling):
                 raise Rejected('invalid_price_limit')
         elif name == 'gpu_name':
             if not isinstance(item, str) or not re.fullmatch(r'[A-Za-z0-9 _-]{1,80}', item):
@@ -121,6 +130,7 @@ class Broker:
             id INTEGER PRIMARY KEY, plan_id TEXT, phase TEXT NOT NULL, at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS requests(at INTEGER NOT NULL);
         ''')
+        install_lease_tables(self.db)
         self.grants, self.helper = Path(grants), helper
         self.grant_owner, self.now = grant_owner, now
 
@@ -147,7 +157,8 @@ class Broker:
         method = request['method']
         if method == 'capabilities' and set(request) == {'method'}:
             return {'reads': sorted(READS), 'writes_with_root_grant': sorted(WRITES),
-                    'rent_start_restart_destroy_ssh': 'not_enabled',
+                    'rent_restart_destroy_ssh': 'not_enabled',
+                    'vast.start': 'requires specific root grant, live financial supervisor, price and duration caps',
                     'authorization': 'exact plan, root-owned grant, one use, expires within 5 minutes'}
         if method == 'query' and set(request) == {'method', 'operation'}:
             operation = validate_operation(request['operation'])
@@ -200,7 +211,15 @@ class Broker:
             self.db.execute('INSERT INTO events(plan_id,phase,at) VALUES(?,?,?)', (plan, 'claimed', stamp))
             self.db.commit()
             try:
-                response = self.helper('execute', json.loads(row[0]), json.loads(row[1]))
+                op = json.loads(row[0])
+                if op['action'] == 'vast.start':
+                    # Durable, timer-monitored deadline is installed BEFORE contacting Vast.
+                    # Unknown/failed provider responses do not cancel the stop obligation.
+                    lease = arm_financial_lease(self.db, plan, op, json.loads(row[1]),
+                                               now=int(self.now()))
+                response = self.helper('execute', op, json.loads(row[1]))
+                if op['action'] == 'vast.start':
+                    response = dict(response, financial_lease=lease)
                 phase = 'submitted'  # API acceptance is not completed provider state.
             except Exception:
                 response = {'error': 'provider_outcome_unknown', 'retry': False}
