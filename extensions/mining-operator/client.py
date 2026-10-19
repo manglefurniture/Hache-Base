@@ -14,7 +14,9 @@ try:
     if len(payload) > 8192:
         raise ValueError('request too large')
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(45)
+        # Miner installation can take longer than read-only provider calls,
+        # but the independent Vast financial watchdog is not run here.
+        connection.settimeout(225)
         connection.connect(args.socket)
         connection.sendall(payload)
         raw = connection.makefile('rb').readline(131073)
