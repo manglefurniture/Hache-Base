@@ -62,7 +62,19 @@ Pruebas: `python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'`.
 ## VAST-003: preparar un Vast aprobado desde el VPS
 
 `vast_provision.py` añade un transporte SSH **acotado** desde `gpt-agent`,
-que nunca alquila, arranca ni apaga una instancia Vast.
+que nunca alquila, arranca ni apaga una instancia Vast. Antes de un
+`--stage` o `--apply` exige un archivo fijo, propiedad de root,
+`/etc/hache-mining-operator/approved-vast-release.json`. Este archivo
+contiene exclusivamente **metadatos no secretos**: repositorio exacto
+`manglefurniture/HACHE-MINER`, commit de 40 caracteres, ID/identidad física
+de la GPU, host y puerto SSH, hashes de Git blob para los cuatro archivos,
+SHA-256 del tar, acción única (`stage` o `apply`) y vigencia de hasta
+15 minutos. Debe ser regular, root-owned, sin enlaces y no modificable
+por grupo ni otros (modo 0644 si el agente necesita leerlo). Se genera
+solo a partir de un commit revisado y **fijado en GitHub** por un
+proceso administrativo confiable; no confiar en hashes propuestos por el
+agente que solicita el despliegue. Hay que renovar explícitamente el permiso
+para pasar de `stage` a `apply`.
 
 Acepta exclusivamente perfiles Vast ligados a identidad física verificada
 por la API, `known_hosts` anclado, clave SSH propia y paquete `tar.gz`
@@ -80,8 +92,7 @@ python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
 # Transfiere paquete aprobado solo a instancia running y con SSH verificado:
 python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
   --release-commit COMMIT40HEX --stage --confirm-instance 12345 \
-  --bundle /home/gpt-agent/private/release.tar.gz \
-  --bundle-sha256 SHA256_REAL
+  --bundle /home/gpt-agent/private/release.tar.gz
 
 # Ejecuta el instalador existente en la GPU aprobada:
 python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
@@ -105,3 +116,10 @@ requiere un grant root de un solo uso.
 
 Todos los errores fallan cerrados; ninguna prueba de esta fase debe usar
 GPU en producción.
+
+Nota de seguridad: este control limita el **cliente de aprovisionamiento**,
+pero no elimina otras vías de SSH root que tenga habilitadas la cuenta Linux
+`gpt-agent`. Para que la política sea una frontera de seguridad global se
+necesita restringir esa clave SSH mediante un forced-command o servicio
+privilegiado acotado en la GPU; no considerar terminado ese aislamiento
+hasta su despliegue y prueba con instancia autorizada.
