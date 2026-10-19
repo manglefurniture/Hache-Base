@@ -6,6 +6,7 @@ No Vast rental, start, stop, shell API, HMAC transfer, or miner start.
 import argparse
 import hashlib
 import os
+import pwd
 import stat
 import time
 import json
@@ -24,6 +25,7 @@ COMMIT = re.compile(r'[a-f0-9]{40}\Z')
 SHA = re.compile(r'[a-f0-9]{64}\Z')
 MAX_BUNDLE = 2 * 1024 * 1024
 APPROVAL = '/etc/hache-mining-operator/approved-vast-release.json'
+CLAIMS = '/var/lib/hache-mining-operator/deploy-claims'
 REMOTE_BASE = '/root/hache-vast/releases'
 
 
@@ -88,6 +90,42 @@ def check_approval(a, p, action, commit, now=None):
             p['gpu_count']!=a['gpu_count'] or p['host']!=a['ssh_host'] or
             p['port']!=a['ssh_port']):
         raise DeployError('profile_not_approved')
+
+
+def claim_approval(approval, *, directory=CLAIMS, executor_uid=None):
+    """Consume grant durably BEFORE SSH. Only private trusted hache-miner can claim.
+
+    The directory is not writable or traversable by gpt-agent. No agent-owned
+    'used' marker can be deleted to replay. Any unknown outcome burns the grant.
+    """
+    if executor_uid is None:
+        executor_uid=pwd.getpwnam('hache-miner').pw_uid
+    if os.geteuid()!=executor_uid:
+        raise DeployError('trusted_executor_required')
+    dirpath=Path(directory)
+    try:
+        info=dirpath.lstat()
+    except OSError:
+        raise DeployError('private_claim_store_missing') from None
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=executor_uid or
+            stat.S_IMODE(info.st_mode)!=0o700):
+        raise DeployError('unsafe_claim_store')
+    digest=hashlib.sha256(json.dumps(approval,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    marker=dirpath/(digest+'.claimed')
+    try:
+        fd=os.open(marker,os.O_WRONLY|os.O_CREAT|os.O_EXCL|
+                   getattr(os,'O_NOFOLLOW',0),0o600)
+    except FileExistsError:
+        raise DeployError('approval_already_consumed') from None
+    except OSError:
+        raise DeployError('claim_store_unavailable') from None
+    with os.fdopen(fd,'w') as stream:
+        stream.write(json.dumps({'commit':approval['commit'],
+              'instance_id':approval['instance_id'],
+              'action':approval['approved_action']})+'\\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    return digest
 
 
 def validate_archive(filename, approval):
@@ -232,6 +270,7 @@ def main():
                 raise DeployError('approved_bundle_required')
             bundle=validate_archive(args.bundle,approval)
         verify_target(p,args.instance_id)
+        claim_approval(approval)
         result=run_remote(p,action,args.release_commit,
                           bundle=bundle,approval=approval)
         print(json.dumps({'ok':True,'result':result}))
