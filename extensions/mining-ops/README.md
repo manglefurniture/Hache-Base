@@ -57,3 +57,51 @@ la cuenta `gpt-agent` y Desktop Commander son acceso a herramientas, no un
 modelo que toma decisiones continuamente.
 
 Pruebas: `python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'`.
+
+
+## VAST-003: preparar un Vast aprobado desde el VPS
+
+`vast_provision.py` añade un transporte SSH **acotado** desde `gpt-agent`,
+que nunca alquila, arranca ni apaga una instancia Vast.
+
+Acepta exclusivamente perfiles Vast ligados a identidad física verificada
+por la API, `known_hosts` anclado, clave SSH propia y paquete `tar.gz`
+privado de un commit aprobado de HACHE-MINER. Ese paquete solo puede contener:
+`vast-auto-prepare.py`, `vast-instance-prepare.py`,
+`vast-onstart.sh`, `vast-collector.py`. Se valida también SHA-256
+del tar y su contenido (archivos regulares, sin enlaces, rutas o directorios
+extras).
+
+```sh
+# Diagnóstico sin red ni modificación:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX
+
+# Transfiere paquete aprobado solo a instancia running y con SSH verificado:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX --stage --confirm-instance 12345 \
+  --bundle /home/gpt-agent/private/release.tar.gz \
+  --bundle-sha256 SHA256_REAL
+
+# Ejecuta el instalador existente en la GPU aprobada:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX --apply --confirm-instance 12345
+```
+
+**Prerequisitos no resueltos por el transporte:** el archivo
+`/etc/hache-vast/approved-recipe.json` y la clave HMAC
+`/etc/hache-vast/ingest.key` deben estar aprovisionados de forma segura
+en el host antes de `--apply`. La receta requiere wallet PRL y release
+del minero previamente aprobados. No usar huellas obtenidas únicamente
+de un `ssh-keyscan` no autenticado.
+
+Este transporte **no ofrece arranque de SRBMiner**, no instala secretos ni
+sustituye el plan de gasto ni el supervisor financiero de Vast. Debe
+implementarse posteriormente el transporte del secreto mediante un
+servicio privilegiado separado y un orquestador que encadene estas fases
+con autorizaciones correctas; hasta entonces no certificar autonomía
+end-to-end. La operación `vast.register` en el broker es distinta y
+requiere un grant root de un solo uso.
+
+Todos los errores fallan cerrados; ninguna prueba de esta fase debe usar
+GPU en producción.
