@@ -16,7 +16,7 @@ try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         # Miner installation can take longer than read-only provider calls,
         # but the independent Vast financial watchdog is not run here.
-        connection.settimeout(225)
+        connection.settimeout(320)
         connection.connect(args.socket)
         connection.sendall(payload)
         raw = connection.makefile('rb').readline(131073)
