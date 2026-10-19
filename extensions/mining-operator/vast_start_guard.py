@@ -13,7 +13,8 @@ import subprocess
 import sys
 import time
 
-from broker import canonical, protected_json, safe_helper
+def canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
 
 TIMER = 'hache-mining-operator-vast-lease.timer'
 HEARTBEAT_MAX_AGE = 90
@@ -134,6 +135,7 @@ def main():
     args = parser.parse_args()
     if os.geteuid() == 0:
         parser.error('do not run lease supervisor as root')
+    from broker import protected_json, safe_helper
     cfg = protected_json(args.config)
     required = {'database', 'helper_command', 'grants', 'agent_uid'}
     if not required.issubset(cfg):
