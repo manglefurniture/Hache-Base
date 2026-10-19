@@ -28,9 +28,10 @@ QUERIES = {
         ORDER BY v.instance_id LIMIT 100""",
     'sync': """SELECT JSON_OBJECT('source',r.source_name,'status',r.status,
         'age_s',TIMESTAMPDIFF(SECOND,r.observed_at,UTC_TIMESTAMP()))
-        FROM sync_runs r JOIN (SELECT source_name,MAX(id) id FROM sync_runs
-        WHERE source_name LIKE 'salad:%' OR source_name LIKE 'kryptex:%'
-        GROUP BY source_name) recent ON r.id=recent.id
+        FROM sync_runs r JOIN (SELECT r2.source_name,MAX(r2.id) id FROM sync_runs r2
+        JOIN salad_targets t ON t.enabled=1 AND
+        r2.source_name=CONCAT('salad:',t.organization_slug,'/',t.project_slug)
+        GROUP BY r2.source_name) recent ON r.id=recent.id
         ORDER BY r.source_name LIMIT 200""",
     'salad': """SELECT JSON_OBJECT('organization',t.organization_slug,
         'project',t.project_slug,'enabled',t.enabled,

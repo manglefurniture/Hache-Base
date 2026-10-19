@@ -14,6 +14,8 @@ estado de sincronización y frescura/consistencia de telemetría Vast. Conserva
 solo el último estado, de forma atómica, con permisos privados. Los errores
 no imprimen stderr del cliente SQL ni excepciones que puedan contener secretos.
 Las consultas son fijas, acotadas y no incluyen datos personales ni logs libres.
+La sincronización se evalúa por proyecto Salad habilitado; no se generan
+incidentes a partir de fuentes históricas de grupos eliminados o proyectos retirados.
 Requiere los nombres de tablas/columnas de la versión actual de HACHE-MINER;
 si cambia el esquema, informa diagnóstico desconocido en lugar de asumir éxito.
 
