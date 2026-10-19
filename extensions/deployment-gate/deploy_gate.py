@@ -230,6 +230,28 @@ def run_checks(target, release):
                 raise Rejected('invalid_python_source') from None
 
 
+def check_financial_guard_clear(config_path='/etc/hache-mining-operator/config.json'):
+    """Refuse to upgrade a running miner/watchdog during a Vast start lease."""
+    try:
+        cfg=trusted_json(config_path)
+        database=Path(cfg['database'])
+        if not database.is_absolute() or not database.is_relative_to(
+                Path('/var/lib/hache-mining-operator')):
+            raise Rejected('unexpected_operator_database')
+        con=sqlite3.connect('file:'+str(database)+'?mode=ro',uri=True,timeout=2)
+        try:
+            active=con.execute("SELECT COUNT(*) FROM vast_leases WHERE phase='armed'").fetchone()[0]
+            row=con.execute('SELECT completed_at FROM lease_guard_heartbeat WHERE id=1').fetchone()
+        finally:
+            con.close()
+        if active:
+            raise Rejected('active_financial_lease_blocks_deployment')
+        if not row or not 0<=time.time()-float(row[0])<=90:
+            raise Rejected('financial_guard_unhealthy')
+    except (OSError,sqlite3.Error,KeyError,TypeError,ValueError):
+        raise Rejected('financial_guard_unverified') from None
+
+
 def check_health(target, *, restart=False):
     """Passive tests on HACHE-MINER; fixed service restart only for the broker."""
     if target=='hache-base' and restart:
@@ -390,6 +412,8 @@ class Gate:
                 raise Rejected('cached_archive_changed')
             extract_fixed_archive(archive,temp)
             run_checks(op['target'],temp)
+            # Stop-leases and watchdogs are operational money controls.
+            check_financial_guard_clear()
             os.replace(temp,dest)
             moved=True
             if self.status_snapshot(op)!=snapshot:
