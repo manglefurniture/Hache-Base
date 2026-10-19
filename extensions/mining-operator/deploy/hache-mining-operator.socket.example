@@ -1,0 +1,13 @@
+[Unit]
+Description=Local mining operator socket for gpt-agent
+
+[Socket]
+ListenStream=/run/hache-mining-operator/agent.sock
+SocketUser=hache-miner
+SocketGroup=gpt-agent
+SocketMode=0660
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
