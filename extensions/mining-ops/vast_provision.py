@@ -11,6 +11,7 @@ import time
 import json
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -126,10 +127,33 @@ def verify_target(p, instance_id, send=gateway.broker):
     return True
 
 
-def run_remote(p, action, commit, *, bundle=None, runner=subprocess.run):
+def remote_integrity_command(approval, dest):
+    """Check bytes on the GPU before executing even if a staged file changed."""
+    verifier = (
+        'import hashlib,json,pathlib,sys; '
+        'root=pathlib.Path(sys.argv[1]); expected=json.loads(sys.argv[2]); '
+        'assert not root.is_symlink() and root.is_dir(); '
+        'actual={}; '
+        '[(lambda p,name: actual.__setitem__(name, '
+        'hashlib.sha1(b"blob "+str(len(p.read_bytes())).encode()+bytes([0])+'
+        'p.read_bytes()).hexdigest()) if p.is_file() and not p.is_symlink() '
+        'else sys.exit(5))(root/name,name) for name in expected]; '
+        'assert actual==expected'
+    )
+    return ('python3 -c '+shlex.quote(verifier)+' '+
+            shlex.quote(dest)+' '+
+            shlex.quote(json.dumps(approval['files'],sort_keys=True,separators=(',',':'))))
+
+
+def run_remote(p, action, commit, *, bundle=None, approval=None,
+               runner=subprocess.run):
     if not COMMIT.fullmatch(commit):
         raise DeployError('invalid_release_commit')
+    if approval is None:
+        raise DeployError('root_approval_required')
+    check_approval(approval,p,action,commit)
     dest = REMOTE_BASE+'/'+commit
+    integrity=remote_integrity_command(approval,dest)
     # Commands are entirely generated from static strings and pinned SHA,
     # never from user-provided arbitrary commands or filenames.
     if action=='stage':
@@ -143,14 +167,14 @@ def run_remote(p, action, commit, *, bundle=None, runner=subprocess.run):
             'test ! -e '+dest+' && '
             'install -d -m 0700 '+dest+' && '
             'tar --no-same-owner --no-same-permissions -xzf - -C '+dest+' && '
-            'chmod 0700 '+dest+'/*.py '+dest+'/*.sh'
+            'chmod 0700 '+dest+'/*.py '+dest+'/*.sh && ' + integrity
         )
         data = bundle
     elif action=='apply':
         command=(
             'set -eu; '
             'test ! -L '+dest+' && '
-            'test -f '+dest+'/vast-auto-prepare.py && '
+            'test -f '+dest+'/vast-auto-prepare.py && ' + integrity + ' && '
             'python3 '+dest+'/vast-auto-prepare.py '
             '--recipe /etc/hache-vast/approved-recipe.json '
             '--apply --confirm-instance '+p['instance_id']
@@ -208,7 +232,8 @@ def main():
                 raise DeployError('approved_bundle_required')
             bundle=validate_archive(args.bundle,approval)
         verify_target(p,args.instance_id)
-        result=run_remote(p,action,args.release_commit,bundle=bundle)
+        result=run_remote(p,action,args.release_commit,
+                          bundle=bundle,approval=approval)
         print(json.dumps({'ok':True,'result':result}))
         return 0
     except (gateway.AccessError,DeployError,OSError,ValueError,tarfile.TarError):
