@@ -129,7 +129,10 @@ def strict_symlink_destination(current, release_dir):
     root=Path(release_dir).resolve(strict=True)
     if not current.is_symlink():
         raise Rejected('current_not_a_symlink')
-    link=current.resolve(strict=True)
+    try:
+        link=current.resolve(strict=True)
+    except OSError:
+        raise Rejected('missing_current_release') from None
     try:
         relative=link.relative_to(root).parts
     except ValueError:
