@@ -78,7 +78,20 @@ def load_target(instance_id, directory=ROOT):
     return config
 
 
-def lease_active(instance, database=DB, now=None, min_remaining=120):
+def configured_database():
+    from broker import protected_json
+    cfg=protected_json('/etc/hache-mining-operator/config.json')
+    value=cfg.get('database')
+    if (type(value) is not str or
+            not value.startswith('/var/lib/hache-mining-operator/') or
+            '..' in Path(value).parts):
+        raise Reject('untrusted_broker_database')
+    return Path(value)
+
+
+def lease_active(instance, database=None, now=None, min_remaining=120):
+    if database is None:
+        database=configured_database()
     now=int(time.time() if now is None else now)
     try:
         db=sqlite3.connect('file:'+str(database)+'?mode=ro',uri=True,timeout=2)
@@ -98,7 +111,7 @@ def lease_active(instance, database=DB, now=None, min_remaining=120):
     return int(row[0])
 
 
-def live_identity(op, cfg, *, provider, database=DB, now=None):
+def live_identity(op, cfg, *, provider, database=None, now=None):
     if (type(op) is not dict or set(op)!={'action','instance_id','release_commit','step'} or
             op['action']!='vast.provision' or
             type(op['instance_id']) is not str or not INSTANCE.fullmatch(op['instance_id']) or
@@ -171,7 +184,7 @@ def ssh_args(cfg,op):
     ]
 
 
-def execute(op,cfg,*,provider=broker_provider,runner=subprocess.run,database=DB):
+def execute(op,cfg,*,provider=broker_provider,runner=subprocess.run,database=None):
     # Verify identities AND active independent financial lease a second time.
     live_identity(op,cfg,provider=provider,database=database)
     data=verified_payload(op,cfg)
@@ -197,7 +210,7 @@ def execute(op,cfg,*,provider=broker_provider,runner=subprocess.run,database=DB)
             'verification_required':True}
 
 
-def dispatch(req,*,provider=broker_provider,database=DB):
+def dispatch(req,*,provider=broker_provider,database=None):
     if not isinstance(req,dict) or set(req) not in (
             {'mode','operation'},{'mode','operation','snapshot'}):
         raise Reject('invalid_command_envelope')
