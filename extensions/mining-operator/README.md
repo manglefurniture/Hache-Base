@@ -149,3 +149,33 @@ revocar automáticamente una fecha límite al revertir el broker.
 
 No hay credenciales de Vast en `gpt-agent` ni shell SSH arbitrario; el
 intermediario sigue usando su API key privada.
+
+
+## VAST-003 — registrar una GPU preparada sin SQL general
+
+Una futura instancia Vast ya alquilada y puesta en marcha con permiso puede
+inspeccionarse por ID **aunque aún no esté registrada**:
+
+```sh
+python3 /home/gpt-agent/mining-ops/current/access_gateway.py query vast.inspect --instance-id ID
+```
+
+`vast.register` es una operación de escritura estrictamente limitada: usa
+un `prepare` y `execute` con autorización root de un solo uso. No compra,
+inicia, detiene ni cambia la GPU. Comprueba otra vez el inventario REAL de
+Vast, exige `actual_status=intended_status=running`, identidad física
+conservada, 1–16 GPU, tarifa positiva y host SSH válido. La función
+`miner_vast_enrollment_write()` del backend de HACHE-MINER inserta una sola
+fila en `vast_instances`; rechaza alterar filas conflictivas.
+
+**Orden de despliegue:** antes de actualizar este intermediario, fusionar
+y desplegar en HACHE-MINER `app/vast-enrollment.php`. Hasta entonces esta
+capacidad NO debe habilitarse en el broker productivo. El operador root
+conserva las claves del proveedor y la identidad hache-miner; gpt-agent no
+recibe tokens ni permisos SQL directos nuevos.
+
+Se mantiene el watchdog existente; `enabled=1` comienza la ventana de
+gracia de telemetría de aproximadamente 180 segundos. La inserción en el
+inventario **no significa** que minero, HMAC, GPU, hashrate, shares ni
+notificación móvil funcionen. Solo certificar operativa tras dos muestras
+frescas por GPU, cobertura y aviso al teléfono.

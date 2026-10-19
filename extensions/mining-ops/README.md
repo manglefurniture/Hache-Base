@@ -57,3 +57,102 @@ la cuenta `gpt-agent` y Desktop Commander son acceso a herramientas, no un
 modelo que toma decisiones continuamente.
 
 Pruebas: `python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'`.
+
+
+## VAST-003: preparar un Vast aprobado desde el VPS
+
+`vast_provision.py` añade un transporte SSH **acotado** gestionado desde el VPS,
+que nunca alquila, arranca ni apaga una instancia Vast. Antes de un
+`--stage` o `--apply` exige un archivo fijo, propiedad de root,
+`/etc/hache-mining-operator/approved-vast-release.json`. Este archivo
+contiene exclusivamente **metadatos no secretos**: repositorio exacto
+`manglefurniture/HACHE-MINER`, commit de 40 caracteres, ID/identidad física
+de la GPU, host y puerto SSH, hashes de Git blob para los cuatro archivos,
+SHA-256 del tar, acción única (`stage` o `apply`) y vigencia de hasta
+15 minutos. Debe ser regular, root-owned, sin enlaces y no modificable
+por grupo ni otros (modo 0644 cuando el ejecutor protegido necesita leerlo). Se genera
+solo a partir de un commit revisado y **fijado en GitHub** por un
+proceso administrativo confiable; no confiar en hashes propuestos por el
+agente que solicita el despliegue. Hay que renovar explícitamente el permiso
+para pasar de `stage` a `apply`.
+
+Acepta exclusivamente perfiles Vast ligados a identidad física verificada
+por la API, `known_hosts` anclado, clave SSH propia y paquete `tar.gz`
+privado de un commit aprobado de HACHE-MINER. Ese paquete solo puede contener:
+`vast-auto-prepare.py`, `vast-instance-prepare.py`,
+`vast-onstart.sh`, `vast-collector.py`. Se valida también SHA-256
+del tar y su contenido (archivos regulares, sin enlaces, rutas o directorios
+extras).
+
+**IMPORTANTE:** `--stage` y `--apply` solo son ejecutables bajo la
+identidad protegida `hache-miner`, no directamente desde `gpt-agent`.
+El almacén de consumos `/var/lib/hache-mining-operator/deploy-claims` debe
+ser propiedad de `hache-miner`, directorio modo 0700. Cada aprobación se
+consume con creación atómica `O_EXCL` **antes de SSH**, incluso si SSH falla
+o el resultado es desconocido. No borrar marcas de consumo para reintentar:
+solicitar un plan y autorización nuevos. La integración del ejecutor
+privilegiado vía broker y la identidad SSH de `hache-miner` aún requieren
+despliegue administrativo; hasta entonces esta operación falla de forma
+segura. Los comandos siguientes muestran la interfaz para ese ejecutor
+una vez autorizado, **no una orden operativa desde gpt-agent**.
+
+```sh
+# Diagnóstico sin red ni modificación:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX
+
+# Transfiere paquete aprobado solo a instancia running y con SSH verificado:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX --stage --confirm-instance 12345 \
+  --bundle /home/gpt-agent/private/release.tar.gz
+
+# Ejecuta el instalador existente en la GPU aprobada:
+python3 vast_provision.py --profile vast-12345 --instance-id 12345 \
+  --release-commit COMMIT40HEX --apply --confirm-instance 12345
+```
+
+**Prerequisitos no resueltos por el transporte:** el archivo
+`/etc/hache-vast/approved-recipe.json` y la clave HMAC
+`/etc/hache-vast/ingest.key` deben estar aprovisionados de forma segura
+en el host antes de `--apply`. La receta requiere wallet PRL y release
+del minero previamente aprobados. No usar huellas obtenidas únicamente
+de un `ssh-keyscan` no autenticado.
+
+Este transporte **no ofrece arranque de SRBMiner**, no instala secretos ni
+sustituye el plan de gasto ni el supervisor financiero de Vast. Debe
+implementarse posteriormente el transporte del secreto mediante un
+servicio privilegiado separado y un orquestador que encadene estas fases
+con autorizaciones correctas; hasta entonces no certificar autonomía
+end-to-end. La operación `vast.register` en el broker es distinta y
+requiere un grant root de un solo uso.
+
+Todos los errores fallan cerrados; ninguna prueba de esta fase debe usar
+GPU en producción.
+
+Nota de seguridad: este control limita el **cliente de aprovisionamiento**,
+pero no elimina otras vías de SSH root que tenga habilitadas la cuenta Linux
+`gpt-agent`. Para que la política sea una frontera de seguridad global se
+necesita restringir esa clave SSH mediante un forced-command o servicio
+privilegiado acotado en la GPU; no considerar terminado ese aislamiento
+hasta su despliegue y prueba con instancia autorizada.
+
+## Correcciones de revisión Codex (VAST-003)
+
+- `stage` comprueba el tar y cada Git blob antes de la conexión y nuevamente
+  dentro de la GPU; usa `flock`, directorio temporal y publicación atómica.
+  Si la conexión se corta, no queda un release incompleto como válido;
+  reintentar requiere un nuevo grant, pero el staging es idempotente para
+  archivos íntegros ya publicados.
+- Durante `stage`, solo tras cotejar identidad actual de Vast y la huella
+  SSH de la instancia, crea el archivo root 0600
+  `/etc/hache-vast/host-binding.json` con ID, máquina, host físico,
+  número de GPU y relay SSH. `apply` exige ese vínculo y lo compara con la
+  receta; de lo contrario aborta. La receta sola nunca acredita identidad.
+- `apply` **no instala** `/root/onstart.sh`. Si hay un hook existente
+  que pudiera iniciar minería, aborta antes de aplicar cambios. Habilitar
+  arranque del minero sigue requiriendo una acción futura distinta.
+- `vast.inspect` está permitido tanto en el broker como en el dispatcher PHP.
+- Nada de esto elimina que una clave SSH root sin restricciones pueda saltar
+  la política. El despliegue futuro debe establecer una identidad SSH
+  restringida/forced-command o un ejecutor equivalente antes de certificar
+  autonomía segura.
