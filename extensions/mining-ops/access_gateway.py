@@ -101,6 +101,51 @@ def profile_from_file(path, name):
     return target
 
 
+def register_vast(instance_id, *, socket_path=DEFAULT_SOCKET,
+                  profiles_path=DEFAULT_PROFILES, identity='~/.ssh/id_ed25519',
+                  known_hosts='~/.ssh/known_hosts', send=broker):
+    operation('vast.status', {'instance_id': instance_id})
+    metadata = send({'method': 'query', 'operation': {
+        'action': 'vast.status', 'instance_id': instance_id}}, socket_path=socket_path)
+    if str(metadata.get('id')) != instance_id:
+        raise AccessError('vast_identity_changed')
+    p = {
+        'provider': 'vast', 'instance_id': instance_id,
+        'machine_id': metadata.get('machine_id'), 'host_id': metadata.get('host_id'),
+        'gpu_count': metadata.get('num_gpus'),
+        'host': metadata.get('ssh_host'), 'port': metadata.get('ssh_port'),
+        'user': 'root', 'identity_file': str(Path(identity).expanduser()),
+        'known_hosts': str(Path(known_hosts).expanduser()),
+    }
+    verify_profile(p)
+    safe_file(p['identity_file'], private=True)
+    dest = Path(profiles_path).expanduser()
+    directory = dest.parent
+    directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    info = directory.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or
+            (hasattr(os, 'getuid') and info.st_uid != os.getuid())):
+        raise AccessError('unsafe_profile_directory')
+    if dest.exists() or dest.is_symlink():
+        raise AccessError('profiles_exist_no_overwrite')
+    content = json.dumps({'profiles': {'vast-' + instance_id: p}},
+                         indent=2).encode() + b'\\n'
+    try:
+        fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY |
+                     getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError:
+        raise AccessError('profile_creation_failed') from None
+    # Trust is intentionally NOT bootstrapped automatically from SSH keyscan.
+    return {'profile': 'vast-' + instance_id, 'registered': True,
+            'ssh_host': p['host'], 'ssh_port': p['port'],
+            'ssh_trust': 'unverified_must_pin_verified_host_key',
+            'provider_state': metadata.get('actual_status')}
+
+
 def verify_profile(p):
     base = {'provider', 'instance_id', 'machine_id', 'host_id', 'gpu_count', 'host', 'port', 'user', 'identity_file', 'known_hosts'}
     salad = {'organization', 'project', 'group'}
@@ -212,6 +257,9 @@ def main(argv=None):
     q.add_argument('action', choices=sorted(READ_FIELDS))
     for field in ('instance_id', 'organization', 'project', 'group'):
         q.add_argument('--' + field.replace('_', '-'))
+    reg = sub.add_parser('register-vast')
+    reg.add_argument('--instance-id', required=True)
+    reg.add_argument('--profiles', default=DEFAULT_PROFILES)
     p = sub.add_parser('probe')
     p.add_argument('--profiles', default=DEFAULT_PROFILES)
     p.add_argument('--profile', required=True)
@@ -220,6 +268,9 @@ def main(argv=None):
     try:
         if args.verb == 'status':
             result = local_status()
+        elif args.verb == 'register-vast':
+            result = register_vast(args.instance_id, socket_path=args.socket,
+                                   profiles_path=args.profiles)
         elif args.verb == 'query':
             provided = {field: getattr(args, field) for field in
                         ('instance_id', 'organization', 'project', 'group')
