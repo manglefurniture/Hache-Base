@@ -51,7 +51,9 @@ function op_vast_status(string $id): array {
     $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
     $row=$r['data']['instances']??null;
     if(!is_array($row)||!isset($row['id'])||(string)$row['id']!==$id)op_fail('resource_not_found');
-    return op_pick($row,['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total']);
+    $safe=op_pick($row,['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total']);
+    foreach(['actual_status','intended_status'] as $field)$safe[$field]=strtolower(trim((string)$safe[$field]));
+    return $safe;
 }
 function op_target(array $operation): array {
     $q=miner_db()->prepare('SELECT organization_slug,project_slug FROM salad_targets WHERE enabled=1 AND organization_slug=? AND project_slug=? LIMIT 1');
@@ -143,9 +145,13 @@ function op_prepare(array $operation): array {
     }
     op_fail('unsupported_action');
 }
+function op_snapshot_equal(array $left,array $right): bool {
+    // Python stores canonical JSON with sorted keys. Preserve strict types, not insertion order.
+    ksort($left);ksort($right);return $left===$right;
+}
 function op_execute(array $operation,array $snapshot): array {
     $now=op_prepare($operation);
-    if($now!==$snapshot)op_fail('target_state_changed');
+    if(!op_snapshot_equal($now,$snapshot))op_fail('target_state_changed');
     if($operation['action']==='vast.stop'){
         if(in_array($now['intended_status'],['stopped','exited'],true)
             &&in_array($now['actual_status'],['stopped','exited'],true))return ['status'=>'already_stopped','provider_mutation_sent'=>false];

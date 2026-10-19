@@ -7,4 +7,6 @@ $safe=op_pick($input,['id','actual_status']);
 if($safe!==['id'=>123,'actual_status'=>'running']||str_contains(json_encode($safe),'PRIVATE'))throw new RuntimeException('Unsafe projection');
 if(op_group(['name'=>'fixture','replicas'=>2,'current_state'=>['status'=>'Running']])!==
    ['name'=>'fixture','replicas'=>2,'status'=>'running'])throw new RuntimeException('State mapping');
+if(!op_snapshot_equal(['id'=>'123','state'=>'stopped'],['state'=>'stopped','id'=>'123']))throw new RuntimeException('Canonical JSON key order');
+if(op_snapshot_equal(['id'=>'123'],['id'=>123]))throw new RuntimeException('Strict target type');
 echo "PROVIDER_PROJECTION_TESTS_OK\n";
