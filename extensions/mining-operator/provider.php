@@ -56,7 +56,7 @@ function op_vast_status(string $id): array {
     $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
     $row=$r['data']['instances']??null;
     if(!is_array($row)||!isset($row['id'])||(string)$row['id']!==$id)op_fail('resource_not_found');
-    $safe=op_pick($row,['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total']);
+    $safe=op_pick($row,['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total','ssh_host','ssh_port']);
     foreach(['actual_status','intended_status'] as $field)$safe[$field]=strtolower(trim((string)$safe[$field]));
     return $safe;
 }
