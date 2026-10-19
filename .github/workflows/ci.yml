@@ -45,6 +45,12 @@ jobs:
       - name: Read-only mining operations regression
         run: python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'
 
+      - name: Local mining command broker regression
+        run: |
+          python3 -m unittest discover -s extensions/mining-operator -p 'test_*.py'
+          php -l extensions/mining-operator/provider.php
+          php extensions/mining-operator/test_provider.php
+
       - name: Shell syntax
         run: |
           find deployment integrations tests seo -type f -name '*.sh' -print0 \

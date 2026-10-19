@@ -1,0 +1,34 @@
+[Unit]
+Description=Hache mining operator, isolated credentials and exact one-use grants
+Requires=hache-mining-operator.socket
+After=network-online.target mariadb.service
+
+[Service]
+Type=simple
+User=hache-miner
+Group=hache-miner
+WorkingDirectory=/opt/hache-mining-operator/current
+ExecStart=/usr/bin/python3 /opt/hache-mining-operator/current/broker.py --config /etc/hache-mining-operator/config.json
+StateDirectory=hache-mining-operator
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5
+MemoryHigh=64M
+MemoryMax=112M
+TasksMax=24
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/hache-mining-operator
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

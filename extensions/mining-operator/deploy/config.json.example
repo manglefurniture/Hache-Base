@@ -1,0 +1,10 @@
+{
+  "agent_uid": 1001,
+  "database": "/var/lib/hache-mining-operator/operator.sqlite",
+  "grants": "/etc/hache-mining-operator/grants",
+  "service_group": "hache-miner",
+  "helper_command": [
+    "/usr/bin/php", "-d", "auto_prepend_file=/etc/hache-miner/load-env.php",
+    "/opt/hache-mining-operator/current/provider.php"
+  ]
+}
