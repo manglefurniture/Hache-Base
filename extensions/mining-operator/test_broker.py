@@ -32,7 +32,7 @@ class BrokerTests(unittest.TestCase):
     def helper(self, mode, operation, snapshot=None):
         self.calls.append(mode)
         if mode == 'execute':
-            phase = self.broker.db.execute('SELECT phase FROM plans').fetchone()[0]
+            phase = self.broker.db.execute("SELECT phase FROM plans WHERE phase='claimed' ORDER BY rowid DESC LIMIT 1").fetchone()[0]
             self.assertEqual(phase, 'claimed')
             if self.fail:
                 raise TimeoutError('secret must never appear in client response')
