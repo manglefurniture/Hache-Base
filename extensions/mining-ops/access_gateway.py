@@ -15,6 +15,7 @@ DEFAULT_PROFILES = '~/.config/hminer-access/profiles.json'
 READ_FIELDS = {
     'vast.list': (),
     'vast.status': ('instance_id',),
+    'vast.inspect': ('instance_id',),
     'salad.targets': (),
     'salad.groups': ('organization', 'project'),
     'salad.instances': ('organization', 'project', 'group'),
