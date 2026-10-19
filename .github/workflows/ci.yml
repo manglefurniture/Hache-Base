@@ -45,6 +45,12 @@ jobs:
       - name: Read-only mining operations regression
         run: python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'
 
+      - name: Protected production deployment regression
+        run: |
+          python3 -m unittest discover -s extensions/deployment-gate -p 'test_*.py'
+          python3 -m py_compile extensions/deployment-gate/deploy_gate.py extensions/deployment-gate/authorize.py extensions/deployment-gate/client.py
+          bash -n extensions/deployment-gate/deploy/install.sh
+
       - name: Local mining command broker regression
         run: |
           python3 -m unittest discover -s extensions/mining-operator -p 'test_*.py'
