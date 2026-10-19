@@ -148,5 +148,46 @@ class GatewayTests(unittest.TestCase):
             self.assertNotIn('SECRET',str(caught.exception))
 
 
+    def test_offline_registration_pins_live_metadata_without_starting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            key = Path(folder)/'key'
+            key.write_text('private-fixture-not-a-valid-key')
+            key.chmod(0o600)
+            path = Path(folder)/'hminer-access'/'profiles.json'
+            events = []
+            def api(request, **kwargs):
+                events.append(request)
+                return self.live_vast(actual_status='exited')
+            answer = gate.register_vast('56667162', profiles_path=str(path),
+                                        identity=str(key),
+                                        known_hosts=str(Path(folder)/'absent-known-hosts'),
+                                        send=api)
+            self.assertTrue(answer['registered'])
+            self.assertEqual(answer['ssh_trust'], 'unverified_must_pin_verified_host_key')
+            self.assertEqual(events, [{'method':'query', 'operation':
+                                       {'action':'vast.status','instance_id':'56667162'}}])
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            profile = json.loads(path.read_text())['profiles']['vast-56667162']
+            self.assertEqual(profile['machine_id'],151300)
+            self.assertEqual(profile['host_id'],467312)
+            self.assertEqual(profile['gpu_count'],8)
+            self.assertEqual(profile['host'],'ssh.example.org')
+            with self.assertRaisesRegex(gate.AccessError, 'profiles_exist_no_overwrite'):
+                gate.register_vast('56667162', profiles_path=str(path),
+                                   identity=str(key), send=api)
+
+    def test_register_needs_verified_provider_endpoint(self):
+        with tempfile.TemporaryDirectory() as folder:
+            key=Path(folder)/'key'
+            key.write_text('fixture')
+            key.chmod(0o600)
+            filename=str(Path(folder)/'profiles.json')
+            with self.assertRaises(gate.AccessError):
+                gate.register_vast('56667162', profiles_path=filename,
+                                   identity=str(key),
+                                   send=lambda *a,**k:self.live_vast(ssh_host=None))
+            self.assertFalse(Path(filename).exists())
+
+
 if __name__ == '__main__':
     unittest.main()
