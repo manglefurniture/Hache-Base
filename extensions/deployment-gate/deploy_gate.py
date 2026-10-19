@@ -7,6 +7,7 @@ commit and CI by the owner BEFORE issuing its exact root grant. Its SHA256 alone
 does not prove GitHub origin. No automatic root approval is provided here.
 """
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -215,11 +216,14 @@ def run_checks(target, release):
         if p.returncode:
             raise Rejected('release_lint_failed')
     if target=='hache-base':
-        p=subprocess.run(['/usr/bin/python3','-m','unittest','discover',
-                          '-s',str(root/'extensions/mining-operator'),
-                          '-p','test_*.py','-q'],capture_output=True,timeout=80)
-        if p.returncode:
-            raise Rejected('broker_regression_failed')
+        # Parsing avoids executing newly supplied repository code as root.
+        for source in (root/'extensions/mining-operator').glob('*.py'):
+            if source.is_symlink():
+                raise Rejected('unsafe_python_source')
+            try:
+                ast.parse(source.read_text(encoding='utf-8'), filename=str(source))
+            except (SyntaxError,UnicodeError):
+                raise Rejected('invalid_python_source') from None
 
 
 def check_health(target, *, restart=False):
@@ -330,7 +334,10 @@ class Gate:
             raise Rejected('plan_expired')
         if fingerprint({'operation':operation,'snapshot':snap})!=row[2]:
             raise Rejected('plan_tampered')
-        grant=trusted_json(Path(self.cfg['grants'])/(pid+'.json'),uid=self.owner_uid)
+        try:
+            grant=trusted_json(Path(self.cfg['grants'])/(pid+'.json'),uid=self.owner_uid)
+        except FileNotFoundError:
+            raise Rejected('owner_authorization_required') from None
         if (set(grant)!={'plan_id','digest','expires_at'} or grant['plan_id']!=pid or
                 grant['digest']!=row[2] or type(grant['expires_at']) is not int or
                 not stamp<grant['expires_at']<=row[3]):
