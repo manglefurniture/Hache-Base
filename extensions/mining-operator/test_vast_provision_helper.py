@@ -91,6 +91,16 @@ class BrokerProvisionTests(unittest.TestCase):
             v.live_identity(operation('apply'),target(),provider=lambda _:provider(),
                             database=self.db)
 
+    def test_approved_target_only_allows_trusted_ssh_file_names(self):
+        good=target()
+        with patch.object(v,'owner_file',return_value=json.dumps(good).encode()):
+            cfg=v.load_target('56667162',directory=self.path)
+            self.assertEqual(cfg['release_commit'],'a'*40)
+        evil=dict(good,key_file='/root/.ssh/id_ed25519')
+        with patch.object(v,'owner_file',return_value=json.dumps(evil).encode()):
+            with self.assertRaisesRegex(v.Reject,'unapproved_ssh_credential_path'):
+                v.load_target('56667162',directory=self.path)
+
     def test_ssh_command_is_allowlisted_and_pinned(self):
         cmd=v.ssh_args(target(),operation('configure'))
         self.assertEqual(cmd[0],'/usr/bin/ssh')
