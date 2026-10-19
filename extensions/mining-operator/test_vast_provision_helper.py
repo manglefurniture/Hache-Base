@@ -112,8 +112,9 @@ class BrokerProvisionTests(unittest.TestCase):
         envelope={'recipe':{'instance_id':'56667162','machine_id':'151300',
                             'host_id':'467312','gpu_count':8},'ingest_key':secret.decode()}
         private.write_text(json.dumps(envelope));private.chmod(0o600)
+        original_reader=v.owner_file
         def read_file(path,uid=0,**kwargs):
-            return v.owner_file(path,uid=os.getuid(),**kwargs)
+            return original_reader(path,uid=os.getuid(),**kwargs)
         with patch.object(v,'owner_file',side_effect=read_file):
             self.assertEqual(v.verified_payload(operation(),cfg,bundles=self.path),payload)
             self.assertEqual(v.verified_payload(operation('configure'),cfg,secrets_dir=self.path),
