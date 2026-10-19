@@ -136,29 +136,41 @@ class VastProvisionTests(unittest.TestCase):
                 v.verify_target(profile(),'56667162',
                     send=lambda *_:dict(active(),machine_id=9999))
 
+    def test_remote_stage_and_apply_both_verify_git_blobs(self):
+        a=approval()
+        stage=v.remote_integrity_command(a,'/root/hache-vast/releases/'+'a'*40)
+        self.assertIn('python3 -c ',stage)
+        self.assertIn('actual==expected',stage)
+        with self.assertRaisesRegex(v.DeployError,'root_approval_required'):
+            v.run_remote(profile(),'apply','a'*40,runner=lambda *a,**kw:
+                         self.fail('unapproved SSH access'))
+        self.assertNotIn('rm -rf',stage)
+
     def test_only_fixed_ssh_commands_are_emitted(self):
-        with patch.object(v.gateway,'ssh_args',return_value=['ssh','-T','root@host','date -u']):
+        with patch.object(v.gateway,'ssh_args',return_value=['ssh','-T','root@host','date -u']), \
+             patch.object(v,'check_approval'):
             calls=[]
             def runner(command,**kwargs):
                 calls.append((command,kwargs))
                 return types.SimpleNamespace(returncode=0,stdout=b'ok',stderr=b'')
-            out=v.run_remote(profile(),'stage','a'*40,bundle=b'fake fixture',runner=runner)
+            out=v.run_remote(profile(),'stage','a'*40,bundle=b'fake fixture',approval=approval(),runner=runner)
             self.assertEqual(out['accepted'],True)
             self.assertFalse(out['mining_started'])
             self.assertNotIn('rm -rf',calls[0][0][-1])
             self.assertEqual(calls[0][1]['input'],b'fake fixture')
             calls.clear()
-            out=v.run_remote(profile(),'apply','b'*40,runner=runner)
+            out=v.run_remote(profile(),'apply','b'*40,approval=approval(approved_action='apply',commit='b'*40),runner=runner)
             self.assertEqual(out['action'],'apply')
             self.assertIn('--confirm-instance 56667162',calls[0][0][-1])
             self.assertNotIn('--start',calls[0][0][-1])
 
     def test_never_print_ssh_errors(self):
-        with patch.object(v.gateway,'ssh_args',return_value=['ssh','host','date']):
+        with patch.object(v.gateway,'ssh_args',return_value=['ssh','host','date']), \
+             patch.object(v,'check_approval'):
             def fail(*args,**kwargs):
                 return types.SimpleNamespace(returncode=255,stdout=b'',stderr=b'PRIVATE KEY MATERIAL')
             with self.assertRaisesRegex(v.DeployError,'ssh_stage_failed') as caught:
-                v.run_remote(profile(),'stage','a'*40,bundle=b'data',runner=fail)
+                v.run_remote(profile(),'stage','a'*40,bundle=b'data',approval=approval(),runner=fail)
             self.assertNotIn('PRIVATE',str(caught.exception))
 
 
