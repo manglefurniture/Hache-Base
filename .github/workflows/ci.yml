@@ -42,6 +42,9 @@ jobs:
           ':(exclude)docs/production-readiness/*.md'
           ':(exclude)templates/CRITICAL-USER-FLOWS.md'
 
+      - name: Read-only mining operations regression
+        run: python3 -m unittest discover -s extensions/mining-ops -p 'test_*.py'
+
       - name: Shell syntax
         run: |
           find deployment integrations tests seo -type f -name '*.sh' -print0 \
