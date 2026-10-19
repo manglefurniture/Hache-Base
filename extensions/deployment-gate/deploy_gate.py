@@ -129,7 +129,13 @@ def strict_symlink_destination(current, release_dir):
     if not current.is_symlink():
         raise Rejected('current_not_a_symlink')
     link=current.resolve(strict=True)
-    if link.parent!=root and link.parent.parent!=root:
+    try:
+        relative=link.relative_to(root).parts
+    except ValueError:
+        raise Rejected('current_not_a_release') from None
+    if not relative or not SHA.fullmatch(relative[0]) or (
+            len(relative)!=1 and
+            (len(relative)!=3 or relative[1:]!=('extensions','mining-operator'))):
         raise Rejected('current_not_a_release')
     if not link.exists() or not link.is_dir():
         raise Rejected('missing_current_release')
