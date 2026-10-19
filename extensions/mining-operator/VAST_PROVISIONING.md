@@ -31,7 +31,7 @@ Configurar para cada instancia `ID` los archivos privados:
   `release_commit` y `archive_sha256`, con identidad fijada
   según Vast y commit integrado/verificado en GitHub.
 - `/etc/hache-mining-operator/vast-provision/ID.private.json`:
-  JSON con `recipe` validada y `ingest_key` admitida por el backend.
+  JSON con `recipe` validada y `ingest_key` admitida por el backend.\n  Para el nuevo esquema, la clave debe ser la derivada para el ID, usando\n  el secreto maestro solo dentro de la infraestructura administrativa:\n  `hash_hmac('sha256','vast-instance-v1:'+ID, master)` (hexadecimal).\n  **Nunca** copiar el maestro al proveedor Vast.
   Solo root y el servicio `hache-miner` pueden leerla, sin mostrarla
   en comandos de ChatGPT ni subirla a GitHub.
 - `/etc/hache-mining-operator/ssh/ID.key` y
@@ -56,7 +56,7 @@ menos de 90 s. Cuando el alquiler esté detenido o haya caducado,
 
 El envío SSH usa `BatchMode`, `StrictHostKeyChecking`,
 `IdentitiesOnly` y `ClearAllForwardings`, con un único
-`SSH_ORIGINAL_COMMAND` admisible. Los secretos viajan por stdin TLS
+`SSH_ORIGINAL_COMMAND` admisible. Los secretos viajan por stdin sobre SSH cifrado
 (no por argumentos/URLs, salida, PR ni logs); SSH cifra el transporte.
 
 ## Seguridad operacional y pasos pendientes
