@@ -186,6 +186,32 @@ class BrokerTests(unittest.TestCase):
             self.broker.handle({'method':'query','operation':
                     {'action':'vast.register','instance_id':'56667162'}})
 
+    def test_provision_three_phases_require_exact_one_use_root_grants(self):
+        for step in ('stage','configure','apply'):
+            with self.subTest(step=step):
+                self.calls.clear()
+                op={'action':'vast.provision','instance_id':'56667162',
+                    'release_commit':'a'*40,'step':step}
+                plan=self.broker.handle({'method':'prepare','operation':op})
+                with self.assertRaisesRegex(Rejected,'authorization_required'):
+                    self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+                self.assertEqual(self.calls,['prepare'])
+                self.grant(plan)
+                answer=self.broker.handle({'method':'execute','plan_id':plan['plan_id']})
+                self.assertEqual(answer['phase'],'submitted')
+                self.assertEqual(self.calls.count('execute'),1)
+                self.assertEqual(self.broker.handle({'method':'execute','plan_id':plan['plan_id']}),answer)
+                self.assertEqual(self.calls.count('execute'),1)
+        for change in [
+            {'action':'vast.provision','instance_id':'56667162','release_commit':'main','step':'apply'},
+            {'action':'vast.provision','instance_id':'56667162','release_commit':'a'*40,'step':'restart'},
+            {'action':'vast.provision','instance_id':'56667162','release_commit':'a'*40,'step':True},
+            {'action':'vast.provision','instance_id':'../56667162','release_commit':'a'*40,'step':'stage'},
+            {'action':'vast.provision','instance_id':'56667162','release_commit':'a'*40,'step':'stage','wallet':'fake'},
+        ]:
+            with self.subTest(change=change),self.assertRaises(Rejected):
+                validate_operation(change)
+
     def test_rate_limit_fails_closed(self):
         for _ in range(120):
             self.broker.charge()
