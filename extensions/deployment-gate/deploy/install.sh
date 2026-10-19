@@ -89,6 +89,8 @@ trap restore ERR
 systemctl daemon-reload
 systemctl enable --now hache-deploy-gate.socket
 systemctl enable --now hache-deploy-gate.service
+# --now does not replace an already running service on upgrades.
+systemctl restart hache-deploy-gate.service
 systemctl is-active --quiet hache-deploy-gate.socket
 systemctl is-active --quiet hache-deploy-gate.service
 runuser -u gpt-agent -- python3 "$R/current/client.py" '{"method":"capabilities"}' |
