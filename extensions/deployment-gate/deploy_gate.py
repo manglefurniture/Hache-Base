@@ -330,7 +330,7 @@ class Gate:
                 raise Rejected('plan_archive_index_corrupt') from None
         for item in directory.glob('*.tar.gz'):
             st=item.lstat()
-            if (not stat.S_ISREG(st.st_mode) or st.st_uid!=0 or
+            if (not stat.S_ISREG(st.st_mode) or st.st_uid!=self.owner_uid or
                     st.st_nlink!=1 or st.st_mode & 0o022):
                 raise Rejected('unsafe_root_cache_entry')
             digest=item.name[:-7]
