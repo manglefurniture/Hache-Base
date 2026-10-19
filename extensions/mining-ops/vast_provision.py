@@ -243,7 +243,7 @@ with os.fdopen(lock_fd, 'rb') as lock:
         raise SystemExit('unsafe configuration directory')
     conf.mkdir(mode=0o700, parents=True, exist_ok=True)
     target = conf/'host-binding.json'
-    content = (json.dumps(binding, sort_keys=True, separators=(',', ':'))+'\\n').encode()
+    content = json.dumps(binding, sort_keys=True, separators=(',', ':')).encode() + bytes([10])
     if target.exists() or target.is_symlink():
         if target.is_symlink() or not target.is_file() or target.read_bytes()!=content:
             raise SystemExit('conflicting host binding')
