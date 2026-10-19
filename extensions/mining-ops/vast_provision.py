@@ -37,13 +37,13 @@ def git_blob(data):
 
 
 def load_approval(path=APPROVAL, now=None):
-    """Root-controlled, per-instance, per-action authorization. Not writable by GPT."""
+    """Root-owned read-only metadata (e.g. 0644), never writable by GPT."""
     now = int(time.time() if now is None else now)
     file=Path(path)
     try:
         info=file.lstat()
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
-                info.st_nlink != 1 or info.st_mode & 0o077):
+                info.st_nlink != 1 or info.st_mode & 0o022):
             raise DeployError('unsafe_root_approval')
         with file.open('rb') as h:
             raw=h.read(8193)
