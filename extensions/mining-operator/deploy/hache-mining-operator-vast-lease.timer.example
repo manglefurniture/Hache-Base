@@ -1,0 +1,12 @@
+[Unit]
+Description=Financial cutoff timer for strictly approved Vast starts
+
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=30s
+AccuracySec=2s
+Persistent=false
+Unit=hache-mining-operator-vast-lease.service
+
+[Install]
+WantedBy=timers.target

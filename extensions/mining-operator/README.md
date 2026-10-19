@@ -94,3 +94,58 @@ el estado de auditoría para reconciliar cualquier orden ya enviada.
 Pruebas Linux:
 `python3 -m unittest discover -s extensions/mining-operator -p 'test_*.py'`
 y `php extensions/mining-operator/test_provider.php`.
+
+
+## Extensión VAST-START-001 — arranque con fecha límite independiente
+
+En GitHub, esta extensión prepara `vast.start`. **La acción no se habilita en
+producción hasta instalar, ejecutar y comprobar el supervisor independiente
+`hache-mining-operator-vast-lease.timer` y un release root integrado.**
+
+Solicitud futura: `{"method":"prepare","operation":{"action":"vast.start",
+"instance_id":"<ID>","max_hourly_usd":<tarifa máxima expresada por el propietario>,
+"max_total_usd":<presupuesto autorizado>,"max_minutes":<duración autorizada>}}`.
+No inventar los números ni reutilizar aprobaciones entre instancias. Para
+ejecutar se necesita el mismo grant root exacto, caducidad y protocolo de
+`authorize.py` ya implantados. Preparar no inicia ni factura GPU.
+
+Condiciones del arranque: instancia **existente**, habilitada en HACHE-MINER,
+actual=`exited`, intended=`stopped`, precio `dph_total` y hardware
+válidos, enlace SSH publicado por Vast y coste estimado por duración dentro
+del presupuesto. El supervisor corre como `hache-miner` cada 30 segundos,
+independiente del broker y Desktop Commander. Mantiene una sola prueba con
+gasto a la vez por seguridad. Antes de la llamada de inicio, el broker
+comprueba timer activo y último ciclo correcto dentro de 90 segundos, y
+registra en SQLite una obligación de parada duradera. Aunque el inicio
+retorne timeout o el agente desaparezca, la obligación **no se borra**.
+A partir del vencimiento el supervisor intenta detener la misma instancia,
+comprobando `instance_id`, `machine_id` y `host_id`. Un HTTP de aceptación
+no cierra la obligación; únicamente el estado real detenido.
+
+**Importante:** el importe estimado NO constituye un tope bancario que Vast
+garantice. La facturación puede seguir por almacenamiento, por retrasos de
+API o si VPS/proveedor falla. Por tanto, no ofrecer una garantía absoluta
+de gasto; mantener alertas financieras y verificar facturación.
+
+Instalación administrativa desde una versión aprobada de GitHub:
+1. Instalar release root completo en directorio inmutable; probar
+   `test_broker.py`, `test_vast_start_guard.py`, `test_provider.php`.
+2. Instalar `deploy/hache-mining-operator-vast-lease.{service,timer}.example`
+   como unidades systemd, sin cambiar las de HACHE-MINER o Salad.
+3. Activar timer y ejecutar **solo** la comprobación vacía del supervisor
+   como `hache-miner` para crear heartbeat; comprobar `systemctl is-active`.
+4. Consultar `capabilities` y preparar solicitudes ficticias de prueba
+   sin crear autorización; `execute` sin grant debe fallar. Probar el
+   vencimiento y errores de proveedor en mocks, nunca iniciando GPU reales.
+5. Verificar toda regla de wallet, onstart, telemetría VAST-001/002 antes
+   de autorizar cualquier ventana real. Para la instancia `56667162`,
+   considerar el watchdog anterior, que puede detenerla inmediatamente
+   si conserva un marcador histórico: reconciliar el estado antes del inicio.
+
+Reversión: si no hay leases `armed`, restaurar release y desactivar el
+nuevo timer. **Si existe un lease activo, mantener el timer y el código de
+parada independientes hasta comprobar que la GPU quedó detenida.** No
+revocar automáticamente una fecha límite al revertir el broker.
+
+No hay credenciales de Vast en `gpt-agent` ni shell SSH arbitrario; el
+intermediario sigue usando su API key privada.

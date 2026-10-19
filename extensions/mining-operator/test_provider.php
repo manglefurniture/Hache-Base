@@ -14,4 +14,28 @@ foreach([[],['success'=>false],['instances'=>'bad'],['instances'=>['bad']]] as $
     try{op_rows($bad,'instances');throw new LogicException('Invalid provider payload reported as empty success');}
     catch(OperatorRejected $e){if($e->getMessage()!=='provider_unavailable')throw $e;}
 }
+
+// Guarded Vast starts are evaluated on fixed metadata, not by a live provider call.
+$quoteRow=['id'=>56667162,'machine_id'=>151300,'host_id'=>467312,
+    'actual_status'=>'exited','intended_status'=>'stopped',
+    'num_gpus'=>8,'dph_total'=>4.29,'ssh_host'=>'ssh8.vast.ai','ssh_port'=>10566];
+$limits=['action'=>'vast.start','instance_id'=>'56667162',
+    'max_hourly_usd'=>5.0,'max_total_usd'=>2.0,'max_minutes'=>20];
+$quote=op_start_quote($quoteRow,$limits);
+if($quote['estimated_cost_cents']!==143)
+    throw new RuntimeException('Unexpected conservative quote');
+foreach([
+    ['row'=>array_replace($quoteRow,['actual_status'=>'running']), 'op'=>$limits],
+    ['row'=>array_replace($quoteRow,['dph_total'=>6.0]), 'op'=>$limits],
+    ['row'=>array_replace($quoteRow,['num_gpus'=>0]), 'op'=>$limits],
+    ['row'=>$quoteRow, 'op'=>array_replace($limits,['max_total_usd'=>1.0])]
+] as $bad){
+    try{
+        op_start_quote($bad['row'],$bad['op']);
+        throw new LogicException('Unsafe start quote accepted');
+    }catch(OperatorRejected $e){ /* expected */ }
+}
+$safe=op_pick($quoteRow,['id','ssh_host','ssh_port']);
+if(count($safe)!==3||isset($safe['api_key']))
+    throw new RuntimeException('Unexpected data in SSH projection');
 echo "PROVIDER_PROJECTION_TESTS_OK\n";

@@ -1,0 +1,26 @@
+[Unit]
+Description=Independent Vast financial lease cutoff (no AI, no GPU start)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hache-miner
+Group=hache-miner
+WorkingDirectory=/opt/hache-mining-operator/current
+ExecStart=/usr/bin/python3 /opt/hache-mining-operator/current/vast_start_guard.py --config /etc/hache-mining-operator/config.json
+TimeoutStartSec=40
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/hache-mining-operator
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+MemoryMax=112M
+TasksMax=24
+LimitCORE=0
