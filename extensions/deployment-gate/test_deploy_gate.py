@@ -78,6 +78,22 @@ class GateTests(unittest.TestCase):
         p.chmod(0o600)
         return p
 
+    def test_cache_gc_keeps_live_grants_and_deletes_stale_unreferenced(self):
+        plan=self.gate.handle(self.op())
+        private=self.state/'approved-sources'
+        live=private/(plan['operation']['archive_sha256']+'.tar.gz')
+        stale=private/('f'*64+'.tar.gz')
+        stale.write_bytes(b'old stale fixture')
+        os.utime(stale,(100,100))
+        os.utime(live,(100,100))
+        protected=self.gate.gc_archives(now=4500)
+        self.assertIn(plan['operation']['archive_sha256'],protected)
+        self.assertTrue(live.exists())
+        self.assertFalse(stale.exists())
+        # After the approval's retention horizon expires it may be pruned.
+        self.gate.gc_archives(now=5000)
+        self.assertFalse(live.exists())
+
     def test_rate_limit_and_root_cache_capacity(self):
         for _ in range(120):
             self.gate.charge()
