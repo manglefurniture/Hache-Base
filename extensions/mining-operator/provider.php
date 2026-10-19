@@ -122,6 +122,24 @@ function op_query(array $operation): array {
     op_fail('unsupported_action');
 }
 function op_prepare(array $operation): array {
+    if($operation['action']==='vast.start'){
+        $row=op_vast_status($operation['instance_id']);
+        if($row['actual_status']!=='exited'||$row['intended_status']!=='stopped')
+            op_fail('target_not_ready');
+        if(!is_numeric($row['dph_total'])||!is_finite((float)$row['dph_total'])||
+           (float)$row['dph_total']<=0||(float)$row['dph_total']>(float)$operation['max_hourly_usd'])
+            op_fail('price_limit_exceeded');
+        if(!is_int($row['num_gpus'])||$row['num_gpus']<1||$row['num_gpus']>16||
+           !is_int($row['machine_id'])||!is_int($row['host_id'])||
+           !is_string($row['ssh_host'])||$row['ssh_host']===''||
+           !is_int($row['ssh_port'])||$row['ssh_port']<1)
+            op_fail('target_not_ready');
+        // Charge estimate is NOT a provider-enforced financial cap.
+        $estimate=(int)ceil((float)$row['dph_total']*$operation['max_minutes']/60*100);
+        if($estimate>(int)floor($operation['max_total_usd']*100+0.00001))
+            op_fail('estimated_budget_exceeded');
+        return $row+['estimated_cost_cents'=>$estimate];
+    }
     if($operation['action']==='vast.stop'){
         $row=op_vast_status($operation['instance_id']);
         return ['id'=>(string)$row['id'],'machine_id'=>(string)$row['machine_id'],
@@ -151,9 +169,41 @@ function op_snapshot_equal(array $left,array $right): bool {
     // Python stores canonical JSON with sorted keys. Preserve strict types, not insertion order.
     ksort($left);ksort($right);return $left===$right;
 }
+function op_guard_stop(array $operation,array $snapshot): array {
+    if($operation['action']!=='vast.start')op_fail('unsupported_action');
+    // The independent lease supervisor verifies the deadline and uses this
+    // helper only on its own durable, grant-bound leases.
+    $id=$operation['instance_id'];
+    if(!isset($snapshot['machine_id'],$snapshot['host_id'])||
+       !is_int($snapshot['machine_id'])||!is_int($snapshot['host_id']))
+        op_fail('target_state_changed');
+    $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
+    $row=$r['data']['instances']??null;
+    if(!is_array($row)||(string)($row['id']??'')!==$id||
+       (int)($row['machine_id']??-1)!==$snapshot['machine_id']||
+       (int)($row['host_id']??-1)!==$snapshot['host_id'])
+        op_fail('target_state_changed');
+    $actual=strtolower((string)($row['actual_status']??''));
+    $intended=strtolower((string)($row['intended_status']??''));
+    if(in_array($actual,['stopped','exited'],true)&&
+       in_array($intended,['stopped','exited'],true))
+        return ['status'=>'already_stopped','provider_mutation_sent'=>false];
+    $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/','PUT',['state'=>'stopped']);
+    if(($r['data']['success']??null)!==true)op_fail('provider_outcome_unknown');
+    return ['status'=>'accepted','provider_mutation_sent'=>true,'verification_required'=>true];
+}
+
 function op_execute(array $operation,array $snapshot): array {
     $now=op_prepare($operation);
     if(!op_snapshot_equal($now,$snapshot))op_fail('target_state_changed');
+    if($operation['action']==='vast.start'){
+        // Only after the broker has durably armed a deadline in its private DB.
+        $r=op_vast('/api/v0/instances/'.rawurlencode($operation['instance_id']).'/',
+                   'PUT',['state'=>'running']);
+        if(($r['data']['success']??null)!==true)op_fail('provider_outcome_unknown');
+        return ['status'=>'accepted','provider_mutation_sent'=>true,
+                'verification_required'=>true];
+    }
     if($operation['action']==='vast.stop'){
         if(in_array($now['intended_status'],['stopped','exited'],true)
             &&in_array($now['actual_status'],['stopped','exited'],true))return ['status'=>'already_stopped','provider_mutation_sent'=>false];
@@ -196,10 +246,11 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
         $reads=['vast.list','vast.status','vast.search','salad.targets','salad.groups','salad.instances','salad.instance','telemetry'];
-        $writes=['vast.stop','salad.stop','salad.reallocate'];
+        $writes=['vast.stop','vast.start','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);
         elseif($mode==='execute'&&in_array($operation['action'],$writes,true)&&is_array($request['snapshot']??null))$result=op_execute($operation,$request['snapshot']);
+        elseif($mode==='guard_stop'&&$operation['action']==='vast.start'&&is_array($request['snapshot']??null))$result=op_guard_stop($operation,$request['snapshot']);
         else op_fail('unsupported_action');
         echo json_encode(['ok'=>true,'result'=>$result],JSON_THROW_ON_ERROR).PHP_EOL;
     }catch(Throwable $e){
