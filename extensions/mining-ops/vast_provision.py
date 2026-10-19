@@ -92,16 +92,21 @@ def check_approval(a, p, action, commit, now=None):
         raise DeployError('profile_not_approved')
 
 
+def require_executor(executor_uid=None):
+    """The provisioning channel must be called from a trusted service UID."""
+    if executor_uid is None:
+        executor_uid=pwd.getpwnam('hache-miner').pw_uid
+    if os.geteuid()!=executor_uid:
+        raise DeployError('trusted_executor_required')
+
+
 def claim_approval(approval, *, directory=CLAIMS, executor_uid=None):
     """Consume grant durably BEFORE SSH. Only private trusted hache-miner can claim.
 
     The directory is not writable or traversable by gpt-agent. No agent-owned
     'used' marker can be deleted to replay. Any unknown outcome burns the grant.
     """
-    if executor_uid is None:
-        executor_uid=pwd.getpwnam('hache-miner').pw_uid
-    if os.geteuid()!=executor_uid:
-        raise DeployError('trusted_executor_required')
+    require_executor(executor_uid)
     dirpath=Path(directory)
     try:
         info=dirpath.lstat()
@@ -279,6 +284,7 @@ def remote_integrity_command(approval, dest):
 
 def run_remote(p, action, commit, *, bundle=None, approval=None,
                runner=subprocess.run):
+    require_executor()
     if not COMMIT.fullmatch(commit):
         raise DeployError('invalid_release_commit')
     if approval is None:
