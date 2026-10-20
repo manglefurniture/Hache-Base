@@ -84,6 +84,28 @@ function op_instance(array $row): array {
 }
 function op_query(array $operation): array {
     $action=$operation['action'];
+    if($action==='vast.rent.reconcile'){
+        $r=op_vast('/api/v1/instances/?limit=25');
+        $rows=op_rows($r['data'],'instances');
+        if(count($rows)>25 || !empty($r['data']['next_token']))op_fail('inventory_incomplete');
+        $matches=[];
+        foreach($rows as $row){
+            if((string)($row['machine_id']??'')!==(string)$operation['machine_id']||
+               (string)($row['host_id']??'')!==(string)$operation['host_id']||
+               (string)($row['gpu_name']??'')!==$operation['gpu_name']||
+               (int)($row['num_gpus']??0)!==$operation['gpu_count'])continue;
+            if(!isset($row['id'])||!is_numeric($row['dph_total']??null)||
+               (float)$row['dph_total']<=0||
+               (float)$row['dph_total']>(float)$operation['max_hourly_usd'])
+                op_fail('matching_instance_price_or_identity_invalid');
+            $matches[]=op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus',
+                                      'dph_total','actual_status','intended_status']);
+        }
+        if(count($matches)!==1)op_fail(count($matches)===0?'rental_not_confirmed':'ambiguous_rental_identity');
+        return ['candidate'=>$matches[0],'provider_confirmed'=>true,
+                'lease_bound'=>false,'rent_executed'=>false,
+                'warning'=>'Candidate only; independent pre-rental inventory comparison and armed lease binding required'];
+    }
     if($action==='vast.list'){
         $r=op_vast('/api/v1/instances/?limit=25');$rows=op_rows($r['data'],'instances');
         if(count($rows)>25)op_fail('provider_unavailable');
