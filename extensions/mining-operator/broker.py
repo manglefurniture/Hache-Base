@@ -18,7 +18,7 @@ import time
 
 from vast_start_guard import arm as arm_financial_lease, install_tables as install_lease_tables
 
-READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.analyze', 'vast.rent.quote', 'salad.targets',
+READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.analyze', 'vast.rent.quote', 'vast.rent.reconcile', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry'}
 WRITES = {'vast.stop', 'vast.start', 'vast.register', 'vast.provision', 'salad.stop', 'salad.reallocate'}
 FIELDS = {
@@ -26,6 +26,7 @@ FIELDS = {
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
     'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'vast.rent.quote': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
+    'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd'},
     'salad.targets': set(), 'salad.groups': {'organization', 'project'},
     'salad.instances': {'organization', 'project', 'group'},
     'salad.instance': {'organization', 'project', 'group', 'instance_id'},
