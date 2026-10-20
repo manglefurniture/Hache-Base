@@ -61,7 +61,7 @@ foreach ([['id'=>1,'dph_total'=>0.1],['id'=>2,'dph_total'=>0.2]] as $candidate) 
 }
 
 $identity=['machine_id'=>456,'host_id'=>789,'gpu_name'=>'RTX 4070 Ti SUPER',
-           'gpu_count'=>1,'max_hourly_usd'=>0.21];
+           'gpu_count'=>1,'max_hourly_usd'=>0.21,'baseline_instance_ids'=>[]];
 $instance=['id'=>999,'machine_id'=>456,'host_id'=>789,'gpu_name'=>'RTX 4070 Ti SUPER',
            'num_gpus'=>1,'dph_total'=>0.20,'actual_status'=>'running','intended_status'=>'running'];
 if(op_rental_candidate([$instance],$identity)['id']!==999)
@@ -79,4 +79,17 @@ foreach([
     }catch(OperatorRejected $e){
         if($e->getMessage()!==$expected)throw $e;
     }
+}
+
+try{
+    op_rental_candidate([$instance],array_diff_key($identity,['baseline_instance_ids'=>true]));
+    throw new LogicException('Accepted missing pre-rental baseline');
+}catch(OperatorRejected $e){
+    if($e->getMessage()!=='missing_rental_baseline')throw $e;
+}
+try{
+    op_rental_candidate([$instance],array_replace($identity,['baseline_instance_ids'=>[999]]));
+    throw new LogicException('Mistook pre-existing instance for newly rented');
+}catch(OperatorRejected $e){
+    if($e->getMessage()!=='rental_not_confirmed')throw $e;
 }

@@ -26,7 +26,7 @@ FIELDS = {
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
     'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'vast.rent.quote': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
-    'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd'},
+    'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'baseline_instance_ids'},
     'salad.targets': set(), 'salad.groups': {'organization', 'project'},
     'salad.instances': {'organization', 'project', 'group'},
     'salad.instance': {'organization', 'project', 'group', 'instance_id'},
@@ -75,6 +75,11 @@ def validate_operation(value):
         elif name in ('offer_id', 'machine_id', 'host_id'):
             if type(item) is not int or not 1 <= item <= 999999999999999:
                 raise Rejected('invalid_offer_identity')
+        elif name == 'baseline_instance_ids':
+            if (type(item) is not list or len(item) > 1000 or
+                    any(type(v) is not int or not 1 <= v <= 999999999999999 for v in item) or
+                    len(set(item)) != len(item)):
+                raise Rejected('invalid_rental_baseline')
         elif name == 'gpu_count':
             if type(item) is not int or not 1 <= item <= 16:
                 raise Rejected('invalid_gpu_count')

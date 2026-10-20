@@ -83,6 +83,15 @@ function op_instance(array $row): array {
     $out['state']=miner_instance_state($row);return $out;
 }
 function op_rental_candidate(array $rows,array $operation): array {
+    $baseline=$operation['baseline_instance_ids']??null;
+    if(!is_array($baseline)||count($baseline)>1000)op_fail('missing_rental_baseline');
+    $existing=[];
+    foreach($baseline as $id){
+        if((!is_int($id)&&!is_string($id))||!ctype_digit((string)$id)||
+           (int)$id<=0)op_fail('invalid_rental_baseline');
+        $existing[(string)$id]=true;
+    }
+
     $matches=[];
     foreach($rows as $row){
         if(!is_array($row))op_fail('provider_unavailable');
@@ -90,6 +99,7 @@ function op_rental_candidate(array $rows,array $operation): array {
            (string)($row['host_id']??'')!==(string)$operation['host_id']||
            (string)($row['gpu_name']??'')!==$operation['gpu_name']||
            (int)($row['num_gpus']??0)!==$operation['gpu_count'])continue;
+        if(isset($row['id']) && isset($existing[(string)$row['id']]))continue;
         if(!isset($row['id'])||!is_numeric($row['dph_total']??null)||
            (float)$row['dph_total']<=0||
            (float)$row['dph_total']>(float)$operation['max_hourly_usd'])
