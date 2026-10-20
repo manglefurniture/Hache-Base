@@ -26,7 +26,7 @@ FIELDS = {
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
     'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'vast.rent.quote': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
-    'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd'},
+    'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'baseline_instance_ids'},
     'salad.targets': set(), 'salad.groups': {'organization', 'project'},
     'salad.instances': {'organization', 'project', 'group'},
     'salad.instance': {'organization', 'project', 'group', 'instance_id'},
