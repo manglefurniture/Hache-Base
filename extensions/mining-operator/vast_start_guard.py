@@ -83,6 +83,47 @@ def arm(connection, plan_id, operation, snapshot, now=None, timer_check=timer_ac
     return {'deadline_unix': now+duration*60, 'max_minutes': duration}
 
 
+
+def arm_rental(connection, plan_id, operation, snapshot, now=None, timer_check=timer_active):
+    """Arm a durable cutoff BEFORE submitting an approved new rental.
+
+    This helper does not rent; it reserves a single active financial obligation.
+    An unknown provider result must leave the obligation armed until reconciled.
+    """
+    now = int(time.time() if now is None else now)
+    if operation.get('action') != 'vast.rent':
+        raise LeaseError('not_a_guarded_rental')
+    duration = operation.get('max_minutes')
+    if type(duration) is not int or not 1 <= duration <= 1440:
+        raise LeaseError('invalid_duration')
+    hourly = operation.get('max_hourly_usd')
+    total = operation.get('max_total_usd')
+    if (type(hourly) not in (int,float) or type(total) not in (int,float)
+            or not (0 < hourly <= 100 and 0 < total <= 1000)
+            or hourly * duration / 60 > total):
+        raise LeaseError('budget_exceeded')
+    if not timer_check():
+        raise LeaseError('independent_stop_timer_inactive')
+    connection.execute('BEGIN IMMEDIATE')
+    try:
+        hb = connection.execute('SELECT completed_at FROM lease_guard_heartbeat WHERE id=1').fetchone()
+        if not hb or not 0 <= now - hb[0] <= HEARTBEAT_MAX_AGE:
+            raise LeaseError('independent_stop_supervisor_unhealthy')
+        if connection.execute("SELECT 1 FROM vast_leases WHERE phase='armed' LIMIT 1").fetchone():
+            raise LeaseError('active_financial_lease')
+        # Rental offer IDs are NOT instance IDs. The guard must reconcile the
+        # newly assigned instance before it can issue a provider stop.
+        connection.execute(
+            'INSERT INTO vast_leases(plan_id,instance_id,operation,snapshot,created,deadline,phase,last_outcome) '
+            "VALUES(?,?,?,?,?,?,'armed','rental_identity_pending')",
+            (plan_id, 'pending:'+str(operation['offer_id']), canonical(operation),
+             canonical(snapshot), now, now+duration*60))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return {'deadline_unix': now+duration*60, 'identity_pending': True}
+
 def check_expired(connection, helper, now=None):
     now = int(time.time() if now is None else now)
     # The guard does NOT start, create, destroy, or restart instances.
@@ -97,6 +138,10 @@ def check_expired(connection, helper, now=None):
         try:
             op = json.loads(op_json)
             snap = json.loads(snap_json)
+            if op.get('action') == 'vast.rent':
+                # Never pass an offer ID as an instance ID to the stop helper.
+                # Fail closed until a verified provider instance is bound.
+                raise LeaseError('rental_identity_reconciliation_required')
             response = helper('guard_stop', op, snap)
             if response.get('status') == 'already_stopped':
                 connection.execute(
