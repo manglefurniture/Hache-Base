@@ -125,6 +125,53 @@ def arm_rental(connection, plan_id, operation, snapshot, now=None, timer_check=t
     return {'deadline_unix': now+duration*60, 'identity_pending': True}
 
 
+
+def capture_rental_baseline(connection, plan_id, instance_rows, now=None):
+    """Persist an independently fetched complete inventory before renting.
+
+    A caller-supplied baseline is never authoritative. Store it in the lease
+    snapshot, bound to the approved plan, exactly once.
+    """
+    now = int(time.time() if now is None else now)
+    if type(instance_rows) is not list or len(instance_rows)>1000:
+        raise LeaseError('invalid_rental_inventory')
+    ids=[]
+    for item in instance_rows:
+        if type(item) is not dict or type(item.get('id')) is not int or item['id']<=0:
+            raise LeaseError('invalid_rental_inventory')
+        ids.append(item['id'])
+    if len(set(ids)) != len(ids):
+        raise LeaseError('duplicate_rental_inventory')
+    connection.execute('BEGIN IMMEDIATE')
+    try:
+        row=connection.execute(
+            "SELECT instance_id,operation,snapshot,deadline FROM vast_leases WHERE plan_id=? AND phase='armed'",
+            (plan_id,)).fetchone()
+        if not row:
+            raise LeaseError('rental_lease_not_armed')
+        pending, op_json, snap_json, deadline=row
+        if json.loads(op_json).get('action')!='vast.rent' or not pending.startswith('pending:'):
+            raise LeaseError('not_pending_rental')
+        if now>deadline:
+            raise LeaseError('rental_lease_expired')
+        snapshot=json.loads(snap_json)
+        if 'baseline_instance_ids' in snapshot:
+            if snapshot['baseline_instance_ids']!=sorted(ids):
+                raise LeaseError('rental_baseline_conflict')
+            connection.commit()
+            return {'baseline_instance_ids':sorted(ids),'already_captured':True}
+        snapshot['baseline_instance_ids']=sorted(ids)
+        snapshot['baseline_captured_at']=now
+        connection.execute(
+            "UPDATE vast_leases SET snapshot=?,last_outcome='rental_baseline_captured' "
+            "WHERE plan_id=? AND phase='armed'",
+            (canonical(snapshot),plan_id))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return {'baseline_instance_ids':sorted(ids),'already_captured':False}
+
 def bind_rental_instance(connection, plan_id, instance, now=None):
     """Bind a single provider-confirmed instance to an already armed rental.
 
@@ -146,6 +193,11 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             raise LeaseError('rental_lease_not_armed')
         existing, op_json, snap_json, deadline = row
         op = json.loads(op_json)
+        original_snapshot=json.loads(snap_json)
+        if 'baseline_instance_ids' not in original_snapshot:
+            raise LeaseError('rental_baseline_missing')
+        if instance_id in original_snapshot['baseline_instance_ids']:
+            raise LeaseError('rental_instance_preexisting')
         if op.get('action') != 'vast.rent':
             raise LeaseError('not_a_rental_lease')
         if now > deadline:
