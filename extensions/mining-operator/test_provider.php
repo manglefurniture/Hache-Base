@@ -53,3 +53,9 @@ $safe=op_pick($quoteRow,['id','ssh_host','ssh_port']);
 if(count($safe)!==3||isset($safe['api_key']))
     throw new RuntimeException('Unexpected data in SSH projection');
 echo "PROVIDER_PROJECTION_TESTS_OK\n";
+
+
+foreach ([['id'=>1,'dph_total'=>0.1],['id'=>2,'dph_total'=>0.2]] as $candidate) {
+    $e=op_profit_scenarios($candidate,2.0);
+    if(count($e['scenarios'])!==4)throw new RuntimeException('Scenario coverage');
+}
