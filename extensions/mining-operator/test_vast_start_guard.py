@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from vast_start_guard import install_tables, arm, arm_rental, bind_rental_instance, check_expired, LeaseError
+from vast_start_guard import install_tables, arm, arm_rental, capture_rental_baseline, bind_rental_instance, check_expired, LeaseError
 
 
 def operation(**overrides):
@@ -68,6 +68,7 @@ class FinancialLeaseTests(unittest.TestCase):
             bind_rental_instance(self.db,'b'*32,{**instance,'host_id':790},now=1020)
         with self.assertRaisesRegex(LeaseError,'price_mismatch'):
             bind_rental_instance(self.db,'b'*32,{**instance,'dph_total':0.3},now=1020)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
         result=bind_rental_instance(self.db,'b'*32,instance,now=1020)
         self.assertEqual(result['instance_id'],999)
         self.assertTrue(bind_rental_instance(self.db,'b'*32,instance,now=1020)['already_bound'])
@@ -79,6 +80,23 @@ class FinancialLeaseTests(unittest.TestCase):
         self.assertEqual(outcome['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
         self.assertEqual(calls[0][2]['id'],999)
+
+
+    def test_baseline_must_be_captured_and_preexisting_instance_cannot_bind(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':60,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        instance={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                  'num_gpus':1,'dph_total':0.2}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        with self.assertRaisesRegex(LeaseError,'baseline_missing'):
+            bind_rental_instance(self.db,'b'*32,instance,now=1020)
+        capture_rental_baseline(self.db,'b'*32,[{'id':999}],now=1015)
+        with self.assertRaisesRegex(LeaseError,'instance_preexisting'):
+            bind_rental_instance(self.db,'b'*32,instance,now=1020)
+        with self.assertRaisesRegex(LeaseError,'baseline_conflict'):
+            capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1016)
+        self.assertEqual(self.db.execute("SELECT phase FROM vast_leases").fetchone()[0],'armed')
 
     def test_rental_lease_refuses_unfunded_or_unhealthy(self):
         op={'action':'vast.rent','offer_id':123,'max_minutes':60,
