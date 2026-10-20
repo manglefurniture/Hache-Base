@@ -18,12 +18,13 @@ import time
 
 from vast_start_guard import arm as arm_financial_lease, install_tables as install_lease_tables
 
-READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'salad.targets',
+READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.analyze', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry'}
 WRITES = {'vast.stop', 'vast.start', 'vast.register', 'vast.provision', 'salad.stop', 'salad.reallocate'}
 FIELDS = {
     'vast.list': set(), 'vast.status': {'instance_id'}, 'vast.inspect': {'instance_id'},
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
+    'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'salad.targets': set(), 'salad.groups': {'organization', 'project'},
     'salad.instances': {'organization', 'project', 'group'},
     'salad.instance': {'organization', 'project', 'group', 'instance_id'},
@@ -66,6 +67,9 @@ def validate_operation(value):
         elif name == 'max_minutes':
             if type(item) is not int or not 1 <= item <= 1440:
                 raise Rejected('invalid_duration')
+        elif name == 'assumed_prl_per_day':
+            if type(item) not in (int, float) or not math.isfinite(item) or not 0 <= item <= 100000:
+                raise Rejected('invalid_yield_assumption')
         elif name == 'gpu_count':
             if type(item) is not int or not 1 <= item <= 16:
                 raise Rejected('invalid_gpu_count')
