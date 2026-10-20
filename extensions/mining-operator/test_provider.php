@@ -59,3 +59,24 @@ foreach ([['id'=>1,'dph_total'=>0.1],['id'=>2,'dph_total'=>0.2]] as $candidate) 
     $e=op_profit_scenarios($candidate,2.0);
     if(count($e['scenarios'])!==4)throw new RuntimeException('Scenario coverage');
 }
+
+$identity=['machine_id'=>456,'host_id'=>789,'gpu_name'=>'RTX 4070 Ti SUPER',
+           'gpu_count'=>1,'max_hourly_usd'=>0.21];
+$instance=['id'=>999,'machine_id'=>456,'host_id'=>789,'gpu_name'=>'RTX 4070 Ti SUPER',
+           'num_gpus'=>1,'dph_total'=>0.20,'actual_status'=>'running','intended_status'=>'running'];
+if(op_rental_candidate([$instance],$identity)['id']!==999)
+    throw new RuntimeException('Valid rental identity not found');
+foreach([
+    [[], 'rental_not_confirmed'],
+    [[$instance,$instance], 'ambiguous_rental_identity'],
+    [[array_replace($instance,['dph_total'=>0.22])], 'matching_instance_price_or_identity_invalid'],
+    [[array_replace($instance,['host_id'=>790])], 'rental_not_confirmed'],
+    [[array_replace($instance,['id'=>null])], 'matching_instance_price_or_identity_invalid']
+] as [$inventory,$expected]){
+    try{
+        op_rental_candidate($inventory,$identity);
+        throw new LogicException('Unsafe rental identity accepted: '.$expected);
+    }catch(OperatorRejected $e){
+        if($e->getMessage()!==$expected)throw $e;
+    }
+}
