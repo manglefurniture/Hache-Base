@@ -225,7 +225,8 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             (str(instance_id),plan_id)).fetchone():
             raise LeaseError('instance_already_leased')
         # Snapshot is replaced with the verified identity for the stop guard.
-        snapshot = dict(instance)
+        snapshot = dict(original_snapshot)
+        snapshot.update(instance)
         connection.execute(
             "UPDATE vast_leases SET instance_id=?,snapshot=?,last_outcome='rental_identity_bound' "
             "WHERE plan_id=? AND phase='armed' AND instance_id=?",
