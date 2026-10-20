@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from vast_start_guard import install_tables, arm, arm_rental, check_expired, LeaseError
+from vast_start_guard import install_tables, arm, arm_rental, bind_rental_instance, check_expired, LeaseError
 
 
 def operation(**overrides):
@@ -55,6 +55,30 @@ class FinancialLeaseTests(unittest.TestCase):
             check_expired(self.db,lambda *args: events.append(args),now=5000)
         self.assertEqual(events,[])
         self.assertEqual(self.db.execute("SELECT phase FROM vast_leases").fetchone()[0],'armed')
+
+
+    def test_verified_rental_identity_binds_and_stops_at_deadline(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':60,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        instance={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                  'num_gpus':1,'dph_total':0.2}
+        with self.assertRaisesRegex(LeaseError,'identity_mismatch'):
+            bind_rental_instance(self.db,'b'*32,{**instance,'host_id':790},now=1020)
+        with self.assertRaisesRegex(LeaseError,'price_mismatch'):
+            bind_rental_instance(self.db,'b'*32,{**instance,'dph_total':0.3},now=1020)
+        result=bind_rental_instance(self.db,'b'*32,instance,now=1020)
+        self.assertEqual(result['instance_id'],999)
+        self.assertTrue(bind_rental_instance(self.db,'b'*32,instance,now=1020)['already_bound'])
+        calls=[]
+        def stop(mode, operation, snapshot):
+            calls.append((mode,operation,snapshot))
+            return {'status':'already_stopped'}
+        outcome=check_expired(self.db,stop,now=5000)
+        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(calls[0][1]['instance_id'],'999')
+        self.assertEqual(calls[0][2]['id'],999)
 
     def test_rental_lease_refuses_unfunded_or_unhealthy(self):
         op={'action':'vast.rent','offer_id':123,'max_minutes':60,
