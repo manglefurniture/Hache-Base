@@ -104,6 +104,36 @@ function op_query(array $operation): array {
             ['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),array_slice($rows,0,10)),
             'pricing_note'=>'offer quote for 5 GiB storage; verify final rental and additional charges before creating resources'];
     }
+    if($action==='vast.rent.quote'){
+        $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],'rented'=>['eq'=>false],
+            'gpu_name'=>['eq'=>$operation['gpu_name']],
+            'num_gpus'=>['eq'=>$operation['gpu_count']],
+            'dph_total'=>['lte'=>$operation['max_hourly_usd']],
+            'type'=>'on-demand','limit'=>10,'allocated_storage'=>5];
+        $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
+        $rows=op_rows($r['data'],'offers');
+        foreach($rows as $row){
+            if((string)($row['id']??'')!==(string)$operation['offer_id'])continue;
+            foreach(['machine_id','host_id'] as $key){
+                if((string)($row[$key]??'')!==(string)$operation[$key])op_fail('target_state_changed');
+            }
+            if((string)($row['gpu_name']??'')!==$operation['gpu_name']||
+               (int)($row['num_gpus']??0)!==$operation['gpu_count']||
+               !is_numeric($row['dph_total']??null)||
+               (float)$row['dph_total']<=0||
+               (float)$row['dph_total']>(float)$operation['max_hourly_usd'])op_fail('price_limit_exceeded');
+            $hourly=(float)$row['dph_total'];
+            $durationHours=(float)$operation['max_minutes']/60;
+            if($hourly*$durationHours>(float)$operation['max_total_usd'])op_fail('estimated_budget_exceeded');
+            return ['offer'=>op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),
+                'estimated_duration_usd'=>round($hourly*$durationHours,4),
+                'max_total_usd'=>(float)$operation['max_total_usd'],
+                'max_minutes'=>$operation['max_minutes'],
+                'rent_authorized'=>false,'rental_enabled'=>false,
+                'warning'=>'Read-only offer revalidation, not a rental. 5 GiB storage quote may omit charges; financial supervisor and explicit owner approval required.'];
+        }
+        op_fail('resource_not_found');
+    }
     if($action==='vast.analyze'){
         $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],'rented'=>['eq'=>false],
             'gpu_name'=>['eq'=>$operation['gpu_name']],'num_gpus'=>['eq'=>$operation['gpu_count']],
