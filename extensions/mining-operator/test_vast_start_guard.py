@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from vast_start_guard import install_tables, arm, check_expired, LeaseError
+from vast_start_guard import install_tables, arm, arm_rental, check_expired, LeaseError
 
 
 def operation(**overrides):
@@ -39,6 +39,32 @@ class FinancialLeaseTests(unittest.TestCase):
     def arm(self, **options):
         return arm(self.db,'a'*32,operation(**options),snapshot(),now=1010,
                    timer_check=lambda:True)
+
+
+    def test_rental_lease_arms_without_spending(self):
+        op={'action':'vast.rent','offer_id':123,'max_minutes':60,
+            'max_hourly_usd':0.2,'max_total_usd':0.3}
+        result=arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        self.assertTrue(result['identity_pending'])
+        self.assertEqual(self.db.execute("SELECT last_outcome FROM vast_leases").fetchone()[0],
+                         'rental_identity_pending')
+        with self.assertRaisesRegex(LeaseError,'active_financial_lease'):
+            arm_rental(self.db,'c'*32,op,{},now=1010,timer_check=lambda:True)
+        events=[]
+        with self.assertRaisesRegex(LeaseError,'financial_stop_unconfirmed'):
+            check_expired(self.db,lambda *args: events.append(args),now=5000)
+        self.assertEqual(events,[])
+        self.assertEqual(self.db.execute("SELECT phase FROM vast_leases").fetchone()[0],'armed')
+
+    def test_rental_lease_refuses_unfunded_or_unhealthy(self):
+        op={'action':'vast.rent','offer_id':123,'max_minutes':60,
+            'max_hourly_usd':0.2,'max_total_usd':0.1}
+        with self.assertRaisesRegex(LeaseError,'budget_exceeded'):
+            arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        op['max_total_usd']=0.3
+        with self.assertRaisesRegex(LeaseError,'timer_inactive'):
+            arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:False)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM vast_leases").fetchone()[0],0)
 
     def test_refuse_missing_timer(self):
         with self.assertRaisesRegex(LeaseError,'timer_inactive'):
