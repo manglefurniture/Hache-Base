@@ -179,3 +179,22 @@ gracia de telemetría de aproximadamente 180 segundos. La inserción en el
 inventario **no significa** que minero, HMAC, GPU, hashrate, shares ni
 notificación móvil funcionen. Solo certificar operativa tras dos muestras
 frescas por GPU, cobertura y aviso al teléfono.
+
+
+## Contrato funcional: ciclo asistido Vast (pendiente de implementar)
+
+El propietario selecciona una oferta verificada y aprueba **una sola operación comercial** con `offer_id`, `machine_id`, `host_id`, GPU, tarifa máxima por hora, presupuesto total y duración. El broker desglosa esa autorización en pasos internos limitados, sin conceder shell ni sudo al agente.
+
+Estados duraderos: `quoted → approved → renting → rented → provisioning → mining → measuring → monitoring → stopped`, además de `failed` y `outcome_unknown`. Nunca repetir `rent` tras un timeout sin reconciliar primero el inventario del proveedor y el identificador de operación. La confirmación del proveedor no prueba que SRBMiner esté minando.
+
+La cotización debe incluir costes adicionales de almacenamiento, estimación de PRL con procedencia y fecha, escenarios de precio de venta, punto de equilibrio, tarifa máxima y condición de parada. Revalidar identidad, disponibilidad, precio final y límite financiero inmediatamente antes de contratar. No autorizar sustituciones automáticas de oferta.
+
+El supervisor de vencimiento debe activarse **antes** de llamar a Vast para contratar y conservar la obligación de parada ante fallos, desconexión o respuesta desconocida. Un límite de gasto calculado no equivale a garantía del proveedor. El flujo no se considera listo hasta verificar SSH con huella confiable, artefacto firmado/fijado, minero, shares nuevos aceptados, telemetría fresca por GPU, dos ciclos del watchdog y parada confirmada por Vast.
+
+### Secuencia de entrega (sin ampliación de alcance)
+
+1. Implementar `vast.rent` con simulaciones de respuesta correcta, timeout, alquiler duplicado, cambio de precio, caída de supervisor y reversión; conservar el actual broker y sus controles.
+2. Encadenar aprovisionamiento, arranque de minero y registro a la autorización comercial sin repetir aprobaciones técnicas, conservando validaciones internas independientes.
+3. Integrar umbral económico medido y parada segura, evitando usar TH/s como equivalencia fija de PRL; probar con una sola instancia bajo un presupuesto nuevo explícitamente aprobado.
+
+No desplegar esta función como operativa hasta superar pruebas y revisión automática. No contratar recursos para comprobar el código.

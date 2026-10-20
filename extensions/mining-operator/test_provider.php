@@ -1,6 +1,20 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/provider.php';
+
+$scenario=op_profit_scenarios(['id'=>123,'dph_total'=>0.10],2.0);
+if($scenario['estimated_daily_cost_usd']!==2.4||
+   $scenario['scenarios'][0]['daily_net_usd']!==0.148||
+   $scenario['break_even_prl_usd']!==1.2245)
+    throw new RuntimeException('Profit scenario arithmetic');
+$zero=op_profit_scenarios(['dph_total'=>0.1],0);
+if($zero['break_even_prl_usd']!==null||$zero['scenarios'][0]['daily_net_usd']!==-2.4)
+    throw new RuntimeException('Unknown yield must not imply profitability');
+foreach([-1,INF,NAN] as $invalid){
+    try{op_profit_scenarios(['dph_total'=>0.1],$invalid);throw new LogicException('Accepted invalid yield');}
+    catch(OperatorRejected $e){if($e->getMessage()!=='invalid_profit_inputs')throw $e;}
+}
+
 $input=['id'=>123,'actual_status'=>'running','onstart'=>'PRIVATE_COMMAND',
         'jupyter_token'=>'PRIVATE_TOKEN','extra_env'=>['API_KEY'=>'PRIVATE_KEY']];
 $safe=op_pick($input,['id','actual_status']);
