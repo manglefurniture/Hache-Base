@@ -50,6 +50,21 @@ class BrokerTests(unittest.TestCase):
         path.chmod(0o600)
         return path
 
+
+    def test_analyze_requires_explicit_yield_and_is_read_only(self):
+        op = {'action': 'vast.analyze', 'gpu_name': 'RTX 4070 Ti SUPER',
+              'gpu_count': 1, 'max_hourly_usd': 0.25,
+              'assumed_prl_per_day': 1.5}
+        self.assertEqual(validate_operation(op), op)
+        result = self.broker.handle({'method': 'query', 'operation': op})
+        self.assertIn('id', result)
+        self.assertEqual(self.calls, ['query'])
+        for invalid in (-1, float('inf'), float('nan'), '1.5', True):
+            with self.assertRaises(Rejected):
+                validate_operation({**op, 'assumed_prl_per_day': invalid})
+        with self.assertRaises(Rejected):
+            validate_operation({k:v for k,v in op.items() if k!='assumed_prl_per_day'})
+
     def test_read_method_cannot_mutate(self):
         with self.assertRaises(Rejected):
             self.broker.handle({'method': 'query', 'operation':
