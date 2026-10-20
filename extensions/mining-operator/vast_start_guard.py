@@ -200,8 +200,8 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             raise LeaseError('rental_instance_preexisting')
         if op.get('action') != 'vast.rent':
             raise LeaseError('not_a_rental_lease')
-        if now > deadline:
-            raise LeaseError('rental_lease_expired')
+        # A delayed provider response may arrive after the financial deadline.
+        # Binding must remain possible so the independent guard can stop it.
         if not existing.startswith('pending:'):
             if existing == str(instance_id):
                 connection.commit()
