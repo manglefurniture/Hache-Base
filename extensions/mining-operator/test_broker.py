@@ -65,6 +65,21 @@ class BrokerTests(unittest.TestCase):
         with self.assertRaises(Rejected):
             validate_operation({k:v for k,v in op.items() if k!='assumed_prl_per_day'})
 
+
+    def test_rent_quote_is_read_only_and_requires_exact_limits(self):
+        op = {'action':'vast.rent.quote','offer_id':123,'machine_id':456,
+              'host_id':789,'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+              'max_hourly_usd':0.21,'max_total_usd':1.0,'max_minutes':240}
+        self.assertEqual(validate_operation(op), op)
+        self.broker.handle({'method':'query','operation':op})
+        self.assertEqual(self.calls,['query'])
+        with self.assertRaisesRegex(Rejected,'query_cannot_mutate|unsupported_mutation'):
+            self.broker.handle({'method':'prepare','operation':op})
+        for key, invalid in [('offer_id',0),('host_id','789'),('machine_id',True),
+                             ('max_total_usd',0),('max_minutes',1441)]:
+            with self.assertRaises(Rejected):
+                validate_operation({**op,key:invalid})
+
     def test_read_method_cannot_mutate(self):
         with self.assertRaises(Rejected):
             self.broker.handle({'method': 'query', 'operation':
