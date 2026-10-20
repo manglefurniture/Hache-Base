@@ -64,11 +64,11 @@ class FinancialLeaseTests(unittest.TestCase):
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         instance={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
                   'num_gpus':1,'dph_total':0.2}
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
         with self.assertRaisesRegex(LeaseError,'identity_mismatch'):
             bind_rental_instance(self.db,'b'*32,{**instance,'host_id':790},now=1020)
         with self.assertRaisesRegex(LeaseError,'price_mismatch'):
             bind_rental_instance(self.db,'b'*32,{**instance,'dph_total':0.3},now=1020)
-        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
         result=bind_rental_instance(self.db,'b'*32,instance,now=1020)
         self.assertEqual(result['instance_id'],999)
         self.assertTrue(bind_rental_instance(self.db,'b'*32,instance,now=1020)['already_bound'])
