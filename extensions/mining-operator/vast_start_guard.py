@@ -124,6 +124,66 @@ def arm_rental(connection, plan_id, operation, snapshot, now=None, timer_check=t
         raise
     return {'deadline_unix': now+duration*60, 'identity_pending': True}
 
+
+def bind_rental_instance(connection, plan_id, instance, now=None):
+    """Bind a single provider-confirmed instance to an already armed rental.
+
+    Caller MUST supply independently fetched provider inventory, not a response
+    assembled from the original rental request. Ambiguity leaves lease armed.
+    """
+    now = int(time.time() if now is None else now)
+    if not isinstance(instance, dict):
+        raise LeaseError('invalid_provider_instance')
+    instance_id = instance.get('id')
+    if type(instance_id) is not int or instance_id <= 0:
+        raise LeaseError('invalid_provider_instance')
+    connection.execute('BEGIN IMMEDIATE')
+    try:
+        row = connection.execute(
+            'SELECT instance_id,operation,snapshot,deadline FROM vast_leases '
+            "WHERE plan_id=? AND phase='armed'", (plan_id,)).fetchone()
+        if not row:
+            raise LeaseError('rental_lease_not_armed')
+        existing, op_json, snap_json, deadline = row
+        op = json.loads(op_json)
+        if op.get('action') != 'vast.rent':
+            raise LeaseError('not_a_rental_lease')
+        if now > deadline:
+            raise LeaseError('rental_lease_expired')
+        if not existing.startswith('pending:'):
+            if existing == str(instance_id):
+                connection.commit()
+                return {'instance_id': instance_id, 'already_bound': True}
+            raise LeaseError('rental_instance_conflict')
+        if str(op.get('offer_id')) != existing.removeprefix('pending:'):
+            raise LeaseError('offer_identity_mismatch')
+        for field in ('machine_id', 'host_id'):
+            expected = op.get(field)
+            if type(expected) is not int or str(instance.get(field)) != str(expected):
+                raise LeaseError('rental_identity_mismatch')
+        if str(instance.get('gpu_name')) != str(op.get('gpu_name')):
+            raise LeaseError('rental_gpu_mismatch')
+        if type(instance.get('num_gpus')) is not int or instance['num_gpus'] != op.get('gpu_count'):
+            raise LeaseError('rental_gpu_count_mismatch')
+        hourly = instance.get('dph_total')
+        if type(hourly) not in (int,float) or not 0 < hourly <= op.get('max_hourly_usd',0):
+            raise LeaseError('rental_price_mismatch')
+        if connection.execute(
+            "SELECT 1 FROM vast_leases WHERE instance_id=? AND plan_id<>? AND phase='armed'",
+            (str(instance_id),plan_id)).fetchone():
+            raise LeaseError('instance_already_leased')
+        # Snapshot is replaced with the verified identity for the stop guard.
+        snapshot = dict(instance)
+        connection.execute(
+            "UPDATE vast_leases SET instance_id=?,snapshot=?,last_outcome='rental_identity_bound' "
+            "WHERE plan_id=? AND phase='armed' AND instance_id=?",
+            (str(instance_id),canonical(snapshot),plan_id,existing))
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return {'instance_id':instance_id,'already_bound':False}
+
 def check_expired(connection, helper, now=None):
     now = int(time.time() if now is None else now)
     # The guard does NOT start, create, destroy, or restart instances.
@@ -139,9 +199,15 @@ def check_expired(connection, helper, now=None):
             op = json.loads(op_json)
             snap = json.loads(snap_json)
             if op.get('action') == 'vast.rent':
-                # Never pass an offer ID as an instance ID to the stop helper.
-                # Fail closed until a verified provider instance is bound.
-                raise LeaseError('rental_identity_reconciliation_required')
+                # The stop helper only understands an existing instance. A bound
+                # rental is converted to a stop-only operation with verified ID.
+                bound = connection.execute('SELECT instance_id FROM vast_leases WHERE plan_id=?', (plan_id,)).fetchone()
+                if not bound or bound[0].startswith('pending:'):
+                    raise LeaseError('rental_identity_reconciliation_required')
+                op = {'action':'vast.start','instance_id':bound[0],
+                      'max_hourly_usd':op['max_hourly_usd'],
+                      'max_total_usd':op['max_total_usd'],
+                      'max_minutes':op['max_minutes']}
             response = helper('guard_stop', op, snap)
             if response.get('status') == 'already_stopped':
                 connection.execute(
