@@ -104,6 +104,27 @@ function op_query(array $operation): array {
             ['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),array_slice($rows,0,10)),
             'pricing_note'=>'offer quote for 5 GiB storage; verify final rental and additional charges before creating resources'];
     }
+    if($action==='vast.analyze'){
+        $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],'rented'=>['eq'=>false],
+            'gpu_name'=>['eq'=>$operation['gpu_name']],'num_gpus'=>['eq'=>$operation['gpu_count']],
+            'dph_total'=>['lte'=>$operation['max_hourly_usd']],'type'=>'on-demand',
+            'limit'=>10,'order'=>[['dph_total','asc']],'allocated_storage'=>5];
+        $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
+        $rows=op_rows($r['data'],'offers');
+        $analyzed=[];
+        foreach(array_slice($rows,0,10) as $row){
+            $safe=op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']);
+            if(!is_numeric($safe['dph_total'])||(float)$safe['dph_total']<=0)continue;
+            $economics=op_profit_scenarios($safe,(float)$operation['assumed_prl_per_day']);
+            $analyzed[]=['offer'=>$safe,'economics'=>$economics];
+        }
+        usort($analyzed,static fn(array $a,array $b):int=>
+            ($b['economics']['scenarios'][2]['daily_net_usd']<=>$a['economics']['scenarios'][2]['daily_net_usd']));
+        return ['offers'=>$analyzed,'assumption'=>'User-supplied PRL/day for comparable GPU; not measured for these offers',
+            'ranking'=>'estimated daily net at PRL sale price 1.90 USD; ties are not a reliability ranking',
+            'pricing_note'=>'Quoted with 5 GiB storage; confirm all charges before rental',
+            'rental_authorized'=>false];
+    }
     if($action==='salad.targets')return ['targets'=>miner_db()->query(
         'SELECT organization_slug,project_slug,enabled FROM salad_targets ORDER BY id LIMIT 100')->fetchAll()];
     if($action==='telemetry'){
