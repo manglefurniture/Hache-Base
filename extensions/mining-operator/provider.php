@@ -125,6 +125,29 @@ function op_query(array $operation): array {
     }
     op_fail('unsupported_action');
 }
+
+// Decision support only: never extrapolate PRL production from TH/s without measured yield.
+function op_profit_scenarios(array $offer, float $prl_per_day, array $sale_prices=[1.30,1.60,1.90,2.00], float $pool_fee=0.02): array {
+    $hourly=$offer['dph_total']??null;
+    if(!is_numeric($hourly)||!is_finite((float)$hourly)||(float)$hourly<=0||
+       !is_finite($prl_per_day)||$prl_per_day<0||
+       !is_finite($pool_fee)||$pool_fee<0||$pool_fee>=1)op_fail('invalid_profit_inputs');
+    $dailyCost=round((float)$hourly*24,4);
+    $cases=[];
+    foreach($sale_prices as $price){
+        if(!is_numeric($price)||!is_finite((float)$price)||(float)$price<=0)op_fail('invalid_profit_inputs');
+        $revenue=round($prl_per_day*(1-$pool_fee)*(float)$price,4);
+        $cases[]=['prl_sale_usd'=>(float)$price,'daily_revenue_usd'=>$revenue,
+                  'daily_cost_usd'=>$dailyCost,'daily_net_usd'=>round($revenue-$dailyCost,4)];
+    }
+    return ['offer_id'=>$offer['id']??null,'hourly_usd'=>(float)$hourly,
+        'estimated_daily_cost_usd'=>$dailyCost,'assumed_prl_per_day'=>$prl_per_day,
+        'assumed_pool_fee'=>$pool_fee,'break_even_prl_usd'=>$prl_per_day>0?
+            round($dailyCost/($prl_per_day*(1-$pool_fee)),4):null,
+        'scenarios'=>$cases,
+        'warning'=>'Scenario only: PRL/day must come from dated measurements on comparable hardware; quote may omit storage and other charges. No rental authorized.'];
+}
+
 function op_start_quote(array $row,array $operation): array {
         if($row['actual_status']!=='exited'||$row['intended_status']!=='stopped')
             op_fail('target_not_ready');
