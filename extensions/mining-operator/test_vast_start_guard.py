@@ -160,7 +160,7 @@ class FinancialLeaseTests(unittest.TestCase):
         phase,outcome=self.db.execute('SELECT phase,last_outcome FROM vast_leases').fetchone()
         self.assertEqual((phase,outcome),('armed','rental_reconciliation_pending'))
 
-    def test_late_unique_provider_identity_still_binds_for_shutdown(self):
+    def test_late_unrelated_instance_is_not_bound_after_reconciliation_window(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
             'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
@@ -168,14 +168,15 @@ class FinancialLeaseTests(unittest.TestCase):
                   'num_gpus':1,'dph_total':0.2}
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
-        # Recovery after a prolonged VPS outage must still identify and stop the
-        # unique post-baseline instance instead of abandoning the financial lease.
-        self.assertEqual(bind_rental_instance(self.db,'b'*32,instance,now=5000)['instance_id'],999)
         calls=[]
-        outcome=check_expired(self.db,lambda *args: calls.append(args) or {'status':'already_stopped'},now=5000)
-        self.assertEqual(outcome['closed'],1)
-        self.assertEqual(calls[0][1]['instance_id'],'999')
-
+        outcome=check_expired(
+            self.db,lambda *args:calls.append(args) or {'status':'already_stopped'},
+            now=5000,reconcile_pending=lambda *_:instance)
+        self.assertEqual(outcome['failed'],1)
+        self.assertEqual(calls,[])
+        phase,instance_id=self.db.execute(
+            "SELECT phase,instance_id FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,instance_id),('armed','pending:123'))
     def test_baseline_must_be_captured_and_preexisting_instance_cannot_bind(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,

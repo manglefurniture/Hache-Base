@@ -19,6 +19,7 @@ def canonical(value):
 
 TIMER = 'hache-mining-operator-vast-lease.timer'
 HEARTBEAT_MAX_AGE = 90
+RENTAL_RECONCILIATION_GRACE_SECONDS = 300
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vast_leases(
@@ -201,6 +202,10 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             raise LeaseError('rental_instance_preexisting')
         if op.get('action') != 'vast.rent':
             raise LeaseError('not_a_rental_lease')
+        # After this bounded window, a matching host/GPU could be a later,
+        # unrelated rental. Leave the obligation unresolved for operator review.
+        if now > deadline + RENTAL_RECONCILIATION_GRACE_SECONDS:
+            raise LeaseError('rental_reconciliation_window_expired')
         if not existing.startswith('pending:'):
             if existing == str(instance_id):
                 connection.commit()

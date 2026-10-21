@@ -116,7 +116,12 @@ function op_vast_inventory(): array {
         $columns=['id','machine_id','host_id','actual_status','intended_status',
                   'gpu_name','num_gpus','dph_total'];
         $path='/api/v1/instances/?limit=25&select_cols='.rawurlencode(json_encode($columns,JSON_THROW_ON_ERROR));
-        if($cursor!==null)$path.='&after_token='.rawurlencode($cursor);
+        if($cursor!==null){
+            // Vast documents a 1.0 request threshold for this endpoint; pace
+            // keyset pages so a large account inventory does not hit 429.
+            usleep(1100000);
+            $path.='&after_token='.rawurlencode($cursor);
+        }
         return op_vast($path)['data'];
     });
 }
