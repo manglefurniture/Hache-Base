@@ -1,0 +1,29 @@
+# Install from a reviewed, merged GitHub commit as a root-owned immutable release.
+# Required: root-only /etc/hache-root-window/config.json and distinct Unix socket UIDs.
+[Unit]
+Description=Hache restricted root window (passkey verified separately)
+After=local-fs.target
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /opt/hache-root-window/current/window.py --config /etc/hache-root-window/config.json
+RuntimeDirectory=hache-root-window
+RuntimeDirectoryMode=0755
+StateDirectory=hache-root-window
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/hache-root-window /var/lib/hache-root-window
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+UMask=0077
+[Install]
+WantedBy=multi-user.target

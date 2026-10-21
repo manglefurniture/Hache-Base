@@ -1,0 +1,10 @@
+{
+  "database": "/var/lib/hache-root-window/replay.sqlite",
+  "secret_hex": "REPLACE_OFFLINE_WITH_64_HEX_CHARACTERS",
+  "admin_uid": 999,
+  "agent_uid": 1001,
+  "admin_gid": 999,
+  "agent_gid": 1001,
+  "admin_socket": "/run/hache-root-window/admin.sock",
+  "agent_socket": "/run/hache-root-window/agent.sock"
+}
