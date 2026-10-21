@@ -3,9 +3,10 @@ import hmac
 import os
 import sqlite3
 from types import SimpleNamespace
+from unittest.mock import patch
 import tempfile
 import unittest
-from window import Window,Rejected,DOMAIN,SCOPE,MAX_SECONDS,encode,restart_with_lease_lock
+from window import Window,Rejected,DOMAIN,SCOPE,FULL_SCOPE,MAX_SECONDS,encode,restart_with_lease_lock
 
 SECRET=b"test-secret-32-bytes-for-gate-00"
 class WindowTests(unittest.TestCase):
@@ -69,6 +70,33 @@ class WindowTests(unittest.TestCase):
         with self.assertRaises(Rejected): self.w.agent({"method":"restart_operator"})
         self.assertEqual(self.w.count,1)
         self.assertEqual(self.w.db.execute("SELECT outcome FROM audit ORDER BY id DESC LIMIT 1").fetchone()[0],"failed_or_unknown")
+
+class FullRootWindowTests(WindowTests):
+    # Reuse the isolated SQLite and clock setup; no real root/sudo calls.
+    def test_root_duration_and_manual_revocation(self):
+        active={"expiry":None}
+        commands=[]
+        def helper(action,minutes=0):
+            commands.append((action,minutes))
+            active["expiry"]=self.now+minutes*60 if action=="start" else None
+        with patch("window._root_helper",side_effect=helper), \
+             patch("window._sudo_expires_at",side_effect=lambda:active["expiry"]):
+            self.w.toggle(self.ticket(scope=FULL_SCOPE,duration_sec=3600))
+            self.assertTrue(self.w.status()["enabled"])
+            self.assertEqual(self.w.status()["scope"],FULL_SCOPE)
+            with self.assertRaises(Rejected):
+                self.w.agent({"method":"restart_operator"})
+            self.w.toggle(self.ticket("disable",scope=FULL_SCOPE,
+                                      nonce="disable-root-owner-abcdefgh1234"))
+            self.assertFalse(self.w.status()["enabled"])
+        self.assertEqual(commands,[("stop",0),("start",60),("stop",0)])
+
+    def test_root_duration_invalid_and_scope_isolated(self):
+        for duration in (59,3601,86460,999999):
+            with self.subTest(duration=duration),self.assertRaises(Rejected):
+                self.w.toggle(self.ticket(scope=FULL_SCOPE,duration_sec=duration))
+        with self.assertRaises(Rejected):
+            self.w.agent({"method":"exec","command":"id"})
 
 class FinancialConcurrencyTests(unittest.TestCase):
     def setUp(self):
