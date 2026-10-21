@@ -132,7 +132,9 @@ def safe_helper(command, mode, operation, snapshot=None, *, timeout=35):
     if result.returncode or not isinstance(answer, dict) or answer.get('ok') is not True:
         error = answer.get('error') if isinstance(answer, dict) else None
         allowed = {'credential_unavailable', 'provider_forbidden', 'resource_not_found',
-                   'provider_rate_limited', 'provider_unavailable', 'target_not_enabled',
+                   'provider_rate_limited', 'provider_unavailable', 'rental_not_confirmed',
+                   'inventory_incomplete', 'ambiguous_rental_identity',
+                   'matching_instance_price_or_identity_invalid', 'target_not_enabled',
                    'target_state_changed', 'cooldown_active', 'target_not_ready',
                    'price_limit_exceeded', 'estimated_budget_exceeded',
                    'unsupported_action', 'provider_outcome_unknown'}
