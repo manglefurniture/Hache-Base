@@ -111,12 +111,22 @@ function op_vast_complete_inventory(callable $fetchPage): array {
     return ['instances'=>$rows,'total_instances'=>$total,'complete'=>true,'pages'=>$pages];
 }
 
-function op_vast_list_result(array $inventory, int $displayLimit=500): array {
+function op_vast_list_result(array $inventory, int $displayLimit=1000): array {
     $rows=$inventory['instances']??null;
     $total=$inventory['total_instances']??null;
     if(!is_array($rows)||!is_int($total)||$total!==count($rows)||
        $displayLimit<1||$displayLimit>1000)op_fail('inventory_incomplete');
-    $shown=array_slice($rows,0,$displayLimit);
+    $shown=[];
+    foreach(array_slice($rows,0,$displayLimit) as $row){
+        $shown[]=$row;
+        $candidate=['instances'=>$shown,'partial'=>count($shown)<$total,
+            'complete'=>count($shown)===$total,'inventory_complete'=>true,
+            'total_instances'=>$total,'pages'=>$inventory['pages']??null];
+        if(strlen(json_encode($candidate,JSON_THROW_ON_ERROR))>110000){
+            array_pop($shown);
+            break;
+        }
+    }
     $complete=count($shown)===$total;
     return ['instances'=>$shown,'partial'=>!$complete,'complete'=>$complete,
             'inventory_complete'=>true,'total_instances'=>$total,

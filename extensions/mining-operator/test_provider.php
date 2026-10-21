@@ -29,11 +29,16 @@ foreach([[],['success'=>false],['instances'=>'bad'],['instances'=>['bad']]] as $
     catch(OperatorRejected $e){if($e->getMessage()!=='provider_unavailable')throw $e;}
 }
 
-$list=op_vast_list_result(['instances'=>array_fill(0,1000,['id'=>1]),
-    'total_instances'=>1000,'pages'=>40]);
-if(count($list['instances'])!==500||$list['partial']!==true||
+$largeRows=[];
+for($i=1;$i<=1000;$i++)$largeRows[]=['id'=>$i,'machine_id'=>123,'host_id'=>456,
+    'gpu_name'=>str_repeat('G',120),'actual_status'=>str_repeat('a',120),
+    'intended_status'=>str_repeat('b',120),'num_gpus'=>1,'dph_total'=>0.2];
+$list=op_vast_list_result(['instances'=>$largeRows,'total_instances'=>1000,'pages'=>40]);
+if(count($list['instances'])>=1000||$list['partial']!==true||
    $list['complete']!==false||$list['inventory_complete']!==true||
-   $list['total_instances']!==1000)throw new RuntimeException('Bounded inventory projection failed');
+   $list['total_instances']!==1000||
+   strlen(json_encode($list,JSON_THROW_ON_ERROR))>110000)
+    throw new RuntimeException('Serialized inventory size was not bounded');
 
 // Complete instance inventory must follow the documented keyset cursor and verify totals.
 $first=['success'=>true,'total_instances'=>2,'next_token'=>'cursor-one','instances'=>[
