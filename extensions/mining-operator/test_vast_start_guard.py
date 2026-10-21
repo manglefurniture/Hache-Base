@@ -81,7 +81,7 @@ class FinancialLeaseTests(unittest.TestCase):
             "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
         self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
         gone=check_expired(
-            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1092)
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=5001)
         self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
         self.assertEqual(calls[0][2]['id'],999)
