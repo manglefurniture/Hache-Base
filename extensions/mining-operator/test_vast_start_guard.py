@@ -101,7 +101,14 @@ class FinancialLeaseTests(unittest.TestCase):
         self.assertEqual(bind_rental_instance(self.db,'b'*32,instance,now=1090)['instance_id'],999)
         calls=[]
         outcome=check_expired(self.db,lambda *args: calls.append(args) or {'status':'already_stopped'},now=1091)
-        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(outcome['closed'],0)
+        self.assertEqual(outcome['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1092)
+        self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
 
     def test_heartbeat_uses_completion_time_after_slow_reconciliation(self):
@@ -132,7 +139,7 @@ class FinancialLeaseTests(unittest.TestCase):
         self.assertEqual(result['closed'],0)
         self.assertEqual(result['stop_requested'],1)
         phase,last=self.db.execute(
-            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",(plan,)).fetchone()
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
         self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
         self.assertEqual(calls[0][1]['instance_id'],'999')
     def test_supervisor_reconciles_pending_rental_before_deadline(self):
@@ -165,7 +172,14 @@ class FinancialLeaseTests(unittest.TestCase):
         result=check_expired(self.db,lambda mode, operation, snapshot:
             calls.append((mode,operation,snapshot)) or {'status':'already_stopped'},
             now=1080,reconcile_pending=lambda *_:candidate)
-        self.assertEqual(result['closed'],1)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",(plan,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1081)
+        self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
 
     def test_over_cap_instance_is_bound_for_immediate_supervised_stop(self):
