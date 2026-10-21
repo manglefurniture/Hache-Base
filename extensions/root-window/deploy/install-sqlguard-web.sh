@@ -160,7 +160,13 @@ with tarfile.open(fileobj=io.BytesIO(archive),mode="r:") as tar:
     for member in members:
         path=pathlib.PurePosixPath(member.name)
         parts=path.parts
-        if (member.name in names or len(parts)<2 or parts[:2]!=("extensions","sql-guard")
+        if member.name in names:
+            raise SystemExit("DUPLICATE_TRACKED_ENTRY")
+        if parts==("extensions",) and member.isdir():
+            names.add(member.name)
+            (dest/"extensions").mkdir(parents=True,exist_ok=True,mode=0o755)
+            continue
+        if (len(parts)<2 or parts[:2]!=("extensions","sql-guard")
             or ".." in parts or "." in parts or member.name.startswith("/")
             or not (member.isfile() or member.isdir())):
             raise SystemExit("UNSAFE_TRACKED_ENTRY")
