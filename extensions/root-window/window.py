@@ -181,7 +181,8 @@ class Window:
             raise
         try:
             # Any owner action cancels an earlier full-root sudo grant.
-            _root_helper("stop")
+            if p["scope"]==FULL_SCOPE or self.scope==FULL_SCOPE or _sudo_expires_at() is not None:
+                _root_helper("stop")
             if p["action"]=="enable":
                 if p["scope"]==FULL_SCOPE:
                     _root_helper("start",p["duration_sec"]//60)
