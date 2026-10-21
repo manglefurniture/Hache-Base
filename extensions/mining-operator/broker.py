@@ -21,11 +21,14 @@ from vast_start_guard import arm as arm_financial_lease, install_tables as insta
 READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.analyze', 'vast.rent.quote', 'vast.rent.reconcile', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry'}
 WRITES = {'vast.stop', 'vast.start', 'vast.register', 'vast.provision', 'salad.stop', 'salad.reallocate'}
+# Rental stays fail-closed until the provider can enforce and expose a hard all-in cap.
+RENTAL_ENABLED = False
 FIELDS = {
     'vast.list': set(), 'vast.status': {'instance_id'}, 'vast.inspect': {'instance_id'},
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
     'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'vast.rent.quote': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
+    'vast.rent': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
     'vast.rent.reconcile': {'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'baseline_instance_ids'},
     'salad.targets': set(), 'salad.groups': {'organization', 'project'},
     'salad.instances': {'organization', 'project', 'group'},
@@ -57,6 +60,8 @@ def validate_operation(value):
     action = value['action']
     if action not in FIELDS or set(value) != FIELDS[action] | {'action'}:
         raise Rejected('unsupported_action_or_fields')
+    if action == 'vast.rent' and not RENTAL_ENABLED:
+        raise Rejected('rental_disabled_without_provider_enforced_all_in_cap')
     for name, item in value.items():
         if name == 'action':
             continue
@@ -182,6 +187,7 @@ class Broker:
         method = request['method']
         if method == 'capabilities' and set(request) == {'method'}:
             return {'reads': sorted(READS), 'writes_with_root_grant': sorted(WRITES),
+                    'vast.rent': 'disabled: provider does not enforce an all-in total spending cap',
                     'vast.provision': 'requires active lease, pinned forced-command SSH and root one-use grant',
                     'rent_restart_destroy_ssh': 'not_enabled',
                     'vast.start': 'requires specific root grant, live financial supervisor, price and duration caps',
