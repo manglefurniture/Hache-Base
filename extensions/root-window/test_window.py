@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from window import Window,Rejected,DOMAIN,SCOPE,MAX_SECONDS,encode
 
-SECRET=b"test-secret-32-bytes-for-gate-000"
+SECRET=b"test-secret-32-bytes-for-gate-00"
 class WindowTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
