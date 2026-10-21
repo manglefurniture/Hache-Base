@@ -13,3 +13,6 @@ Root bootstrap requirements: install this exact merged release under /opt/hache-
 Only one allowed mutation: restart hache-mining-operator.service if the cost cutoff guardian is healthy. For deployments, GitHub CI and the existing one-use deployment gate remain mandatory. Rental of Vast GPUs and all database changes remain outside this feature.
 
 Tests: python3 -m unittest discover -s extensions/root-window -p 'test_*.py' -v
+
+## Atomicity of Vast lease exclusion
+The restart takes `BEGIN IMMEDIATE` on the exact operator SQLite database and holds it until `systemctl restart` and `is-active` finish. The miner's `arm()` and `arm_rental()` use `BEGIN IMMEDIATE` on that same file, so they cannot commit a new armed lease between the check and the restart. A concurrent lease causes timeout/fail-closed, not a forced restart. The root-window unit needs a narrowly reviewed `ReadWritePaths=/var/lib/hache-mining-operator` to acquire SQLite writer reservation, but does not modify lease rows (transaction rolled back). Security review must verify existing SQLite journaling and filesystem ownership and reject if isolation cannot be guaranteed.
