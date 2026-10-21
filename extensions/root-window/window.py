@@ -196,6 +196,8 @@ class Window:
                 self.wall_until=0
                 self.scope=None
         except Exception:
+            try: _root_helper("stop")
+            except Exception: pass
             self.until=0
             self.wall_until=0
             self.scope=None
