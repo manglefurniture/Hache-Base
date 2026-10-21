@@ -67,8 +67,6 @@ class FinancialLeaseTests(unittest.TestCase):
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
         with self.assertRaisesRegex(LeaseError,'identity_mismatch'):
             bind_rental_instance(self.db,'b'*32,{**instance,'host_id':790},now=1020)
-        with self.assertRaisesRegex(LeaseError,'price_mismatch'):
-            bind_rental_instance(self.db,'b'*32,{**instance,'dph_total':0.3},now=1020)
         result=bind_rental_instance(self.db,'b'*32,instance,now=1020)
         self.assertEqual(result['instance_id'],999)
         self.assertTrue(bind_rental_instance(self.db,'b'*32,instance,now=1020)['already_bound'])
@@ -77,7 +75,14 @@ class FinancialLeaseTests(unittest.TestCase):
             calls.append((mode,operation,snapshot))
             return {'status':'already_stopped'}
         outcome=check_expired(self.db,stop,now=5000)
-        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(outcome['closed'],0)
+        self.assertEqual(outcome['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=5001)
+        self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
         self.assertEqual(calls[0][2]['id'],999)
 
@@ -96,10 +101,122 @@ class FinancialLeaseTests(unittest.TestCase):
         self.assertEqual(bind_rental_instance(self.db,'b'*32,instance,now=1090)['instance_id'],999)
         calls=[]
         outcome=check_expired(self.db,lambda *args: calls.append(args) or {'status':'already_stopped'},now=1091)
-        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(outcome['closed'],0)
+        self.assertEqual(outcome['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1092)
+        self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
 
-    def test_reject_unrelated_rental_long_after_expiry(self):
+    def test_heartbeat_uses_completion_time_after_slow_reconciliation(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':10,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
+        with patch('vast_start_guard.time.time',side_effect=[1020,1080,1120]):
+            check_expired(self.db,lambda *args:{'status':'already_stopped'},
+                          reconcile_pending=lambda *_:None)
+        self.assertEqual(self.db.execute(
+            'SELECT completed_at FROM lease_guard_heartbeat WHERE id=1').fetchone()[0],1120)
+
+    def test_deadline_elapsed_during_reconciliation_stops_in_same_tick(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        candidate={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                   'num_gpus':1,'dph_total':0.2}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
+        calls=[]
+        with patch('vast_start_guard.time.time',side_effect=[1020,1200,1201,1202]):
+            result=check_expired(
+                self.db,lambda mode,op,snap:calls.append((mode,op,snap)) or {'status':'already_stopped'},
+                reconcile_pending=lambda *_:candidate)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        self.assertEqual(calls[0][1]['instance_id'],'999')
+    def test_supervisor_reconciles_pending_rental_before_deadline(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_minutes':120,
+            'max_hourly_usd':0.14,'max_total_usd':0.50}
+        candidate={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4060 Ti',
+                   'num_gpus':1,'dph_total':0.1352}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1011)
+        result=check_expired(self.db,lambda *a:self.fail('Must not stop before deadline'),
+            now=1020,reconcile_pending=lambda plan, operation, snapshot:candidate)
+        self.assertEqual(result['active'],1)
+        self.assertEqual(self.db.execute('SELECT instance_id FROM vast_leases').fetchone()[0],'999')
+
+    def test_supervisor_reconciles_and_stops_after_restart_without_broker(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_minutes':1,
+            'max_hourly_usd':0.14,'max_total_usd':0.50}
+        candidate={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4060 Ti',
+                   'num_gpus':1,'dph_total':0.1352}
+        plan='b'*32
+        arm_rental(self.db,plan,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,plan,[{'id':100}],now=1011)
+        database=Path(self.tmp.name)/'state.sqlite'
+        self.db.close()
+        # A new connection models VPS/service restart; no broker object is used.
+        self.db=sqlite3.connect(str(database),isolation_level=None)
+        calls=[]
+        result=check_expired(self.db,lambda mode, operation, snapshot:
+            calls.append((mode,operation,snapshot)) or {'status':'already_stopped'},
+            now=1080,reconcile_pending=lambda *_:candidate)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",(plan,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1081)
+        self.assertEqual(gone['closed'],1)
+        self.assertEqual(calls[0][1]['instance_id'],'999')
+
+    def test_over_cap_instance_is_bound_for_immediate_supervised_stop(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_minutes':120,
+            'max_hourly_usd':0.14,'max_total_usd':0.50}
+        candidate={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4060 Ti',
+                   'num_gpus':1,'dph_total':0.30}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1011)
+        calls=[]
+        result=check_expired(self.db,lambda mode, operation, snapshot:
+            calls.append((operation,snapshot)) or {'status':'already_stopped'},
+            now=1020,reconcile_pending=lambda *_:candidate)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        self.assertEqual(calls[0][0]['instance_id'],'999')
+        self.assertTrue(calls[0][1]['rental_price_violation'])
+
+    def test_unavailable_reconciliation_never_creates_or_retries(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_minutes':120,
+            'max_hourly_usd':0.14,'max_total_usd':0.50}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1011)
+        calls=[]
+        result=check_expired(self.db,lambda *args:calls.append(args),now=1020,
+            reconcile_pending=lambda *_:(_ for _ in ()).throw(TimeoutError()))
+        self.assertEqual(result['active'],1)
+        self.assertEqual(calls,[])
+        phase,outcome=self.db.execute('SELECT phase,last_outcome FROM vast_leases').fetchone()
+        self.assertEqual((phase,outcome),('armed','rental_reconciliation_pending'))
+
+    def test_late_unrelated_instance_is_not_bound_after_reconciliation_window(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
             'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
@@ -107,10 +224,11 @@ class FinancialLeaseTests(unittest.TestCase):
                   'num_gpus':1,'dph_total':0.2}
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
-        with self.assertRaisesRegex(LeaseError,'reconciliation_window_expired'):
-            bind_rental_instance(self.db,'b'*32,instance,now=1371)
-        self.assertEqual(self.db.execute('SELECT instance_id FROM vast_leases').fetchone()[0], 'pending:123')
-
+        with self.assertRaisesRegex(LeaseError,'rental_reconciliation_window_expired'):
+            bind_rental_instance(self.db,'b'*32,instance,now=5000)
+        phase,instance_id=self.db.execute(
+            "SELECT phase,instance_id FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,instance_id),('armed','pending:123'))
     def test_baseline_must_be_captured_and_preexisting_instance_cannot_bind(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,

@@ -56,7 +56,7 @@ def broker(request, socket_path=DEFAULT_SOCKET):
         raise AccessError('request_too_large')
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-            conn.settimeout(42)
+            conn.settimeout(120)
             conn.connect(socket_path)
             conn.sendall(raw)
             data = conn.makefile('rb').readline(131073)

@@ -29,6 +29,40 @@ foreach([[],['success'=>false],['instances'=>'bad'],['instances'=>['bad']]] as $
     catch(OperatorRejected $e){if($e->getMessage()!=='provider_unavailable')throw $e;}
 }
 
+$largeRows=[];
+for($i=1;$i<=1000;$i++)$largeRows[]=['id'=>$i,'machine_id'=>123,'host_id'=>456,
+    'gpu_name'=>str_repeat('G',120),'actual_status'=>str_repeat('a',120),
+    'intended_status'=>str_repeat('b',120),'num_gpus'=>1,'dph_total'=>0.2];
+$list=op_vast_list_result(['instances'=>$largeRows,'total_instances'=>1000,'pages'=>40]);
+if(count($list['instances'])>=1000||$list['partial']!==true||
+   $list['complete']!==false||$list['inventory_complete']!==true||
+   $list['total_instances']!==1000||
+   strlen(json_encode($list,JSON_THROW_ON_ERROR))>110000)
+    throw new RuntimeException('Serialized inventory size was not bounded');
+
+// Complete instance inventory must follow the documented keyset cursor and verify totals.
+$first=['success'=>true,'total_instances'=>2,'next_token'=>'cursor-one','instances'=>[
+    ['id'=>101,'machine_id'=>1,'host_id'=>2,'gpu_name'=>'GPU','num_gpus'=>1,'dph_total'=>0.1]]];
+$second=['success'=>true,'total_instances'=>2,'next_token'=>null,'instances'=>[
+    ['id'=>102,'machine_id'=>3,'host_id'=>4,'gpu_name'=>'GPU','num_gpus'=>1,'dph_total'=>0.2]]];
+$seen=[];$inventory=op_vast_complete_inventory(static function($cursor)use(&$seen,$first,$second){
+    $seen[]=$cursor;return $cursor===null?$first:$second;
+});
+if($seen!==[null,'cursor-one']||$inventory['complete']!==true||
+   $inventory['total_instances']!==2||count($inventory['instances'])!==2)
+    throw new RuntimeException('Complete paginated inventory failed');
+foreach([
+    ['pages'=>[['success'=>true,'total_instances'=>2,'next_token'=>null,'instances'=>[$first['instances'][0]]]],'error'=>'inventory_incomplete'],
+    ['pages'=>[['success'=>true,'total_instances'=>2,'next_token'=>'same','instances'=>[$first['instances'][0]]],
+               ['success'=>true,'total_instances'=>2,'next_token'=>'same','instances'=>[$second['instances'][0]]]],'error'=>'inventory_incomplete'],
+    ['pages'=>[['success'=>true,'total_instances'=>2,'next_token'=>null,'instances'=>[$first['instances'][0],$first['instances'][0]]]],'error'=>'inventory_incomplete'],
+] as $fixture){
+    $index=0;$pages=$fixture['pages'];
+    try{op_vast_complete_inventory(static function($cursor)use(&$index,$pages){return $pages[$index++]??[];});
+        throw new LogicException('Accepted incomplete or duplicated inventory');}
+    catch(OperatorRejected $e){if($e->getMessage()!==$fixture['error'])throw $e;}
+}
+
 // Guarded Vast starts are evaluated on fixed metadata, not by a live provider call.
 $quoteRow=['id'=>56667162,'machine_id'=>151300,'host_id'=>467312,
     'actual_status'=>'exited','intended_status'=>'stopped',
@@ -66,10 +100,12 @@ $instance=['id'=>999,'machine_id'=>456,'host_id'=>789,'gpu_name'=>'RTX 4070 Ti S
            'num_gpus'=>1,'dph_total'=>0.20,'actual_status'=>'running','intended_status'=>'running'];
 if(op_rental_candidate([$instance],$identity)['id']!==999)
     throw new RuntimeException('Valid rental identity not found');
+$overCap=op_rental_candidate([array_replace($instance,['dph_total'=>0.30])],$identity);
+if($overCap['id']!==999||$overCap['dph_total']<=$identity['max_hourly_usd'])
+    throw new RuntimeException('Over-cap identity must still be resolved so watchdog can stop it');
 foreach([
     [[], 'rental_not_confirmed'],
     [[$instance,$instance], 'ambiguous_rental_identity'],
-    [[array_replace($instance,['dph_total'=>0.22])], 'matching_instance_price_or_identity_invalid'],
     [[array_replace($instance,['host_id'=>790])], 'rental_not_confirmed'],
     [[array_replace($instance,['id'=>null])], 'matching_instance_price_or_identity_invalid']
 ] as [$inventory,$expected]){

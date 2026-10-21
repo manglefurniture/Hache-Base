@@ -212,3 +212,23 @@ does not expose rental creation or claim automatic rental reconciliation. Existi
 start leases are independently enforced by the timer. Rental leases remain disabled
 until the all-in cap and complete-inventory reconciliation path are implemented
 and reviewed.
+## Pending rental reconciliation (fail-closed)
+
+Rental creation remains disabled. If an armed rental lease exists, the independent
+timer queries the provider helper, follows Vast's `after_token` cursor, verifies
+stable total counts and unique IDs, and binds only one new exact machine/host/GPU
+match. An above-cap or unknown effective rate marks the lease due for immediate
+stop. Missing, paginated, inconsistent, or ambiguous inventory leaves the lease
+armed; the timer never repeats a create request.
+
+This does not prove a US$0.50 all-in ceiling. Vast's official billing FAQ says
+storage is billed while an instance exists, including when stopped, and bandwidth
+is billed by traffic. Keep rental disabled until the provider enforces a total
+spending cap or the maximum exposure can be independently proven.
+
+References: https://docs.vast.ai/api-reference/instances/show-instances
+and https://vast.ai/faq/.
+
+A stopped Vast instance can continue accruing storage charges. Rental leases
+therefore remain armed after compute is stopped and close only after the provider
+confirms the instance is absent. The guard does not destroy instance data.

@@ -287,6 +287,8 @@ def serve(config):
     if os.getenv('LISTEN_FDS') != '1' or os.getenv('LISTEN_PID') != str(os.getpid()):
         raise RuntimeError('systemd socket activation required')
     def helper(mode, operation, snapshot=None):
+        if operation.get('action') in ('vast.rent.reconcile', 'vast.list'):
+            return safe_helper(cfg['helper_command'], mode, operation, snapshot, timeout=100)
         if operation['action']=='vast.provision':
             return safe_helper(
                 ['/usr/bin/python3',
