@@ -15,6 +15,9 @@ check_owner(){
   test -x /usr/sbin/visudo || { say "MISSING_VISUDO"; exit 2; }
   test -d /etc/sudoers.d || { say "MISSING_SUDOERS_DIR"; exit 2; }
   test -f "$MAIN" && test "$(stat -c %u:%a "$MAIN")" = "0:755" || { say "UNTRUSTED_HELPER"; exit 2; }
+  systemctl is-enabled --quiet hache-gpt-sudo-bootguard.service &&
+  systemctl is-active --quiet hache-gpt-sudo-bootguard.service ||
+    { say "BOOTGUARD_NOT_READY"; exit 2; }
 }
 remove_grant(){
   /usr/bin/rm -f -- "$SUDOERS" "$STATE"
