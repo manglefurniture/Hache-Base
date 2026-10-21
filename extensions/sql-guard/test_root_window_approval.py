@@ -67,7 +67,7 @@ class OwnerWindowTests(unittest.TestCase):
         self.assertEqual(denied.status_code,401)
         ok=c.get("/root-window",base_url=ORIGIN,auth=("owner",password))
         self.assertEqual(ok.status_code,200)
-        self.assertIn(b"Activar 10 minutos",ok.data)
+        self.assertIn(b"Encender acceso root con passkey",ok.data)
 
     def test_full_root_duration_bound_to_owner_passkey(self):
         options=self.g.begin_root_window(
