@@ -82,6 +82,35 @@ class FinancialLeaseTests(unittest.TestCase):
         self.assertEqual(calls[0][2]['id'],999)
 
 
+
+    def test_late_provider_confirmation_can_still_bind_and_stop(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        instance={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                  'num_gpus':1,'dph_total':0.2}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
+        with self.assertRaisesRegex(LeaseError,'financial_stop_unconfirmed'):
+            check_expired(self.db,lambda *args: None,now=1080)
+        self.assertEqual(bind_rental_instance(self.db,'b'*32,instance,now=1090)['instance_id'],999)
+        calls=[]
+        outcome=check_expired(self.db,lambda *args: calls.append(args) or {'status':'already_stopped'},now=1091)
+        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(calls[0][1]['instance_id'],'999')
+
+    def test_reject_unrelated_rental_long_after_expiry(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        instance={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                  'num_gpus':1,'dph_total':0.2}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
+        with self.assertRaisesRegex(LeaseError,'reconciliation_window_expired'):
+            bind_rental_instance(self.db,'b'*32,instance,now=1371)
+        self.assertEqual(self.db.execute('SELECT instance_id FROM vast_leases').fetchone()[0], 'pending:123')
+
     def test_baseline_must_be_captured_and_preexisting_instance_cannot_bind(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,

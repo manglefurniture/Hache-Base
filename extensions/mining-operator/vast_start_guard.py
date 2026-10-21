@@ -18,6 +18,7 @@ def canonical(value):
 
 TIMER = 'hache-mining-operator-vast-lease.timer'
 HEARTBEAT_MAX_AGE = 90
+LATE_RECONCILIATION_MAX_SECONDS = 300
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vast_leases(
@@ -200,8 +201,11 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             raise LeaseError('rental_instance_preexisting')
         if op.get('action') != 'vast.rent':
             raise LeaseError('not_a_rental_lease')
-        if now > deadline:
-            raise LeaseError('rental_lease_expired')
+        # A late provider response may be reconciled only briefly after expiry.
+        # Static host/GPU/price identity alone cannot prove an arbitrarily late
+        # instance belongs to the original request; fail closed instead.
+        if now > deadline + LATE_RECONCILIATION_MAX_SECONDS:
+            raise LeaseError('rental_reconciliation_window_expired')
         if not existing.startswith('pending:'):
             if existing == str(instance_id):
                 connection.commit()
