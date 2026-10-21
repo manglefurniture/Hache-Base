@@ -35,4 +35,7 @@ class WebRolloutPolicyTests(unittest.TestCase):
             self.assertIn(marker,s)
         self.assertNotIn("chmod 777",s)
         self.assertNotIn("NOPASSWD",s)
+        self.assertIn('"git","-C",repo,"archive"',s)
+        self.assertIn('UNSAFE_TRACKED_ENTRY',s)
+        self.assertNotIn('cp -a "$SRC"',s)
 if __name__=="__main__":unittest.main()
