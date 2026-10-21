@@ -220,10 +220,28 @@ class PasskeyGateway:
             raise
 
 
-    def begin_root_window(self, action: str, now: int) -> dict:
-        """New passkey assertion, cryptographically bound to enable OR disable."""
-        if action not in ("enable", "disable"):
-            raise CeremonyRejected("Invalid window action")
+    @staticmethod
+    def root_window_params(action: str, scope: str, duration_minutes: int):
+        """Bind exact intended privilege level and duration to WebAuthn challenge."""
+        if action not in ("enable", "disable") or scope not in ("restart_operator", "full_root"):
+            raise CeremonyRejected("Invalid owner operation")
+        if type(duration_minutes) is not int:
+            raise CeremonyRejected("Invalid duration")
+        if action == "disable":
+            seconds = 0
+        elif scope == "restart_operator":
+            if duration_minutes != 10:
+                raise CeremonyRejected("Invalid restart duration")
+            seconds = 600
+        else:
+            if not 1 <= duration_minutes <= 1440:
+                raise CeremonyRejected("Duration must be 1 to 1440 minutes")
+            seconds = duration_minutes * 60
+        return seconds, f"{scope}:{seconds}"
+
+    def begin_root_window(self, action: str, now: int, *, scope="restart_operator", duration_minutes=10) -> dict:
+        """Start fresh owner passkey ceremony for exact scope and duration."""
+        _, request_identity = self.root_window_params(action, scope, duration_minutes)
         try:
             self.db.execute("BEGIN IMMEDIATE")
             self._purge_expired(now)
@@ -242,7 +260,7 @@ class PasskeyGateway:
                 allow_credentials=[PublicKeyCredentialDescriptor(id=keys[0][0])],
                 user_verification=UserVerificationRequirement.REQUIRED)
             self.db.execute("INSERT INTO ceremonies VALUES (?,?,?,?)",
-                            (opts.challenge, "root_window_" + action, action, now + 120))
+                            (opts.challenge, "root_window_" + action, request_identity, now + 120))
             self.db.commit()
             return json.loads(options_to_json(opts))
         except Exception:
@@ -250,9 +268,11 @@ class PasskeyGateway:
             raise
 
     def finish_root_window(self, action: str, challenge_text: str, credential: dict,
-                           now: int, *, window_key: bytes) -> dict:
-        """Credential stays in independent approval store; ticket is short lived."""
-        if action not in ("enable","disable") or len(window_key) != 32:
+                           now: int, *, window_key: bytes, scope="restart_operator",
+                           duration_minutes=10) -> dict:
+        """Sign only the exact purpose for which owner verified a passkey."""
+        seconds, request_identity = self.root_window_params(action, scope, duration_minutes)
+        if len(window_key) != 32:
             raise CeremonyRejected("Window unavailable")
         if not isinstance(credential, dict) or not isinstance(credential.get("rawId"), str):
             raise CeremonyRejected("Invalid credential")
@@ -265,7 +285,7 @@ class PasskeyGateway:
             self.db.execute("BEGIN IMMEDIATE")
             row = self.db.execute(
                 "SELECT expires FROM ceremonies WHERE challenge=? AND kind=? AND request_id=?",
-                (challenge, "root_window_" + action, action)).fetchone()
+                (challenge, "root_window_" + action, request_identity)).fetchone()
             if not row or row[0] <= now:
                 raise CeremonyRejected("Expired ceremony")
             key = self.db.execute("SELECT public_key,sign_count FROM passkeys WHERE credential_id=?",
@@ -281,14 +301,14 @@ class PasskeyGateway:
             except Exception as exc:
                 raise CeremonyRejected("Invalid owner assertion") from exc
             payload = {
-                "domain":"hache-root-window/v1", "scope":"restart_operator",
-                "action":action, "duration_sec":600 if action=="enable" else 0,
+                "domain":"hache-root-window/v1", "scope":scope,
+                "action":action, "duration_sec":seconds,
                 "expires_at":now+30, "nonce":secrets.token_urlsafe(32)
             }
             message = json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
             signature = hmac.new(window_key,message,hashlib.sha256).hexdigest()
             if self.db.execute("DELETE FROM ceremonies WHERE challenge=? AND kind=? AND request_id=?",
-                               (challenge,"root_window_"+action,action)).rowcount != 1:
+                               (challenge,"root_window_"+action,request_identity)).rowcount != 1:
                 raise CeremonyRejected("Ceremony already consumed")
             self.db.execute("UPDATE passkeys SET sign_count=? WHERE credential_id=?",
                             (verified.new_sign_count,credential_id))
