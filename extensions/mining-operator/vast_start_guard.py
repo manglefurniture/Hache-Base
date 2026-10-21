@@ -342,7 +342,7 @@ def main():
                      'gpu_name':operation['gpu_name'],'gpu_count':operation['gpu_count'],
                      'max_hourly_usd':operation['max_hourly_usd'],
                      'baseline_instance_ids':baseline}
-            result = safe_helper(cfg['helper_command'], 'query', query)
+            result = safe_helper(cfg['helper_command'], 'query', query, timeout=100)
             if result.get('inventory_complete') is not True or not isinstance(result.get('candidate'), dict):
                 raise LeaseError('rental_inventory_incomplete')
             return result['candidate']
