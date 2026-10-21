@@ -29,7 +29,6 @@ class TemporarySudoPolicyTests(unittest.TestCase):
         ):
             with self.subTest(required=required):
                 self.assertIn(required,s)
-        self.assertNotIn("NOPASSWD: ALL\n",s) if False else None
     def test_installer_pinned_commit_and_bootguard(self):
         s=INSTALLER.read_text()
         for required in (
