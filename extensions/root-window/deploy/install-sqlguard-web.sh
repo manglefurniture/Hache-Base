@@ -242,11 +242,33 @@ install -o root -g root -m 0644 "$VHOST" "$NGINX"
 NGINX_CHANGED=1
 nginx -t
 systemctl reload nginx
-# Unauthorized users cannot start a passkey ceremony; other paths remain 503.
-public_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://aprobaciones.hacheinteractive.com/root-window || true)"
-[[ "$public_code" == 401 ]] || { echo PUBLIC_AUTH_FAILURE >&2; exit 2; }
-blocked_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 https://aprobaciones.hacheinteractive.com/api/agent/stage || true)"
-[[ "$blocked_code" == 503 ]] || { echo OTHER_SQLGUARD_PATHS_EXPOSED >&2; exit 2; }
+# Wait for Nginx to serve the new vhost. "systemctl reload" can return
+# before worker processes start using the updated configuration.
+# Check both loopback via TLS SNI and the public domain (never use -k).
+# An unauthenticated browser must receive 401, and SQL APIs must remain 503.
+read_http_code(){
+  curl --noproxy '*' --silent --show-error -o /dev/null -w '%{http_code}' \
+    --connect-timeout 2 --max-time 5 "$@" 2>/dev/null || true
+}
+loopback_code=000; public_code=000; blocked_local=000; blocked_public=000
+READY_PUBLIC=0
+for attempt in {1..30}; do
+  loopback_code="$(read_http_code --resolve aprobaciones.hacheinteractive.com:443:127.0.0.1 https://aprobaciones.hacheinteractive.com/root-window)"
+  blocked_local="$(read_http_code --resolve aprobaciones.hacheinteractive.com:443:127.0.0.1 https://aprobaciones.hacheinteractive.com/api/agent/stage)"
+  public_code="$(read_http_code https://aprobaciones.hacheinteractive.com/root-window)"
+  blocked_public="$(read_http_code https://aprobaciones.hacheinteractive.com/api/agent/stage)"
+  if [[ "$loopback_code" == 401 && "$blocked_local" == 503 &&
+        "$public_code" == 401 && "$blocked_public" == 503 ]]; then
+    READY_PUBLIC=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "$READY_PUBLIC" != 1 ]]; then
+  printf 'PUBLIC_AUTH_FAILURE local=%s public=%s local_sql=%s public_sql=%s\n' \
+      "$loopback_code" "$public_code" "$blocked_local" "$blocked_public" >&2
+  exit 2
+fi
 SUCCESS=1
 echo "ROOT_WINDOW_WEB_READY_PASSKEY_OWNER_ACTION_REQUIRED"
 echo "OWNER_PASSWORD_STORED_LOCALLY_AT: $OWNER_PASS (DO NOT SEND TO CHAT)"
