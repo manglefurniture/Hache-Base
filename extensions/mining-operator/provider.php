@@ -433,7 +433,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         if(PHP_SAPI!=='cli'||!function_exists('posix_geteuid')||posix_geteuid()!==posix_getpwnam('hache-miner')['uid'])op_fail('service_identity_required');
         require_once '/srv/hache-miner/current/app/core.php';
         require_once '/srv/hache-miner/current/app/reallocate.php';
-        $raw=stream_get_contents(STDIN,8193);if(strlen($raw)>8192)op_fail('invalid_request');
+        $raw=stream_get_contents(STDIN,32769);if(strlen($raw)>32768)op_fail('invalid_request');
         $request=json_decode($raw,true,16,JSON_THROW_ON_ERROR);
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
