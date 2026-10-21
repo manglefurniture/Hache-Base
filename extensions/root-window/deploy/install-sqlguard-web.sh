@@ -64,6 +64,10 @@ bash -n "$ROOTSRC/install-sqlguard-web.sh"
 RELEASE="$APPROOT/releases/$SHA"
 [[ ! -e "$RELEASE" && ! -L "$RELEASE" ]] || { echo RELEASE_EXISTS >&2; exit 2; }
 PREVIOUS="$(readlink -f "$APPROOT/current" 2>/dev/null || true)"
+WAS_ACTIVE=0
+WAS_ENABLED=0
+systemctl is-active --quiet sqlguard-approval.service && WAS_ACTIVE=1 || true
+systemctl is-enabled --quiet sqlguard-approval.service && WAS_ENABLED=1 || true
 BACKUP="$(mktemp -d /root/sqlguard-window-rollback.XXXXXXXX)"
 SUCCESS=0; SWITCHED=0; ENV_CHANGED=0; NGINX_CHANGED=0
 rollback(){
@@ -85,7 +89,12 @@ rollback(){
      install -o root -g root -m 0600 "$BACKUP/approval.env" "$ENVFILE"
   fi
   if [[ "$SWITCHED" == 1 ]]; then
-     systemctl restart sqlguard-approval.service >/dev/null 2>&1
+     if [[ "$WAS_ENABLED" == 0 ]]; then
+        systemctl disable sqlguard-approval.service >/dev/null 2>&1
+     fi
+     if [[ "$WAS_ACTIVE" == 1 ]]; then
+        systemctl restart sqlguard-approval.service >/dev/null 2>&1
+     fi
   fi
   if [[ -d "$RELEASE" && "$(readlink -f "$APPROOT/current" 2>/dev/null)" != "$RELEASE" ]]; then
      rm -rf "$RELEASE"
@@ -197,6 +206,7 @@ find "$RELEASE" -type f -exec chmod 0644 {} +
 ln -s "$RELEASE" "$APPROOT/.next-$SHA"
 mv -Tf "$APPROOT/.next-$SHA" "$APPROOT/current"
 SWITCHED=1
+systemctl enable --now sqlguard-approval.service
 systemctl restart sqlguard-approval.service
 
 # Root window backend proves OFF; frontend must demand owner auth.
