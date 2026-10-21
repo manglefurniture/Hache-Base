@@ -27,6 +27,10 @@ jobs:
         run: |
           python3 -m unittest discover -s extensions/root-window/deploy -p 'test_web_rollout.py' -v
           bash -n extensions/root-window/deploy/install-sqlguard-web.sh
+      - name: Temporary sudo privilege window regression
+        run: |
+          python3 -m unittest discover -s extensions/root-window/deploy -p 'test_temporary_sudo.py' -v
+          bash -n extensions/root-window/deploy/install-gpt-sudo-window.sh
       - name: Check safe root bootstrap syntax
         run: bash -n extensions/root-window/deploy/install.sh
       - name: Temporary root window policy regression (no privileged calls)
