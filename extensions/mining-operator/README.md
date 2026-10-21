@@ -198,3 +198,17 @@ El supervisor de vencimiento debe activarse **antes** de llamar a Vast para cont
 3. Integrar umbral económico medido y parada segura, evitando usar TH/s como equivalencia fija de PRL; probar con una sola instancia bajo un presupuesto nuevo explícitamente aprobado.
 
 No desplegar esta función como operativa hasta superar pruebas y revisión automática. No contratar recursos para comprobar el código.
+
+
+## Vast rental safety status
+
+`vast.rent` is intentionally disabled until Vast exposes a provider-enforced
+all-in spending ceiling that includes GPU, storage, bandwidth, and post-stop
+charges. Hourly-rate × duration is an estimate and cannot prove the owner's
+total budget. Read-only quote and inventory reconciliation remain available.
+
+The lease schema can persist a pending rental obligation, but production code
+does not expose rental creation or claim automatic rental reconciliation. Existing
+start leases are independently enforced by the timer. Rental leases remain disabled
+until the all-in cap and complete-inventory reconciliation path are implemented
+and reviewed.

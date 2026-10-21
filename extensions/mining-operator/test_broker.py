@@ -80,6 +80,16 @@ class BrokerTests(unittest.TestCase):
             with self.assertRaises(Rejected):
                 validate_operation({**op,key:invalid})
 
+    def test_rent_operation_stays_disabled_without_all_in_cap(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_hourly_usd':0.14,
+            'max_total_usd':0.50,'max_minutes':120}
+        with self.assertRaisesRegex(Rejected,'rental_disabled_without_provider_enforced_all_in_cap'):
+            validate_operation(op)
+        capabilities=self.broker.handle({'method':'capabilities'})
+        self.assertIn('disabled',capabilities['vast.rent'])
+        self.assertNotIn('vast.rent',capabilities['writes_with_root_grant'])
+
     def test_read_method_cannot_mutate(self):
         with self.assertRaises(Rejected):
             self.broker.handle({'method': 'query', 'operation':
