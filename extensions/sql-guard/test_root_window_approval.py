@@ -40,6 +40,35 @@ class OwnerWindowTests(unittest.TestCase):
             self.g.finish_root_window("disable",opts["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},101,window_key=KEY)
         with self.assertRaises(CeremonyRejected):
             self.g.finish_root_window("enable",opts["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},221,window_key=KEY)
+    def test_owner_auth_required_before_web_auth_quota(self):
+        password="R"*48
+        config={"DB_PATH":self.path,"RP_ID":"approve.test.local","ORIGIN":ORIGIN,
+            "OWNER_ID":"owner","SIGN_KEY_HEX":"a1"*32,
+            "BOOTSTRAP_HASH":hashlib.sha256(b"boot").hexdigest(),
+            "AGENT_TOKEN":"agent-secret-token-more-than-thirty-two",
+            "ROOT_WINDOW_OWNER_AUTH_SHA256":hashlib.sha256(password.encode()).hexdigest(),
+            "ROOT_WINDOW_KEY_HEX":"a1"*32,
+            "ROOT_WINDOW_SOCKET":"/run/hache-root-window/admin.sock"}
+        c=create_app(config).test_client()
+        req={"action":"enable"}
+        noauth=c.post("/api/root-window/start",base_url=ORIGIN,json=req,headers={"Origin":ORIGIN})
+        self.assertEqual(noauth.status_code,401)
+        self.assertIn("Basic",noauth.headers["WWW-Authenticate"])
+        self.assertEqual(self.g.db.execute("SELECT COUNT(*) FROM ceremonies").fetchone()[0],0)
+        bad=c.post("/api/root-window/start",base_url=ORIGIN,json=req,headers={"Origin":ORIGIN},
+            auth=("owner","incorrect"+"x"*32))
+        self.assertEqual(bad.status_code,401)
+        self.assertEqual(self.g.db.execute("SELECT COUNT(*) FROM ceremonies").fetchone()[0],0)
+        good=c.post("/api/root-window/start",base_url=ORIGIN,json=req,headers={"Origin":ORIGIN},
+            auth=("owner",password))
+        self.assertEqual(good.status_code,200)
+        self.assertEqual(self.g.db.execute("SELECT COUNT(*) FROM ceremonies").fetchone()[0],1)
+        denied=c.get("/root-window",base_url=ORIGIN)
+        self.assertEqual(denied.status_code,401)
+        ok=c.get("/root-window",base_url=ORIGIN,auth=("owner",password))
+        self.assertEqual(ok.status_code,200)
+        self.assertIn(b"Activar 10 minutos",ok.data)
+
     def test_http_off_by_default_and_origin(self):
         config={"DB_PATH":self.path,"RP_ID":"approve.test.local","ORIGIN":ORIGIN,
             "OWNER_ID":"owner","SIGN_KEY_HEX":"a1"*32,
