@@ -239,7 +239,10 @@ def create_app(config: dict, backup_checker=None):
     def root_window_begin():
         root_window_setup()
         body = request.get_json(silent=True) or {}
-        return jsonify(gateway().begin_root_window(body.get("action"),int(time.time())))
+        return jsonify(gateway().begin_root_window(
+            body.get("action"),int(time.time()),
+            scope=body.get("scope","restart_operator"),
+            duration_minutes=body.get("duration_minutes",10)))
 
     @app.post("/api/root-window/finish")
     def root_window_end():
@@ -247,7 +250,9 @@ def create_app(config: dict, backup_checker=None):
         body = request.get_json(silent=True) or {}
         ticket = gateway().finish_root_window(
             body.get("action"),body.get("challenge"),body.get("credential"),
-            int(time.time()),window_key=key)
+            int(time.time()),window_key=key,
+            scope=body.get("scope","restart_operator"),
+            duration_minutes=body.get("duration_minutes",10))
         # Ticket never reaches browser or nonprivileged agent.
         return jsonify(root_window_send({"ticket":ticket}))
 

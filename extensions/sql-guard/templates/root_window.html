@@ -1,16 +1,28 @@
 <!doctype html>
 <html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hache - Acceso temporal</title>
+<title>Hache - Root temporal</title>
 <link rel="stylesheet" href="/static/approval.css">
 <script defer src="/static/root_window.js"></script>
 </head><body><main>
-<h1>Acceso administrativo temporal</h1>
+<h1>Acceso root temporal para Work</h1>
+<p><strong>Acceso total:</strong> mientras esté encendido, <code>gpt-agent</code> podrá ejecutar comandos como root mediante <code>sudo</code>.</p>
 <p>Estado: <strong id="status" role="status" aria-live="polite">Comprobando...</strong></p>
-<p>Alcance restringido: reiniciar el operador de minería cuando el guardián financiero esté sano. No concede una consola root.</p>
+<p id="scope"></p>
 <p id="expiry"></p>
-<button id="enable" type="button">Activar 10 minutos con passkey</button>
-<button id="disable" type="button">Desactivar con passkey</button>
+<label for="minutes">Duración de la autorización</label>
+<select id="minutes" name="minutes">
+<option value="10">10 minutos</option>
+<option value="30">30 minutos</option>
+<option value="60" selected>1 hora</option>
+<option value="120">2 horas</option>
+<option value="240">4 horas</option>
+<option value="480">8 horas</option>
+<option value="1440">24 horas</option>
+</select>
+<button id="enable" type="button">Encender acceso root con passkey</button>
+<button id="disable" type="button">Apagar acceso root con passkey</button>
 <p id="message" role="status" aria-live="polite"></p>
-<small>Cada cambio exige una verificación nueva con tu passkey. El acceso vence automáticamente.</small>
+<p><strong>Advertencia:</strong> apagar elimina la autorización para nuevos comandos privilegiados. No revierte cambios anteriores ni detiene necesariamente procesos root ya iniciados.</p>
+<small>Ambas acciones requieren autenticación del propietario y una passkey nueva. La autorización se revoca automáticamente al cumplirse la duración elegida.</small>
 </main></body></html>

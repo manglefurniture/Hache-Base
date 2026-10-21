@@ -67,7 +67,40 @@ class OwnerWindowTests(unittest.TestCase):
         self.assertEqual(denied.status_code,401)
         ok=c.get("/root-window",base_url=ORIGIN,auth=("owner",password))
         self.assertEqual(ok.status_code,200)
-        self.assertIn(b"Activar 10 minutos",ok.data)
+        self.assertIn(b"Encender acceso root con passkey",ok.data)
+
+    def test_full_root_duration_bound_to_owner_passkey(self):
+        options=self.g.begin_root_window(
+            "enable",100,scope="full_root",duration_minutes=60)
+        with self.assertRaises(CeremonyRejected):
+            self.g.finish_root_window(
+                "enable",options["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},101,
+                window_key=KEY,scope="full_root",duration_minutes=120)
+        with self.assertRaises(CeremonyRejected):
+            self.g.finish_root_window(
+                "enable",options["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},101,
+                window_key=KEY,scope="restart_operator",duration_minutes=10)
+        with patch("passkey_gateway.verify_authentication_response",
+                   return_value=SimpleNamespace(new_sign_count=2)) as verified:
+            ticket=self.g.finish_root_window(
+                "enable",options["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},101,
+                window_key=KEY,scope="full_root",duration_minutes=60)
+        self.assertTrue(verified.call_args.kwargs["require_user_verification"])
+        self.assertEqual(ticket["payload"]["scope"],"full_root")
+        self.assertEqual(ticket["payload"]["duration_sec"],3600)
+        self.assertEqual(ticket["payload"]["action"],"enable")
+        with self.assertRaises(CeremonyRejected):
+            self.g.finish_root_window(
+                "enable",options["challenge"],{"rawId":"dGVzdC1wYXNza2V5"},101,
+                window_key=KEY,scope="full_root",duration_minutes=60)
+
+    def test_full_root_duration_policy_limits(self):
+        for minutes in (0,-1,1441,1.5,"60",True):
+            with self.subTest(minutes=minutes), self.assertRaises(CeremonyRejected):
+                self.g.begin_root_window("enable",100,scope="full_root",
+                                         duration_minutes=minutes)
+        with self.assertRaises(CeremonyRejected):
+            self.g.begin_root_window("enable",100,scope="root_shell",duration_minutes=60)
 
     def test_http_off_by_default_and_origin(self):
         config={"DB_PATH":self.path,"RP_ID":"approve.test.local","ORIGIN":ORIGIN,
