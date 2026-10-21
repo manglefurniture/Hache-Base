@@ -1,0 +1,15 @@
+[Unit]
+Description=Hache GPT temporary sudo boot guard (fail closed after restart)
+DefaultDependencies=no
+After=local-fs.target
+Before=desktop-commander-gpt.service multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hache-gpt-sudo-window stop
+User=root
+Group=root
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
