@@ -23,6 +23,10 @@ jobs:
         run: bash -n extensions/sql-guard/deploy/create-trusted-backup.sh.example
       - name: Run SQL guard policy and executor tests
         run: cd extensions/sql-guard && python3 -m unittest discover -v -p 'test_*.py'
+      - name: Root window web rollout static security tests
+        run: |
+          python3 -m unittest discover -s extensions/root-window/deploy -p 'test_web_rollout.py' -v
+          bash -n extensions/root-window/deploy/install-sqlguard-web.sh
       - name: Check safe root bootstrap syntax
         run: bash -n extensions/root-window/deploy/install.sh
       - name: Temporary root window policy regression (no privileged calls)
