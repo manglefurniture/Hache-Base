@@ -46,7 +46,7 @@ start(){
   printf '%s %s\n' "$nonce" "$end" > "$tmp"
   printf '%s\n' '# Managed temporary permission, revoke using hache-gpt-sudo-window stop' \
     "$AGENT ALL=(ALL:ALL) NOPASSWD: ALL" > "$sudo_tmp"
-  chmod 0600 "$sudo_tmp"
+  chmod 0440 "$sudo_tmp"
   /usr/sbin/visudo -cf "$sudo_tmp" >/dev/null || { rm -f "$tmp" "$sudo_tmp"; say "BAD_SUDOERS"; exit 2; }
   # Separate root-owned systemd timer, independent of chat, Work and broker.
   if ! /usr/bin/systemd-run --quiet --unit="$unit" --on-active="${minutes}m" \
