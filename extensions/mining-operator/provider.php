@@ -146,7 +146,7 @@ function op_query(array $operation): array {
             'gpu_name'=>['eq'=>$operation['gpu_name']],
             'num_gpus'=>['eq'=>$operation['gpu_count']],
             'dph_total'=>['lte'=>$operation['max_hourly_usd']],
-            'type'=>'on-demand','limit'=>10,'allocated_storage'=>5];
+            'type'=>'on-demand','limit'=>10,'order'=>[['dph_total','asc']],'allocated_storage'=>5];
         $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
         $rows=op_rows($r['data'],'offers');
         foreach($rows as $row){
