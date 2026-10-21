@@ -100,7 +100,7 @@ class FinancialLeaseTests(unittest.TestCase):
     def test_heartbeat_uses_completion_time_after_slow_reconciliation(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
-            'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
+            'max_minutes':10,'max_hourly_usd':0.2,'max_total_usd':0.3}
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
         with patch('vast_start_guard.time.time',side_effect=[1020,1080,1120]):
