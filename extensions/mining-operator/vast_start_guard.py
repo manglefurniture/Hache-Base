@@ -246,7 +246,8 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             'price_violation':price_violation}
 
 def check_expired(connection, helper, now=None, reconcile_pending=None):
-    now = int(time.time() if now is None else now)
+    use_wall_clock = now is None
+    now = int(time.time() if use_wall_clock else now)
     # The guard does NOT create or start instances. It reconciles pending rent
     # obligations from complete provider inventory on each independent timer tick.
     pending_rows = connection.execute(
@@ -310,9 +311,10 @@ def check_expired(connection, helper, now=None, reconcile_pending=None):
     # A failed financial stop suppresses healthy heartbeat: no further leases.
     if failed:
         raise LeaseError('financial_stop_unconfirmed')
+    completed_at = int(time.time()) if use_wall_clock else now
     connection.execute(
         'INSERT INTO lease_guard_heartbeat(id,completed_at) VALUES(1,?) '
-        'ON CONFLICT(id) DO UPDATE SET completed_at=excluded.completed_at', (now,))
+        'ON CONFLICT(id) DO UPDATE SET completed_at=excluded.completed_at', (completed_at,))
     connection.commit()
     return {'closed': stopped, 'stop_requested': pending,
             'active': connection.execute(
