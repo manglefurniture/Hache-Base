@@ -6,6 +6,7 @@ the expiration even when the agent, chat, or command broker is offline.
 """
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -18,7 +19,6 @@ def canonical(value):
 
 TIMER = 'hache-mining-operator-vast-lease.timer'
 HEARTBEAT_MAX_AGE = 90
-LATE_RECONCILIATION_MAX_SECONDS = 300
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS vast_leases(
@@ -201,11 +201,6 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
             raise LeaseError('rental_instance_preexisting')
         if op.get('action') != 'vast.rent':
             raise LeaseError('not_a_rental_lease')
-        # A late provider response may be reconciled only briefly after expiry.
-        # Static host/GPU/price identity alone cannot prove an arbitrarily late
-        # instance belongs to the original request; fail closed instead.
-        if now > deadline + LATE_RECONCILIATION_MAX_SECONDS:
-            raise LeaseError('rental_reconciliation_window_expired')
         if not existing.startswith('pending:'):
             if existing == str(instance_id):
                 connection.commit()
@@ -222,8 +217,8 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
         if type(instance.get('num_gpus')) is not int or instance['num_gpus'] != op.get('gpu_count'):
             raise LeaseError('rental_gpu_count_mismatch')
         hourly = instance.get('dph_total')
-        if type(hourly) not in (int,float) or not 0 < hourly <= op.get('max_hourly_usd',0):
-            raise LeaseError('rental_price_mismatch')
+        price_violation = (type(hourly) not in (int,float) or not math.isfinite(hourly)
+                           or hourly <= 0 or hourly > op.get('max_hourly_usd',0))
         if connection.execute(
             "SELECT 1 FROM vast_leases WHERE instance_id=? AND plan_id<>? AND phase='armed'",
             (str(instance_id),plan_id)).fetchone():
@@ -231,19 +226,41 @@ def bind_rental_instance(connection, plan_id, instance, now=None):
         # Snapshot is replaced with the verified identity for the stop guard.
         snapshot = dict(original_snapshot)
         snapshot.update(instance)
+        snapshot['rental_price_violation'] = price_violation
         connection.execute(
-            "UPDATE vast_leases SET instance_id=?,snapshot=?,last_outcome='rental_identity_bound' "
-            "WHERE plan_id=? AND phase='armed' AND instance_id=?",
-            (str(instance_id),canonical(snapshot),plan_id,existing))
+            "UPDATE vast_leases SET instance_id=?,snapshot=?,deadline=CASE WHEN ? THEN MIN(deadline,?) ELSE deadline END,"
+            "last_outcome=? WHERE plan_id=? AND phase='armed' AND instance_id=?",
+            (str(instance_id),canonical(snapshot),int(price_violation),now,
+             'rental_price_violation_stop_due' if price_violation else 'rental_identity_bound',
+             plan_id,existing))
         connection.commit()
     except Exception:
         connection.rollback()
         raise
-    return {'instance_id':instance_id,'already_bound':False}
+    return {'instance_id':instance_id,'already_bound':False,
+            'price_violation':price_violation}
 
-def check_expired(connection, helper, now=None):
+def check_expired(connection, helper, now=None, reconcile_pending=None):
     now = int(time.time() if now is None else now)
-    # The guard does NOT start, create, destroy, or restart instances.
+    # The guard does NOT create or start instances. It reconciles pending rent
+    # obligations from complete provider inventory on each independent timer tick.
+    pending_rows = connection.execute(
+        "SELECT plan_id,operation,snapshot FROM vast_leases "
+        "WHERE phase='armed' AND instance_id LIKE 'pending:%' ORDER BY created LIMIT 50"
+    ).fetchall()
+    for plan_id, op_json, snap_json in pending_rows:
+        if reconcile_pending is None:
+            continue
+        try:
+            candidate = reconcile_pending(plan_id, json.loads(op_json), json.loads(snap_json))
+            if isinstance(candidate, dict):
+                bind_rental_instance(connection, plan_id, candidate, now=now)
+        except Exception:
+            # Keep the durable lease pending; never repeat the create request.
+            connection.execute(
+                "UPDATE vast_leases SET last_attempt=?,last_outcome='rental_reconciliation_pending' "
+                "WHERE plan_id=? AND phase='armed'", (now, plan_id))
+    connection.commit()
     rows = connection.execute(
         "SELECT plan_id,operation,snapshot FROM vast_leases "
         "WHERE phase='armed' AND deadline<=? ORDER BY deadline,created LIMIT 50",
@@ -311,8 +328,22 @@ def main():
     db = sqlite3.connect(cfg['database'], timeout=5, isolation_level=None)
     try:
         install_tables(db)
+        def reconcile_pending(plan_id, operation, snapshot):
+            baseline = snapshot.get('baseline_instance_ids')
+            if type(baseline) is not list:
+                raise LeaseError('rental_baseline_missing')
+            query = {'action':'vast.rent.reconcile',
+                     'machine_id':operation['machine_id'],'host_id':operation['host_id'],
+                     'gpu_name':operation['gpu_name'],'gpu_count':operation['gpu_count'],
+                     'max_hourly_usd':operation['max_hourly_usd'],
+                     'baseline_instance_ids':baseline}
+            result = safe_helper(cfg['helper_command'], 'query', query)
+            if result.get('inventory_complete') is not True or not isinstance(result.get('candidate'), dict):
+                raise LeaseError('rental_inventory_incomplete')
+            return result['candidate']
         answer = check_expired(
-            db, lambda mode, op, snap: safe_helper(cfg['helper_command'], mode, op, snap))
+            db, lambda mode, op, snap: safe_helper(cfg['helper_command'], mode, op, snap),
+            reconcile_pending=reconcile_pending)
         print(canonical({'ok': True, 'result': answer}))
     except Exception:
         # Never expose provider responses, credentials, raw DB, or stack traces.

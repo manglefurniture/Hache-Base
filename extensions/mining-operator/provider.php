@@ -82,6 +82,45 @@ function op_instance(array $row): array {
     $out=op_pick($row,['instance_id','id','ready','started','state']);
     $out['state']=miner_instance_state($row);return $out;
 }
+function op_vast_complete_inventory(callable $fetchPage): array {
+    $rows=[];$ids=[];$tokens=[];$cursor=null;$total=null;$pages=0;
+    do {
+        if(++$pages>40)op_fail('inventory_incomplete');
+        $page=$fetchPage($cursor);
+        if(!is_array($page)||($page['success']??null)!==true||
+           !is_int($page['total_instances']??null)||$page['total_instances']<0)
+            op_fail('inventory_incomplete');
+        if($total===null)$total=$page['total_instances'];
+        elseif($total!==$page['total_instances'])op_fail('inventory_incomplete');
+        $items=op_rows($page,'instances');
+        if(count($items)>25||count($rows)+count($items)>1000)op_fail('inventory_incomplete');
+        foreach($items as $row){
+            if(!isset($row['id'])||!is_int($row['id'])||$row['id']<=0||isset($ids[$row['id']]))
+                op_fail('inventory_incomplete');
+            $ids[$row['id']]=true;
+            $rows[]=op_pick($row,['id','machine_id','host_id','actual_status','intended_status',
+                'gpu_name','num_gpus','dph_total']);
+        }
+        $next=$page['next_token']??null;
+        if($next!==null&&(!is_string($next)||$next===''||isset($tokens[$next])))
+            op_fail('inventory_incomplete');
+        if($next!==null)$tokens[$next]=true;
+        $cursor=$next;
+    } while($cursor!==null);
+    if($total!==count($rows))op_fail('inventory_incomplete');
+    return ['instances'=>$rows,'total_instances'=>$total,'complete'=>true,'pages'=>$pages];
+}
+
+function op_vast_inventory(): array {
+    return op_vast_complete_inventory(static function(?string $cursor):array {
+        $columns=['id','machine_id','host_id','actual_status','intended_status',
+                  'gpu_name','num_gpus','dph_total'];
+        $path='/api/v1/instances/?limit=25&select_cols='.rawurlencode(json_encode($columns,JSON_THROW_ON_ERROR));
+        if($cursor!==null)$path.='&after_token='.rawurlencode($cursor);
+        return op_vast($path)['data'];
+    });
+}
+
 function op_rental_candidate(array $rows,array $operation): array {
     $baseline=$operation['baseline_instance_ids']??null;
     if(!is_array($baseline)||count($baseline)>1000)op_fail('missing_rental_baseline');
@@ -100,10 +139,7 @@ function op_rental_candidate(array $rows,array $operation): array {
            (string)($row['gpu_name']??'')!==$operation['gpu_name']||
            (int)($row['num_gpus']??0)!==$operation['gpu_count'])continue;
         if(isset($row['id']) && isset($existing[(string)$row['id']]))continue;
-        if(!isset($row['id'])||!is_numeric($row['dph_total']??null)||
-           (float)$row['dph_total']<=0||
-           (float)$row['dph_total']>(float)$operation['max_hourly_usd'])
-            op_fail('matching_instance_price_or_identity_invalid');
+        if(!isset($row['id']))op_fail('matching_instance_price_or_identity_invalid');
         $matches[]=op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus',
                                   'dph_total','actual_status','intended_status']);
     }
@@ -113,20 +149,19 @@ function op_rental_candidate(array $rows,array $operation): array {
 function op_query(array $operation): array {
     $action=$operation['action'];
     if($action==='vast.rent.reconcile'){
-        $r=op_vast('/api/v1/instances/?limit=25');
-        $rows=op_rows($r['data'],'instances');
-        if(count($rows)>25 || !empty($r['data']['next_token']))op_fail('inventory_incomplete');
+        $inventory=op_vast_inventory();
+        $rows=$inventory['instances'];
         $candidate=op_rental_candidate($rows,$operation);
-        return ['candidate'=>$candidate,'provider_confirmed'=>true,
+        return ['candidate'=>$candidate,'inventory_complete'=>true,
+                'total_instances'=>$inventory['total_instances'],'provider_confirmed'=>true,
                 'lease_bound'=>false,'rent_executed'=>false,
                 'warning'=>'Candidate only; independent pre-rental inventory comparison and armed lease binding required'];
     }
     if($action==='vast.list'){
-        $r=op_vast('/api/v1/instances/?limit=25');$rows=op_rows($r['data'],'instances');
-        if(count($rows)>25)op_fail('provider_unavailable');
-        return ['instances'=>array_map(static fn(array $r):array=>op_pick($r,
-            ['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total']),$rows),
-            'partial'=>!empty($r['data']['next_token']),'total_instances'=>$r['data']['total_instances']??null];
+        $inventory=op_vast_inventory();
+        return ['instances'=>$inventory['instances'],'partial'=>false,
+                'complete'=>true,'total_instances'=>$inventory['total_instances'],
+                'pages'=>$inventory['pages']];
     }
     if($action==='vast.status')return op_vast_status($operation['instance_id']);
     if($action==='vast.inspect')return op_vast_inspect($operation['instance_id']);
