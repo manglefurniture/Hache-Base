@@ -4,6 +4,7 @@ Deploy only behind an HTTPS reverse proxy as a separate system account.
 The agent API token may stage requests, but MUST NOT approve any request.
 """
 import hmac
+import hashlib
 import os
 import re
 import time
@@ -162,6 +163,31 @@ def create_app(config: dict, backup_checker=None):
         return jsonify({"status": "approved"})
 
 
+    @app.before_request
+    def root_window_authentication():
+        """Separate strong owner secret before any WebAuthn ceremony quota is charged.
+
+        The browser uses HTTPS Basic auth; passkey verification is still
+        mandatory on every enable/disable. No token is given to the agent.
+        """
+        if request.path != "/root-window" and not request.path.startswith("/api/root-window/"):
+            return None
+        secret_digest = config.get("ROOT_WINDOW_OWNER_AUTH_SHA256")
+        if not isinstance(secret_digest, str) or len(secret_digest) != 64 or any(c not in "0123456789abcdef" for c in secret_digest):
+            abort(503)
+        authorization=request.authorization
+        valid = (authorization is not None and authorization.type.lower() == "basic"
+                 and authorization.username == "owner"
+                 and isinstance(authorization.password,str)
+                 and len(authorization.password) >= 32)
+        password = authorization.password if valid else ""
+        digest=hashlib.sha256(password.encode("utf-8")).hexdigest()
+        if not valid or not hmac.compare_digest(digest,secret_digest):
+            return ("Autenticación del propietario requerida",401,
+                    {"WWW-Authenticate":'Basic realm="Hache Owner", charset="UTF-8"',
+                     "Cache-Control":"no-store"})
+        return None
+
     def root_window_setup():
         secret = config.get("ROOT_WINDOW_KEY_HEX")
         endpoint = config.get("ROOT_WINDOW_SOCKET")
@@ -244,4 +270,5 @@ def create_app_from_env():
     config = {key: os.getenv("SQLGUARD_" + key) for key in keys}
     config["ROOT_WINDOW_KEY_HEX"] = os.getenv("SQLGUARD_ROOT_WINDOW_KEY_HEX")
     config["ROOT_WINDOW_SOCKET"] = os.getenv("SQLGUARD_ROOT_WINDOW_SOCKET")
+    config["ROOT_WINDOW_OWNER_AUTH_SHA256"] = os.getenv("SQLGUARD_ROOT_WINDOW_OWNER_AUTH_SHA256")
     return create_app(config, backup_checker=checker)
