@@ -164,8 +164,9 @@ def main(path):
                         if len(raw)>4096 or not raw.endswith(b"\n"): raise Rejected("frame")
                         req=json.loads(raw)
                         if role=="admin":
-                            if type(req) is not dict or set(req)!={"ticket"}: raise Rejected("admin_schema")
-                            result=window.toggle(req["ticket"])
+                            if req=={"method":"status"}: result=window.status()
+                            elif type(req) is dict and set(req)=={"ticket"}: result=window.toggle(req["ticket"])
+                            else: raise Rejected("admin_schema")
                         else:
                             result=window.agent(req)
                         outcome={"ok":True,"result":result}
