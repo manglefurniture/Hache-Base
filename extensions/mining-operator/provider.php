@@ -56,13 +56,7 @@ function op_vast_status(string $id): array {
     return op_vast_inspect($id);
 }
 function op_vast_inspect(string $id): array {
-    try{$r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');}
-    catch(OperatorRejected $e){
-        if($e->getMessage()==='resource_not_found'&&($operation['rental_cleanup']??false)===true)
-            return ['status'=>'destroyed','provider_mutation_sent'=>false,
-                    'provider_absence_confirmed'=>true];
-        throw $e;
-    }
+    $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
     $row=$r['data']['instances']??null;
     if(!is_array($row)||!isset($row['id'])||(string)$row['id']!==$id)op_fail('resource_not_found');
     $safe=op_pick($row,['id','machine_id','host_id','actual_status','intended_status','gpu_name','num_gpus','dph_total','ssh_host','ssh_port']);
@@ -368,7 +362,13 @@ function op_guard_stop(array $operation,array $snapshot): array {
     if(!isset($snapshot['machine_id'],$snapshot['host_id'])||
        !is_int($snapshot['machine_id'])||!is_int($snapshot['host_id']))
         op_fail('target_state_changed');
-    $r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');
+    try{$r=op_vast('/api/v0/instances/'.rawurlencode($id).'/?owner=me');}
+    catch(OperatorRejected $e){
+        if($e->getMessage()==='resource_not_found'&&($operation['rental_cleanup']??false)===true)
+            return ['status'=>'destroyed','provider_mutation_sent'=>false,
+                    'provider_absence_confirmed'=>true];
+        throw $e;
+    }
     $row=$r['data']['instances']??null;
     if(!is_array($row)||(string)($row['id']??'')!==$id||
        (int)($row['machine_id']??-1)!==$snapshot['machine_id']||
