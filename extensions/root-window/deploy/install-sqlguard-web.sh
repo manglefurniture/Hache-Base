@@ -141,9 +141,50 @@ finally:
 PY
 ENV_CHANGED=1
 
-# Root-owned immutable release, source copied only from pinned main commit.
-install -d -o root -g root -m 0755 "$RELEASE" "$RELEASE/extensions"
-cp -a "$SRC" "$RELEASE/extensions/sql-guard"
+# Extract ONLY Git-tracked content from the exact commit. Never copy
+# ignored .env/key/pem/untracked files from a local checkout.
+install -d -o root -g root -m 0755 "$RELEASE"
+python3 - "$REPO" "$SHA" "$RELEASE" <<'PY'
+import io,os,pathlib,subprocess,sys,tarfile
+repo,sha,release=sys.argv[1:]
+archive=subprocess.run(
+    ["git","-C",repo,"archive","--format=tar",sha,"extensions/sql-guard/"],
+    stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True,timeout=30).stdout
+dest=pathlib.Path(release)
+total=0
+with tarfile.open(fileobj=io.BytesIO(archive),mode="r:") as tar:
+    members=tar.getmembers()
+    if not members or len(members)>150:
+        raise SystemExit("UNEXPECTED_ARCHIVE_ENTRIES")
+    names=set()
+    for member in members:
+        path=pathlib.PurePosixPath(member.name)
+        parts=path.parts
+        if (member.name in names or len(parts)<2 or parts[:2]!=("extensions","sql-guard")
+            or ".." in parts or "." in parts or member.name.startswith("/")
+            or not (member.isfile() or member.isdir())):
+            raise SystemExit("UNSAFE_TRACKED_ENTRY")
+        names.add(member.name)
+        total+=member.size
+        if total>3_000_000:
+            raise SystemExit("OVERSIZED_RELEASE")
+        target=dest.joinpath(*parts)
+        if member.isdir():
+            target.mkdir(parents=True,exist_ok=True,mode=0o755)
+        else:
+            target.parent.mkdir(parents=True,exist_ok=True,mode=0o755)
+            with open(target,"xb") as stream:
+                stream.write(tar.extractfile(member).read())
+            target.chmod(0o644)
+required=(
+    "extensions/sql-guard/approval_web.py",
+    "extensions/sql-guard/passkey_gateway.py",
+    "extensions/sql-guard/templates/root_window.html",
+    "extensions/sql-guard/static/root_window.js",
+)
+if not all((dest/name).is_file() for name in required):
+    raise SystemExit("INCOMPLETE_TRACKED_RELEASE")
+PY
 chown -R root:root "$RELEASE"
 find "$RELEASE" -type d -exec chmod 0755 {} +
 find "$RELEASE" -type f -exec chmod 0644 {} +
