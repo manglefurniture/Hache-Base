@@ -260,13 +260,16 @@ def check_expired(connection, helper, now=None, reconcile_pending=None):
         try:
             candidate = reconcile_pending(plan_id, json.loads(op_json), json.loads(snap_json))
             if isinstance(candidate, dict):
-                bind_rental_instance(connection, plan_id, candidate, now=now)
+                bind_now = int(time.time()) if use_wall_clock else now
+                bind_rental_instance(connection, plan_id, candidate, now=bind_now)
         except Exception:
             # Keep the durable lease pending; never repeat the create request.
             connection.execute(
                 "UPDATE vast_leases SET last_attempt=?,last_outcome='rental_reconciliation_pending' "
                 "WHERE plan_id=? AND phase='armed'", (now, plan_id))
     connection.commit()
+    if use_wall_clock:
+        now = int(time.time())
     rows = connection.execute(
         "SELECT plan_id,operation,snapshot FROM vast_leases "
         "WHERE phase='armed' AND deadline<=? ORDER BY deadline,created LIMIT 50",

@@ -111,6 +111,18 @@ function op_vast_complete_inventory(callable $fetchPage): array {
     return ['instances'=>$rows,'total_instances'=>$total,'complete'=>true,'pages'=>$pages];
 }
 
+function op_vast_list_result(array $inventory, int $displayLimit=500): array {
+    $rows=$inventory['instances']??null;
+    $total=$inventory['total_instances']??null;
+    if(!is_array($rows)||!is_int($total)||$total!==count($rows)||
+       $displayLimit<1||$displayLimit>1000)op_fail('inventory_incomplete');
+    $shown=array_slice($rows,0,$displayLimit);
+    $complete=count($shown)===$total;
+    return ['instances'=>$shown,'partial'=>!$complete,'complete'=>$complete,
+            'inventory_complete'=>true,'total_instances'=>$total,
+            'pages'=>$inventory['pages']??null];
+}
+
 function op_vast_inventory(): array {
     return op_vast_complete_inventory(static function(?string $cursor):array {
         $columns=['id','machine_id','host_id','actual_status','intended_status',
@@ -163,10 +175,7 @@ function op_query(array $operation): array {
                 'warning'=>'Candidate only; independent pre-rental inventory comparison and armed lease binding required'];
     }
     if($action==='vast.list'){
-        $inventory=op_vast_inventory();
-        return ['instances'=>$inventory['instances'],'partial'=>false,
-                'complete'=>true,'total_instances'=>$inventory['total_instances'],
-                'pages'=>$inventory['pages']];
+        return op_vast_list_result(op_vast_inventory());
     }
     if($action==='vast.status')return op_vast_status($operation['instance_id']);
     if($action==='vast.inspect')return op_vast_inspect($operation['instance_id']);

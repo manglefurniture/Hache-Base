@@ -29,6 +29,12 @@ foreach([[],['success'=>false],['instances'=>'bad'],['instances'=>['bad']]] as $
     catch(OperatorRejected $e){if($e->getMessage()!=='provider_unavailable')throw $e;}
 }
 
+$list=op_vast_list_result(['instances'=>array_fill(0,1000,['id'=>1]),
+    'total_instances'=>1000,'pages'=>40]);
+if(count($list['instances'])!==500||$list['partial']!==true||
+   $list['complete']!==false||$list['inventory_complete']!==true||
+   $list['total_instances']!==1000)throw new RuntimeException('Bounded inventory projection failed');
+
 // Complete instance inventory must follow the documented keyset cursor and verify totals.
 $first=['success'=>true,'total_instances'=>2,'next_token'=>'cursor-one','instances'=>[
     ['id'=>101,'machine_id'=>1,'host_id'=>2,'gpu_name'=>'GPU','num_gpus'=>1,'dph_total'=>0.1]]];

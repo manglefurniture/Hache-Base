@@ -103,12 +103,27 @@ class FinancialLeaseTests(unittest.TestCase):
             'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
-        with patch('vast_start_guard.time.time',side_effect=[1020,1120]):
+        with patch('vast_start_guard.time.time',side_effect=[1020,1080,1120]):
             check_expired(self.db,lambda *args:{'status':'already_stopped'},
                           reconcile_pending=lambda *_:None)
         self.assertEqual(self.db.execute(
             'SELECT completed_at FROM lease_guard_heartbeat WHERE id=1').fetchone()[0],1120)
 
+    def test_deadline_elapsed_during_reconciliation_stops_in_same_tick(self):
+        op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
+            'gpu_name':'RTX 4070 Ti SUPER','gpu_count':1,
+            'max_minutes':1,'max_hourly_usd':0.2,'max_total_usd':0.3}
+        candidate={'id':999,'machine_id':456,'host_id':789,'gpu_name':'RTX 4070 Ti SUPER',
+                   'num_gpus':1,'dph_total':0.2}
+        arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
+        capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
+        calls=[]
+        with patch('vast_start_guard.time.time',side_effect=[1020,1200,1201,1202]):
+            result=check_expired(
+                self.db,lambda mode,op,snap:calls.append((mode,op,snap)) or {'status':'already_stopped'},
+                reconcile_pending=lambda *_:candidate)
+        self.assertEqual(result['closed'],1)
+        self.assertEqual(calls[0][1]['instance_id'],'999')
     def test_supervisor_reconciles_pending_rental_before_deadline(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
             'gpu_name':'RTX 4060 Ti','gpu_count':1,'max_minutes':120,
