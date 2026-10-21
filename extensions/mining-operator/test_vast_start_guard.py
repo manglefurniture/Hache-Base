@@ -168,12 +168,8 @@ class FinancialLeaseTests(unittest.TestCase):
                   'num_gpus':1,'dph_total':0.2}
         arm_rental(self.db,'b'*32,op,{},now=1010,timer_check=lambda:True)
         capture_rental_baseline(self.db,'b'*32,[{'id':100}],now=1015)
-        calls=[]
-        outcome=check_expired(
-            self.db,lambda *args:calls.append(args) or {'status':'already_stopped'},
-            now=5000,reconcile_pending=lambda *_:instance)
-        self.assertEqual(outcome['failed'],1)
-        self.assertEqual(calls,[])
+        with self.assertRaisesRegex(LeaseError,'rental_reconciliation_window_expired'):
+            bind_rental_instance(self.db,'b'*32,instance,now=5000)
         phase,instance_id=self.db.execute(
             "SELECT phase,instance_id FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
         self.assertEqual((phase,instance_id),('armed','pending:123'))
