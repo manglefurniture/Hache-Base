@@ -1,9 +1,11 @@
 import hashlib
 import hmac
 import os
+import sqlite3
+from types import SimpleNamespace
 import tempfile
 import unittest
-from window import Window,Rejected,DOMAIN,SCOPE,MAX_SECONDS,encode
+from window import Window,Rejected,DOMAIN,SCOPE,MAX_SECONDS,encode,restart_with_lease_lock
 
 SECRET=b"test-secret-32-bytes-for-gate-00"
 class WindowTests(unittest.TestCase):
@@ -67,4 +69,44 @@ class WindowTests(unittest.TestCase):
         with self.assertRaises(Rejected): self.w.agent({"method":"restart_operator"})
         self.assertEqual(self.w.count,1)
         self.assertEqual(self.w.db.execute("SELECT outcome FROM audit ORDER BY id DESC LIMIT 1").fetchone()[0],"failed_or_unknown")
+
+class FinancialConcurrencyTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.path=os.path.join(self.tmp.name,"operator.sqlite")
+        self.db=sqlite3.connect(self.path,isolation_level=None)
+        self.db.execute("CREATE TABLE vast_leases(phase TEXT NOT NULL)")
+        self.db.execute("CREATE TABLE lease_guard_heartbeat(id INTEGER PRIMARY KEY,completed_at REAL NOT NULL)")
+        self.db.execute("INSERT INTO lease_guard_heartbeat VALUES(1,1000)")
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+    def test_arm_cannot_commit_between_check_and_restart(self):
+        calls=[]
+        def run(args,**kwargs):
+            calls.append(args)
+            with sqlite3.connect(self.path,timeout=0,isolation_level=None) as second:
+                with self.assertRaises(sqlite3.OperationalError):
+                    second.execute("BEGIN IMMEDIATE")
+            return SimpleNamespace(returncode=0)
+        result=restart_with_lease_lock(self.path,runner=run,clock=lambda:1001)
+        self.assertEqual(result["status"],"active")
+        self.assertEqual(len(calls),2)
+        # Lock must be released on success.
+        self.db.execute("BEGIN IMMEDIATE")
+        self.db.rollback()
+    def test_active_lease_denies_before_restart(self):
+        self.db.execute("INSERT INTO vast_leases VALUES('armed')")
+        calls=[]
+        with self.assertRaises(Rejected):
+            restart_with_lease_lock(self.path,runner=lambda *a,**k:calls.append(a),
+                                    clock=lambda:1001)
+        self.assertEqual(calls,[])
+    def test_stale_heartbeat_denies(self):
+        calls=[]
+        with self.assertRaises(Rejected):
+            restart_with_lease_lock(self.path,runner=lambda *a,**k:calls.append(a),
+                                    clock=lambda:1200)
+        self.assertEqual(calls,[])
+
 if __name__=="__main__":unittest.main()
