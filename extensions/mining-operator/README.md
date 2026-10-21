@@ -228,3 +228,7 @@ spending cap or the maximum exposure can be independently proven.
 
 References: https://docs.vast.ai/api-reference/instances/show-instances
 and https://vast.ai/faq/.
+
+A stopped Vast instance can continue accruing storage charges. Rental leases
+therefore remain armed after compute is stopped and close only after the provider
+confirms the instance is absent. The guard does not destroy instance data.

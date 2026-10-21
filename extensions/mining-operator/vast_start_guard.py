@@ -281,18 +281,31 @@ def check_expired(connection, helper, now=None, reconcile_pending=None):
         try:
             op = json.loads(op_json)
             snap = json.loads(snap_json)
-            if op.get('action') == 'vast.rent':
-                # The stop helper only understands an existing instance. A bound
-                # rental is converted to a stop-only operation with verified ID.
+            rental_lease = op.get('action') == 'vast.rent'
+            if rental_lease:
+                # Stop compute at the deadline, but keep the financial lease
+                # armed while the provider still lists the instance: disk can bill
+                # after stop. A later provider-confirmed 404 closes the obligation.
                 bound = connection.execute('SELECT instance_id FROM vast_leases WHERE plan_id=?', (plan_id,)).fetchone()
                 if not bound or bound[0].startswith('pending:'):
                     raise LeaseError('rental_identity_reconciliation_required')
                 op = {'action':'vast.start','instance_id':bound[0],
                       'max_hourly_usd':op['max_hourly_usd'],
                       'max_total_usd':op['max_total_usd'],
-                      'max_minutes':op['max_minutes']}
+                      'max_minutes':op['max_minutes'],
+                      'rental_cleanup':True}
             response = helper('guard_stop', op, snap)
-            if response.get('status') == 'already_stopped':
+            if rental_lease and response.get('status') == 'destroyed':
+                connection.execute(
+                    "UPDATE vast_leases SET phase='closed',last_attempt=?,last_outcome='instance_destroyed' "
+                    "WHERE plan_id=? AND phase='armed'", (now, plan_id))
+                stopped += 1
+            elif rental_lease and response.get('status') == 'already_stopped':
+                connection.execute(
+                    "UPDATE vast_leases SET last_attempt=?,last_outcome='stopped_instance_still_exists' "
+                    "WHERE plan_id=? AND phase='armed'", (now, plan_id))
+                pending += 1
+            elif response.get('status') == 'already_stopped':
                 connection.execute(
                     "UPDATE vast_leases SET phase='closed',last_attempt=?,last_outcome='already_stopped' "
                     "WHERE plan_id=? AND phase='armed'", (now, plan_id))

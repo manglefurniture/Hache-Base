@@ -75,7 +75,14 @@ class FinancialLeaseTests(unittest.TestCase):
             calls.append((mode,operation,snapshot))
             return {'status':'already_stopped'}
         outcome=check_expired(self.db,stop,now=5000)
-        self.assertEqual(outcome['closed'],1)
+        self.assertEqual(outcome['closed'],0)
+        self.assertEqual(outcome['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
+        gone=check_expired(
+            self.db,lambda *args:{'status':'destroyed','provider_absence_confirmed':True},now=1092)
+        self.assertEqual(gone['closed'],1)
         self.assertEqual(calls[0][1]['instance_id'],'999')
         self.assertEqual(calls[0][2]['id'],999)
 
@@ -122,7 +129,11 @@ class FinancialLeaseTests(unittest.TestCase):
             result=check_expired(
                 self.db,lambda mode,op,snap:calls.append((mode,op,snap)) or {'status':'already_stopped'},
                 reconcile_pending=lambda *_:candidate)
-        self.assertEqual(result['closed'],1)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",(plan,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
         self.assertEqual(calls[0][1]['instance_id'],'999')
     def test_supervisor_reconciles_pending_rental_before_deadline(self):
         op={'action':'vast.rent','offer_id':123,'machine_id':456,'host_id':789,
@@ -169,7 +180,11 @@ class FinancialLeaseTests(unittest.TestCase):
         result=check_expired(self.db,lambda mode, operation, snapshot:
             calls.append((operation,snapshot)) or {'status':'already_stopped'},
             now=1020,reconcile_pending=lambda *_:candidate)
-        self.assertEqual(result['closed'],1)
+        self.assertEqual(result['closed'],0)
+        self.assertEqual(result['stop_requested'],1)
+        phase,last=self.db.execute(
+            "SELECT phase,last_outcome FROM vast_leases WHERE plan_id=?",('b'*32,)).fetchone()
+        self.assertEqual((phase,last),('armed','stopped_instance_still_exists'))
         self.assertEqual(calls[0][0]['instance_id'],'999')
         self.assertTrue(calls[0][1]['rental_price_violation'])
 
