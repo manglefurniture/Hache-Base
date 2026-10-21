@@ -53,6 +53,34 @@ def safe_config(path):
     if cfg["admin_socket"]==cfg["agent_socket"] or cfg["admin_uid"]==cfg["agent_uid"]: raise Rejected("identity_separation")
     return cfg,secret
 
+
+def restart_with_lease_lock(db, *, runner=None, clock=None):
+    """Serialize with arm()/arm_rental() through their shared SQLite writer lock."""
+    runner = runner or subprocess.run
+    clock = clock or time.time
+    conn = None
+    try:
+        conn = sqlite3.connect("file:"+str(db)+"?mode=rw",uri=True,timeout=2,isolation_level=None)
+        conn.execute("BEGIN IMMEDIATE")
+        armed = conn.execute("SELECT COUNT(*) FROM vast_leases WHERE phase='armed'").fetchone()[0]
+        beat = conn.execute("SELECT completed_at FROM lease_guard_heartbeat WHERE id=1").fetchone()
+        if armed or not beat or not 0 <= clock()-float(beat[0]) <= 90:
+            raise Rejected("financial_guard_unhealthy")
+        if runner(["/usr/bin/systemctl","restart",SERVICE],capture_output=True,timeout=25).returncode:
+            raise Rejected("restart_failed")
+        if runner(["/usr/bin/systemctl","is-active","--quiet",SERVICE],capture_output=True,timeout=8).returncode:
+            raise Rejected("operator_unhealthy")
+        return {"service":SERVICE,"status":"active"}
+    except (sqlite3.Error,OSError,ValueError,KeyError,TypeError,subprocess.TimeoutExpired) as exc:
+        raise Rejected("financial_guard_unavailable") from exc
+    finally:
+        if conn is not None:
+            try:
+                if conn.in_transaction:
+                    conn.rollback()
+            finally:
+                conn.close()
+
 def safe_restart():
     # Never interrupt the financial guardian while a Vast financial lease is armed.
     path="/etc/hache-mining-operator/config.json"
@@ -63,32 +91,8 @@ def safe_restart():
         cfg=json.load(f)
     db=Path(cfg["database"])
     if not db.is_absolute() or not db.is_relative_to("/var/lib/hache-mining-operator") or db.is_symlink(): raise Rejected("untrusted_financial_db")
-    # The operator's arm()/arm_rental() take SQLite BEGIN IMMEDIATE on this
-    # same database. Holding that writer reservation through restart makes
-    # financial-lease arming and restart mutually exclusive, not a TOCTOU read.
-    # Never mutate lease records; always roll back the read-only transaction.
-    conn = None
-    try:
-        conn=sqlite3.connect("file:"+str(db)+"?mode=rw",uri=True,timeout=2,isolation_level=None)
-        conn.execute("BEGIN IMMEDIATE")
-        armed=conn.execute("SELECT COUNT(*) FROM vast_leases WHERE phase='armed'").fetchone()[0]
-        beat=conn.execute("SELECT completed_at FROM lease_guard_heartbeat WHERE id=1").fetchone()
-        if armed or not beat or not 0<=time.time()-float(beat[0])<=90:
-            raise Rejected("financial_guard_unhealthy")
-        if subprocess.run(["/usr/bin/systemctl","restart",SERVICE],capture_output=True,timeout=25).returncode:
-            raise Rejected("restart_failed")
-        if subprocess.run(["/usr/bin/systemctl","is-active","--quiet",SERVICE],capture_output=True,timeout=8).returncode:
-            raise Rejected("operator_unhealthy")
-        return {"service":SERVICE,"status":"active"}
-    except (sqlite3.Error, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
-        raise Rejected("financial_guard_unavailable") from exc
-    finally:
-        if conn is not None:
-            try:
-                if conn.in_transaction:
-                    conn.rollback()
-            finally:
-                conn.close()
+    return restart_with_lease_lock(db)
+
 
 class Window:
     """In-memory grants disappear on daemon restart; nonce/audit persist as root."""
