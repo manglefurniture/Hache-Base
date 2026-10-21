@@ -146,7 +146,7 @@ function op_query(array $operation): array {
             'gpu_name'=>['eq'=>$operation['gpu_name']],
             'num_gpus'=>['eq'=>$operation['gpu_count']],
             'dph_total'=>['lte'=>$operation['max_hourly_usd']],
-            'type'=>'on-demand','limit'=>10,'allocated_storage'=>5];
+            'type'=>'on-demand','limit'=>10,'order'=>[['dph_total','asc']],'allocated_storage'=>5];
         $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
         $rows=op_rows($r['data'],'offers');
         foreach($rows as $row){
@@ -378,7 +378,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $request=json_decode($raw,true,16,JSON_THROW_ON_ERROR);
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
-        $reads=['vast.list','vast.status','vast.inspect','vast.search','salad.targets','salad.groups','salad.instances','salad.instance','telemetry'];
+        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry'];
         $writes=['vast.stop','vast.start','vast.register','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);
