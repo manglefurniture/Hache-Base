@@ -3,10 +3,12 @@ on:
   pull_request:
     paths:
       - 'extensions/sql-guard/**'
+      - 'extensions/root-window/**'
       - '.github/workflows/sql-guard-tests.yml'
   push:
     paths:
       - 'extensions/sql-guard/**'
+      - 'extensions/root-window/**'
       - '.github/workflows/sql-guard-tests.yml'
 jobs:
   unit:
@@ -21,6 +23,12 @@ jobs:
         run: bash -n extensions/sql-guard/deploy/create-trusted-backup.sh.example
       - name: Run SQL guard policy and executor tests
         run: cd extensions/sql-guard && python3 -m unittest discover -v -p 'test_*.py'
+      - name: Temporary root window policy regression (no privileged calls)
+        run: python3 -m unittest discover -s extensions/root-window -v -p 'test_*.py'
+      - name: Syntax-check root window and mobile switch
+        run: |
+          python3 -m py_compile extensions/root-window/window.py extensions/sql-guard/passkey_gateway.py extensions/sql-guard/approval_web.py
+          node --check extensions/sql-guard/static/root_window.js
   mariadb-integration:
     runs-on: ubuntu-latest
     permissions:

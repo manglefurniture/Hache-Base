@@ -219,6 +219,85 @@ class PasskeyGateway:
             self.db.rollback()
             raise
 
+
+    def begin_root_window(self, action: str, now: int) -> dict:
+        """New passkey assertion, cryptographically bound to enable OR disable."""
+        if action not in ("enable", "disable"):
+            raise CeremonyRejected("Invalid window action")
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            self._purge_expired(now)
+            keys = self._passkeys()
+            if len(keys) != 1:
+                raise CeremonyRejected("Exactly one owner passkey required")
+            if self.db.execute("SELECT COUNT(*) FROM ceremonies WHERE kind LIKE 'root_window_%'").fetchone()[0] >= 3:
+                raise CeremonyRejected("Too many window ceremonies")
+            hour = now // 3600
+            self.db.execute("DELETE FROM stage_budget WHERE window_type='root_window_hour' AND window_id<?", (hour-48,))
+            self.db.execute("INSERT OR IGNORE INTO stage_budget VALUES ('root_window_hour',?,0)", (hour,))
+            if self.db.execute("UPDATE stage_budget SET requests=requests+1 WHERE window_type='root_window_hour' AND window_id=? AND requests<6", (hour,)).rowcount != 1:
+                raise CeremonyRejected("Window rate limited")
+            opts = generate_authentication_options(
+                rp_id=self.rp_id,
+                allow_credentials=[PublicKeyCredentialDescriptor(id=keys[0][0])],
+                user_verification=UserVerificationRequirement.REQUIRED)
+            self.db.execute("INSERT INTO ceremonies VALUES (?,?,?,?)",
+                            (opts.challenge, "root_window_" + action, action, now + 120))
+            self.db.commit()
+            return json.loads(options_to_json(opts))
+        except Exception:
+            self.db.rollback()
+            raise
+
+    def finish_root_window(self, action: str, challenge_text: str, credential: dict,
+                           now: int, *, window_key: bytes) -> dict:
+        """Credential stays in independent approval store; ticket is short lived."""
+        if action not in ("enable","disable") or len(window_key) != 32:
+            raise CeremonyRejected("Window unavailable")
+        if not isinstance(credential, dict) or not isinstance(credential.get("rawId"), str):
+            raise CeremonyRejected("Invalid credential")
+        try:
+            challenge = base64url_to_bytes(challenge_text)
+            credential_id = base64url_to_bytes(credential["rawId"])
+        except Exception as exc:
+            raise CeremonyRejected("Invalid challenge") from exc
+        try:
+            self.db.execute("BEGIN IMMEDIATE")
+            row = self.db.execute(
+                "SELECT expires FROM ceremonies WHERE challenge=? AND kind=? AND request_id=?",
+                (challenge, "root_window_" + action, action)).fetchone()
+            if not row or row[0] <= now:
+                raise CeremonyRejected("Expired ceremony")
+            key = self.db.execute("SELECT public_key,sign_count FROM passkeys WHERE credential_id=?",
+                                  (credential_id,)).fetchone()
+            if not key:
+                raise CeremonyRejected("Unknown owner credential")
+            try:
+                verified = verify_authentication_response(
+                    credential=credential, expected_challenge=challenge,
+                    expected_rp_id=self.rp_id, expected_origin=self.origin,
+                    credential_public_key=key[0], credential_current_sign_count=key[1],
+                    require_user_verification=True)
+            except Exception as exc:
+                raise CeremonyRejected("Invalid owner assertion") from exc
+            payload = {
+                "domain":"hache-root-window/v1", "scope":"restart_operator",
+                "action":action, "duration_sec":600 if action=="enable" else 0,
+                "expires_at":now+30, "nonce":secrets.token_urlsafe(32)
+            }
+            message = json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()
+            signature = hmac.new(window_key,message,hashlib.sha256).hexdigest()
+            if self.db.execute("DELETE FROM ceremonies WHERE challenge=? AND kind=? AND request_id=?",
+                               (challenge,"root_window_"+action,action)).rowcount != 1:
+                raise CeremonyRejected("Ceremony already consumed")
+            self.db.execute("UPDATE passkeys SET sign_count=? WHERE credential_id=?",
+                            (verified.new_sign_count,credential_id))
+            self.db.commit()
+            return {"payload":payload,"signature":signature}
+        except Exception:
+            self.db.rollback()
+            raise
+
     def stage_request(self, operation: dict, backup_digest: str, now: int) -> str:
         """ONLY called after authenticating agent. backup_digest is NOT proof of backup."""
         canonical_operation(operation)

@@ -4,6 +4,7 @@ Deploy only behind an HTTPS reverse proxy as a separate system account.
 The agent API token may stage requests, but MUST NOT approve any request.
 """
 import hmac
+import hashlib
 import os
 import re
 import time
@@ -161,6 +162,95 @@ def create_app(config: dict, backup_checker=None):
             int(time.time()), backup_checker=verify_backup)
         return jsonify({"status": "approved"})
 
+
+    @app.before_request
+    def root_window_authentication():
+        """Separate strong owner secret before any WebAuthn ceremony quota is charged.
+
+        The browser uses HTTPS Basic auth; passkey verification is still
+        mandatory on every enable/disable. No token is given to the agent.
+        """
+        if request.path != "/root-window" and not request.path.startswith("/api/root-window/"):
+            return None
+        secret_digest = config.get("ROOT_WINDOW_OWNER_AUTH_SHA256")
+        if not isinstance(secret_digest, str) or len(secret_digest) != 64 or any(c not in "0123456789abcdef" for c in secret_digest):
+            abort(503)
+        authorization=request.authorization
+        valid = (authorization is not None and authorization.type.lower() == "basic"
+                 and authorization.username == "owner"
+                 and isinstance(authorization.password,str)
+                 and len(authorization.password) >= 32)
+        password = authorization.password if valid else ""
+        digest=hashlib.sha256(password.encode("utf-8")).hexdigest()
+        if not valid or not hmac.compare_digest(digest,secret_digest):
+            return ("Autenticación del propietario requerida",401,
+                    {"WWW-Authenticate":'Basic realm="Hache Owner", charset="UTF-8"',
+                     "Cache-Control":"no-store"})
+        return None
+
+    def root_window_setup():
+        secret = config.get("ROOT_WINDOW_KEY_HEX")
+        endpoint = config.get("ROOT_WINDOW_SOCKET")
+        if not secret or endpoint != "/run/hache-root-window/admin.sock":
+            abort(503)
+        try:
+            key = bytes.fromhex(secret)
+        except ValueError:
+            abort(503)
+        if len(key) != 32:
+            abort(503)
+        return key, endpoint
+
+    def root_window_send(body):
+        import json
+        import socket
+        _, endpoint = root_window_setup()
+        message = json.dumps(body,sort_keys=True,separators=(",",":")).encode() + b"\n"
+        try:
+            with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as peer:
+                peer.settimeout(3)
+                peer.connect(endpoint)
+                peer.sendall(message)
+                result = b""
+                while b"\n" not in result and len(result) <= 4096:
+                    part = peer.recv(1024)
+                    if not part:
+                        break
+                    result += part
+            if len(result) > 4096:
+                abort(503)
+            outcome = json.loads(result)
+        except (OSError, ValueError, TypeError):
+            abort(503)
+        if not isinstance(outcome,dict) or not outcome.get("ok"):
+            abort(503)
+        return outcome["result"]
+
+    @app.get("/root-window")
+    def root_window_page():
+        root_window_setup()
+        return render_template("root_window.html")
+
+    @app.get("/api/root-window/status")
+    def root_window_status():
+        return jsonify(root_window_send({"method":"status"}))
+
+    @app.post("/api/root-window/start")
+    def root_window_begin():
+        root_window_setup()
+        body = request.get_json(silent=True) or {}
+        return jsonify(gateway().begin_root_window(body.get("action"),int(time.time())))
+
+    @app.post("/api/root-window/finish")
+    def root_window_end():
+        key, _ = root_window_setup()
+        body = request.get_json(silent=True) or {}
+        ticket = gateway().finish_root_window(
+            body.get("action"),body.get("challenge"),body.get("credential"),
+            int(time.time()),window_key=key)
+        # Ticket never reaches browser or nonprivileged agent.
+        return jsonify(root_window_send({"ticket":ticket}))
+
     return app
 
 
@@ -177,5 +267,8 @@ def create_app_from_env():
         checker = lambda operation, digest: verify_backup(
             operation, digest, manifest_path=manifest, archive_dir=directory,
             owner_uid=0)
-    return create_app({key: os.getenv("SQLGUARD_" + key) for key in keys},
-                      backup_checker=checker)
+    config = {key: os.getenv("SQLGUARD_" + key) for key in keys}
+    config["ROOT_WINDOW_KEY_HEX"] = os.getenv("SQLGUARD_ROOT_WINDOW_KEY_HEX")
+    config["ROOT_WINDOW_SOCKET"] = os.getenv("SQLGUARD_ROOT_WINDOW_SOCKET")
+    config["ROOT_WINDOW_OWNER_AUTH_SHA256"] = os.getenv("SQLGUARD_ROOT_WINDOW_OWNER_AUTH_SHA256")
+    return create_app(config, backup_checker=checker)
