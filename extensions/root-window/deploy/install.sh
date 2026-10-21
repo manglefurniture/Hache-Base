@@ -23,6 +23,33 @@ getent passwd gpt-agent >/dev/null
 R=/opt/hache-root-window
 RELEASE="$R/releases/$SHA"
 [[ ! -e "$RELEASE" && ! -L "$RELEASE" ]] || { echo RELEASE_EXISTS >&2; exit 2; }
+PREVIOUS="$(readlink -f "$R/current" 2>/dev/null || true)"
+SUCCESS=0
+SWITCHED=0
+cleanup(){
+  local rc=$?
+  [[ "$SUCCESS" == 1 ]] && return 0
+  set +e
+  if [[ "$SWITCHED" == 1 ]]; then
+    systemctl stop hache-root-window.service >/dev/null 2>&1
+    if [[ -n "$PREVIOUS" && -d "$PREVIOUS" ]]; then
+      ln -s "$PREVIOUS" "$R/.rollback-$SHA"
+      mv -Tf "$R/.rollback-$SHA" "$R/current"
+      install -o root -g root -m 0644 "$PREVIOUS/deploy/hache-root-window.service.example" /etc/systemd/system/hache-root-window.service
+    else
+      rm -f -- "$R/current" /etc/systemd/system/hache-root-window.service
+      systemctl disable hache-root-window.service >/dev/null 2>&1
+    fi
+    systemctl daemon-reload >/dev/null 2>&1
+    if [[ -n "$PREVIOUS" ]]; then systemctl restart hache-root-window.service >/dev/null 2>&1; fi
+  fi
+  # Only remove the failed release after ensuring it is no longer current.
+  if [[ -d "$RELEASE" && "$(readlink -f "$R/current" 2>/dev/null)" != "$RELEASE" ]]; then
+    rm -rf -- "$RELEASE"
+  fi
+  return "$rc"
+}
+trap cleanup EXIT
 install -d -o root -g root -m 0755 "$R" "$R/releases" "$RELEASE" "$RELEASE/deploy"
 install -d -o root -g root -m 0700 /etc/hache-root-window /var/lib/hache-root-window
 install -o root -g root -m 0644 "$SRC/window.py" "$RELEASE/window.py"
@@ -53,24 +80,22 @@ module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 module.safe_config(sys.argv[2])
 PY
-PREVIOUS="$(readlink -f "$R/current" 2>/dev/null || true)"
 ln -s "$RELEASE" "$R/.next-$SHA"
 mv -Tf "$R/.next-$SHA" "$R/current"
+SWITCHED=1
 install -o root -g root -m 0644 "$RELEASE/deploy/hache-root-window.service.example" /etc/systemd/system/hache-root-window.service
-rollback(){
-  local rc=$?
-  trap - ERR
-  systemctl stop hache-root-window.service >/dev/null 2>&1 || true
-  if [[ -n "$PREVIOUS" && -d "$PREVIOUS" ]]; then
-    ln -s "$PREVIOUS" "$R/.rollback-$SHA"
-    mv -Tf "$R/.rollback-$SHA" "$R/current"
-  fi
-  exit "$rc"
-}
-trap rollback ERR
 systemctl daemon-reload
 systemctl enable --now hache-root-window.service
-systemctl is-active --quiet hache-root-window.service
-[[ -S /run/hache-root-window/admin.sock && -S /run/hache-root-window/agent.sock ]] || { echo SOCKETS_MISSING >&2; false; }
-trap - ERR
+# Type=simple reports active before Python has necessarily bound both sockets.
+READY=0
+for attempt in {1..30}; do
+  if systemctl is-active --quiet hache-root-window.service &&
+     [[ -S /run/hache-root-window/admin.sock && -S /run/hache-root-window/agent.sock ]]; then
+    READY=1
+    break
+  fi
+  sleep 0.2
+done
+[[ "$READY" == 1 ]] || { echo SOCKET_READINESS_FAILED >&2; exit 2; }
+SUCCESS=1
 echo ROOT_WINDOW_BOOTSTRAPPED_DEFAULT_OFF_SQLGUARD_WEB_UNCHANGED
