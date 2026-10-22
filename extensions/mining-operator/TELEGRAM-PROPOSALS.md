@@ -1,0 +1,37 @@
+# Hache Mining Agent — Telegram de propuestas (fase aislada, sin rentas)
+
+## Alcance
+
+Canal privado Telegram, con almacenamiento SQLite para reconocer o rechazar ofertas concretas de Vast.ai. La aceptación se guarda como estado acknowledged: **no crea planes ejecutables, root grants, rentas ni gastos**. No modifica broker, Vast, Clore, Salad, Kryptex o mineros.
+
+La confirmación humana por mensajería es una señal de intención, no puede reemplazar el guard financiero independiente, una nueva cotización ni las puertas de seguridad del issue #84.
+
+## Controles
+
+- telegram_proposals.py solo admite los métodos Telegram sendMessage, getUpdates y answerCallbackQuery sobre HTTPS. Bot dedicado; token protegido con systemd LoadCredential y nunca incluido en repositorio, modelo IA, logs ni mensajes.
+- Sin webhook ni apertura de puertos. Verifica user_id, chat_id y chat de tipo privado del propietario antes de aceptar callbacks. No ejecuta comandos de texto.
+- Nonce aleatorio de un solo uso, caducidad 5 minutos, SHA256 de propuesta canónica, cursor durable de updates para evitar replay y transacciones SQLite para consumo atómico.
+- Oferta vinculada a proveedor/offer_id/machine_id/host_id/GPU/cantidad/tarifa/presupuesto/duración/estimación neta y antigüedad de cotización. Solo admite Vast; el contrato de Clore Spot requiere otra integración.
+- Las propuestas repetidas mientras la primera esté activa se rechazan. Un callback expirado, adulterado o desde otro usuario/chat no autoriza nada.
+- El asesor y broker deben validar por separado origen de observaciones de Kryptex, rentabilidad neta, cargos residuales, límites y proveedor. El precio mostrado no equivale a un hard cap de facturación.
+
+## Pruebas sin gastos
+
+python3 -m unittest discover -s extensions/mining-operator -p 'test_telegram_proposals.py' -v
+
+Cubren destinatario incorrecto, grupos, replay, expiración, duplicados, precio inválido, mensajes fallidos, modificación de payload y comandos libres ignorados. Ninguna prueba conecta a Telegram o alquila máquinas.
+
+## Plan seguro de despliegue
+
+1. Crear un bot **dedicado** con BotFather. Obtener por un flujo de onboarding seguro el chat_id y user_id privados exactos del propietario. Nunca pedir que pegue token en ChatGPT.
+2. Guardar el token en archivo root-only en VPS para LoadCredential. Crear cuenta de servicio aislada sin sudo ni claves de minería. Directorio SQLite privado 0700 y archivo 0600, UMask 0077.
+3. Instalar únicamente la versión validada y fusionada de GitHub, mediante la puerta de despliegue existente. No editar código versionado directamente en VPS.
+4. Preparar ofertas JSON read-only validadas con campos exactos: provider, offer_id, machine_id, host_id, gpu_name, gpu_count, max_hourly_usd, max_total_usd, max_minutes, projected_net_usd y quote_observed_at. Cotización no mayor de 120 segundos.
+5. Comando de registro (no renta):
+
+    python3 telegram_proposals.py --database /var/lib/hache-mining-agent/proposals.sqlite --prepare-file /ruta-privada/oferta.json
+
+6. Encender Telegram con credencial systemd y verificar que los botones funcionan solo para el propietario, con resultado rental_permitted=false. No habilitar rentas.
+7. Vincular en fases posteriores datos frescos del asesor y de Kryptex, el bridge de grants root, watchdog financiero y supervisor externo ante pérdida del VPS.
+
+Nunca ejecutar un alquiler solo por recibir acknowledged desde Telegram.
