@@ -84,7 +84,7 @@ class ProposalTests(unittest.TestCase):
         self.assertEqual(self.store.status(nonce)["state"], "acknowledged")
         self.assertEqual(self.store.process_update(action, CHAT, USER)["state"], "ignored")
         self.assertEqual(self.store.process_update(callback("reject:"+nonce,update_id=2),
-                                                    CHAT, USER)["state"], "ignored")
+                                                    CHAT, USER)["state"], "already_acknowledged")
         self.assertEqual(self.store.db.execute(
             "SELECT COUNT(*) FROM audit WHERE event='acknowledged'").fetchone()[0], 1)
 
@@ -149,6 +149,45 @@ class ProposalTests(unittest.TestCase):
         self.assertNotIn("token",transport.calls[0][1]["text"])
         self.assertEqual(self.store.db.execute("SELECT state FROM proposals").fetchone()[0],"notified")
 
+    def test_late_delivery_discloses_actual_time_left(self):
+        self.store.prepare(offer(), now=NOW)
+        transport = FakeTelegram()
+        channel = tp.TelegramChannel(self.store, tp.TelegramAPI("1234567:"+"a"*35, transport), CHAT, USER)
+        late = int((NOW+timedelta(seconds=210)).timestamp())
+        self.assertEqual(channel.send_pending(late), 1)
+        self.assertIn("90 segundos", transport.calls[0][1]["text"])
+
+    def test_near_expired_proposal_not_sent(self):
+        self.store.prepare(offer(), now=NOW)
+        transport = FakeTelegram()
+        channel = tp.TelegramChannel(self.store, tp.TelegramAPI("1234567:"+"a"*35, transport), CHAT, USER)
+        late = int((NOW+timedelta(seconds=275)).timestamp())
+        self.assertEqual(channel.send_pending(late), 0)
+        self.assertEqual(transport.calls, [])
+
+    def test_repeat_after_callback_answer_failure_remains_recorded(self):
+        nonce = self.ready()
+        transport = FakeTelegram()
+        transport.incoming = [callback("approve:"+nonce, update_id=20)]
+        api = tp.TelegramAPI("1234567:"+"a"*35, transport)
+        channel = tp.TelegramChannel(self.store, api, CHAT, USER)
+        original = api.transport
+        def fail_answer(url, body):
+            if url.endswith("/answerCallbackQuery"):
+                return {"ok": False}
+            return original(url, body)
+        api.transport = fail_answer
+        with self.assertRaisesRegex(tp.ProposalError, "telegram_unavailable"):
+            channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual(self.store.status(nonce)["state"], "acknowledged")
+        api.transport = original
+        transport.incoming = [callback("approve:"+nonce, update_id=21)]
+        result = channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual(result[0]["state"], "already_acknowledged")
+        self.assertEqual(transport.calls[-1][1]["text"], "Aceptacion ya registrada")
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM audit WHERE event='acknowledged'").fetchone()[0], 1)
+
     def test_send_fails_closed(self):
         self.store.prepare(offer(),now=NOW)
         transport=FakeTelegram()
@@ -167,7 +206,7 @@ class ProposalTests(unittest.TestCase):
         result=channel.poll_once(int(NOW.timestamp()))
         self.assertEqual(result[0]["state"],"acknowledged")
         self.assertEqual([x[0] for x in transport.calls],["getUpdates","answerCallbackQuery"])
-        self.assertEqual(transport.calls[1][1]["text"],"Registrado sin rentar")
+        self.assertEqual(transport.calls[1][1]["text"],"Aceptacion registrada (sin rentar)")
         self.assertFalse(self.store.status(nonce)["rental_permitted"])
 
     def test_stale_or_future_quote_rejected(self):
