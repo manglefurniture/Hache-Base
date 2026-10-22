@@ -81,6 +81,14 @@ class CloreWatchTests(unittest.TestCase):
         self.assertEqual(self.run_tick(p, r["cutoff_at"])["status"], "cancel_submitted_unverified")
         self.assertEqual(p.cancels,[456])
         self.assertEqual(self.phase()[0], "armed")
+    def test_price_or_overclock_change_triggers_early_cancel(self):
+        self.arm()
+        for change in ({"price": 11}, {"price":"NaN"}, {"oc_price": 0.2}):
+            with self.subTest(change=change):
+                p=FakeClore([{**self.order(), **change}])
+                self.assertEqual(self.run_tick(p, 1100)["status"],"cancel_submitted_unverified")
+                self.assertEqual(p.cancels, [456])
+                self.assertEqual(self.phase()[0],"armed")
     def test_missing_history_is_not_proof_of_cancel(self):
         r=self.arm()
         p=FakeClore([])
