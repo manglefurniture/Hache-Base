@@ -55,7 +55,9 @@ jobs:
         run: |
           python3 -m unittest discover -s extensions/mining-operator -p 'test_*.py'
           php -l extensions/mining-operator/provider.php
+          php -l extensions/mining-operator/clore_market.php
           php extensions/mining-operator/test_provider.php
+          php extensions/mining-operator/test_clore_market.php
 
       - name: Shell syntax
         run: |
