@@ -28,12 +28,14 @@ class CloreWatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = db_open(Path(self.tmp.name)/"leases.sqlite")
+        self.db.execute("INSERT INTO clore_cancel_heartbeat(id,completed_at) VALUES(1,995)")
     def tearDown(self):
         self.db.close()
         self.tmp.cleanup()
     def arm(self, **opts):
         inputs = dict(order_id=456, server_id=121322, daily_bid_usd="10",
-                      budget_usd="1", max_minutes=60, created_at=1000, now=1000)
+                      budget_usd="1", max_minutes=60, created_at=1000, now=1000,
+                      timer_check=lambda:True)
         inputs.update(opts)
         return arm(self.db, **inputs)
     def order(self, expired=False, si=121322):
@@ -103,6 +105,21 @@ class CloreWatchTests(unittest.TestCase):
         self.arm()
         with self.assertRaisesRegex(GuardError,"existing_armed_order"):
             self.arm(order_id=789)
+    def test_no_arm_without_healthy_independent_supervisor(self):
+        with self.assertRaisesRegex(GuardError,"independent_cancel_timer_inactive"):
+            self.arm(timer_check=lambda:False)
+        self.db.execute("DELETE FROM clore_cancel_heartbeat")
+        with self.assertRaisesRegex(GuardError,"independent_cancel_supervisor_unhealthy"):
+            self.arm()
+    def test_idle_tick_requires_provider_success_and_refreshes_heartbeat(self):
+        p=FakeClore([])
+        self.assertEqual(self.run_tick(p,1005)["status"],"idle")
+        self.assertEqual(self.db.execute(
+            "SELECT completed_at FROM clore_cancel_heartbeat").fetchone()[0],1005)
+        with self.assertRaisesRegex(GuardError,"provider_request_failed"):
+            self.run_tick(FakeClore(fail_get=True),1006)
+        self.assertEqual(self.db.execute(
+            "SELECT completed_at FROM clore_cancel_heartbeat").fetchone()[0],1005)
     def test_bad_inputs_rejected(self):
         for opts in ({"order_id":True},{"server_id":0},{"max_minutes":0},
                      {"max_minutes":1441},{"created_at":1100},
