@@ -17,7 +17,7 @@ hasta cerrar los prerrequisitos de integración.
 `clore_cancel_guard.py` es independiente de la conexión del chat y del broker.
 Una tabla SQLite duradera conserva: ID exacto de **orden** (no ID de servidor),
 servidor previsto, tarifa Spot diaria en USD-Blockchain, presupuesto autorizado,
-fecha de creación, límite temporal, corte efectivo, última tentativa y cierre
+fecha de creación, comisión fija de creación, límite temporal, corte efectivo, última tentativa y cierre
 confirmado.
 
 El supervisor se ejecuta cada 30 s por `systemd`. Si la fecha límite llegó:
@@ -32,7 +32,10 @@ El supervisor se ejecuta cada 30 s por `systemd`. Si la fecha límite llegó:
 El corte se calcula desde la **fecha real de creación de la orden**, el menor de:
 - duración explícitamente autorizada, o
 - instante al que el precio diario aprobado (+5% de gastos estimados)
-  consumiría 85% del presupuesto total autorizado.
+  consumiría 85% del presupuesto **restante tras descontar la comisión fija
+  de creación real**. Exige al menos 90 segundos entre registro y corte.
+- si Clore reporta tarifa superior a la puja autorizada, o un cargo diario
+  adicional de overclock, dispara cancelación anticipada.
 
 Es un **corte preventivo estimado**, NO un límite de gasto garantizado por Clore.
 Tarifas, comisiones, rezago de red, precio real de puja o caída de API/VPS pueden
@@ -64,10 +67,11 @@ Registro de una orden **ya existente** en un procedimiento administrativo:
 python3 /opt/hache-mining-operator/current/clore_cancel_guard.py arm \
  --approved --order-id ORDER_ID --server-id SERVER_ID \
  --daily-bid-usd DAILY_USD --budget-usd MAX_TOTAL_USD \
+ --creation-fee-usd ACTUAL_FEE_USD \
  --max-minutes MAX_MINUTES --created-unix PROVIDER_CREATED_EPOCH
 ```
 `arm` exige root, timer activo, heartbeat reciente, una sola orden armada,
-fecha válida y un margen efectivo antes de vencimiento.
+fecha válida, comisión fija real y al menos 90 segundos antes del vencimiento.
 
 **Límite crítico para alquiler futuro:** `arm` acepta una orden ya existente.
 Esto **no elimina** la ventana entre `create_order` y `arm`. Antes de activar
