@@ -201,6 +201,21 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
             if match.get("expired") is True:
                 record(db, oid, now, "provider_confirmed_expired", closed=True)
                 return {"active": 0, "status": "verified_closed"}
+            if match.get("expired") is False:
+                # my_orders publishes price and optional overclock surcharge per
+                # day in the rental currency. This lease permits USD-Blockchain
+                # only; an unexpected higher price triggers immediate cutoff.
+                try:
+                    if "price" in match:
+                        actual = Decimal(str(match["price"]))
+                        if not actual.is_finite() or actual <= 0 or actual > Decimal(row["daily_bid_usd"]):
+                            due = True
+                    if "oc_price" in match:
+                        oc = Decimal(str(match["oc_price"]))
+                        if not oc.is_finite() or oc < 0 or oc > 0:
+                            due = True
+                except (InvalidOperation, ValueError, TypeError):
+                    due = True
             if match.get("expired") is not False:
                 record(db, oid, now, "unknown_order_state")
                 if not due:
