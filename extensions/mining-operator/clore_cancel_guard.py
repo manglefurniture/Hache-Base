@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -37,6 +38,10 @@ CREATE TABLE IF NOT EXISTS clore_cancel_leases (
 );
 CREATE INDEX IF NOT EXISTS clore_cancel_pending
  ON clore_cancel_leases(phase, cutoff_at);
+CREATE TABLE IF NOT EXISTS clore_cancel_heartbeat (
+ id INTEGER PRIMARY KEY CHECK(id=1),
+ completed_at INTEGER NOT NULL
+);
 """
 
 class GuardError(Exception):
@@ -59,9 +64,23 @@ def db_open(path):
     return connection
 
 def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
-        max_minutes, created_at, now=None):
+        max_minutes, created_at, now=None, timer_check=None):
     """Register only a *known order ID*, never issue a rental or a bid."""
     now = int(time.time()) if now is None else int(now)
+    if timer_check is None:
+        def timer_check():
+            try:
+                return subprocess.run(
+                    ["systemctl", "is-active", "--quiet",
+                     "hache-mining-operator-clore-cancel.timer"],
+                    timeout=3, capture_output=True).returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                return False
+    if not timer_check():
+        raise GuardError("independent_cancel_timer_inactive")
+    hb = db.execute("SELECT completed_at FROM clore_cancel_heartbeat WHERE id=1").fetchone()
+    if not hb or not 0 <= now - hb[0] <= 90:
+        raise GuardError("independent_cancel_supervisor_unhealthy")
     if type(order_id) is not int or type(server_id) is not int or not 0 < order_id < 10**15 or not 0 < server_id < 10**15:
         raise GuardError("invalid_order_identity")
     if type(max_minutes) is not int or not 1 <= max_minutes <= 1440:
@@ -139,6 +158,10 @@ class CloreAPI:
     def cancel(self, order_id):
         self._request("cancel_order", {"id": order_id})
 
+def heartbeat(db, now):
+    db.execute("INSERT INTO clore_cancel_heartbeat(id,completed_at) VALUES(1,?) "
+               "ON CONFLICT(id) DO UPDATE SET completed_at=excluded.completed_at", (now,))
+
 def record(db, order_id, now, outcome, *, closed=False, attempted=False):
     db.execute(
         "UPDATE clore_cancel_leases SET last_outcome=?, "
@@ -152,6 +175,9 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
     now = int(time.time()) if now is None else int(now)
     leases = db.execute("SELECT * FROM clore_cancel_leases WHERE phase='armed' ORDER BY cutoff_at").fetchall()
     if not leases:
+        # The heartbeat must prove actual API authentication even while idle.
+        api.orders()
+        heartbeat(db, now)
         return {"active": 0, "status": "idle"}
     if len(leases) > 1:
         raise GuardError("multiple_armed_orders")
@@ -160,6 +186,7 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
     due = now >= row["cutoff_at"]
     try:
         orders = api.orders()
+        heartbeat(db, now)
         match = next((x for x in orders if x["id"] == oid), None)
         if match is None:
             record(db, oid, now, "provider_order_not_in_history")
