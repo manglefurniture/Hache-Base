@@ -1,0 +1,31 @@
+[Unit]
+Description=Clore Spot financial cancellation guard (never rents or bids)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=hache-miner
+Group=hache-miner
+WorkingDirectory=/opt/hache-mining-operator/current
+# Administrator MUST point this to the actual root-held Clore key path.
+# systemd reads it privately; neither broker nor gpt-agent receives the key.
+LoadCredential=clore_key:/etc/hache-miner/clore-api-key
+ExecStart=/usr/bin/python3 /opt/hache-mining-operator/current/clore_cancel_guard.py tick
+TimeoutStartSec=90
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/hache-mining-operator
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=yes
+MemoryMax=96M
+TasksMax=16
+LimitCORE=0

@@ -1,0 +1,12 @@
+[Unit]
+Description=Independent 30-second Clore financial cancellation check
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=30s
+AccuracySec=2s
+Persistent=false
+Unit=hache-mining-operator-clore-cancel.service
+
+[Install]
+WantedBy=timers.target
