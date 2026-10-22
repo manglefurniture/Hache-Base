@@ -22,12 +22,15 @@ API = "https://api.clore.ai/v1/"
 SAFETY_RATIO = Decimal("0.85")
 # Up to 5% estimated provider fees on top of the approved daily bid.
 FEE_FACTOR = Decimal("1.05")
+# Timer jitter (30 s) + API delay/retry buffer; no late enrollment.
+MIN_REMAINING_SECONDS = 90
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS clore_cancel_leases (
  order_id INTEGER PRIMARY KEY CHECK(order_id > 0),
  server_id INTEGER NOT NULL CHECK(server_id > 0),
  daily_bid_usd TEXT NOT NULL,
  budget_usd TEXT NOT NULL,
+ creation_fee_usd TEXT NOT NULL,
  max_minutes INTEGER NOT NULL,
  created_at INTEGER NOT NULL,
  cutoff_at INTEGER NOT NULL,
@@ -64,7 +67,7 @@ def db_open(path):
     return connection
 
 def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
-        max_minutes, created_at, now=None, timer_check=None):
+        creation_fee_usd, max_minutes, created_at, now=None, timer_check=None):
     """Register only a *known order ID*, never issue a rental or a bid."""
     now = int(time.time()) if now is None else int(now)
     if timer_check is None:
@@ -89,20 +92,30 @@ def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
         raise GuardError("unverified_creation_time")
     bid = decimal_amount(daily_bid_usd, "daily_bid")
     budget = decimal_amount(budget_usd, "budget")
-    # Conservative ceiling: stop well before the total approved theoretical cost.
-    affordable_seconds = int((budget * SAFETY_RATIO * 86400 / (bid * FEE_FACTOR)).to_integral_value(rounding=ROUND_FLOOR))
+    try:
+        creation_fee = Decimal(str(creation_fee_usd))
+    except (InvalidOperation, ValueError, TypeError):
+        raise GuardError("invalid_creation_fee") from None
+    if not creation_fee.is_finite() or not 0 <= creation_fee <= Decimal("1000"):
+        raise GuardError("invalid_creation_fee")
+    remaining = budget - creation_fee
+    if remaining <= 0:
+        raise GuardError("creation_fee_exceeds_budget")
+    # The provider's actual fixed creation fee must not be spent twice.
+    affordable_seconds = int((remaining * SAFETY_RATIO * 86400 / (bid * FEE_FACTOR)).to_integral_value(rounding=ROUND_FLOOR))
     cutoff = created_at + min(max_minutes * 60, affordable_seconds)
-    if cutoff <= now:
-        raise GuardError("budget_deadline_already_passed")
+    if cutoff - now < MIN_REMAINING_SECONDS:
+        raise GuardError("insufficient_time_for_independent_cancel_cycle")
     db.execute("BEGIN IMMEDIATE")
     try:
         if db.execute("SELECT 1 FROM clore_cancel_leases WHERE phase='armed' LIMIT 1").fetchone():
             raise GuardError("existing_armed_order")
         db.execute(
             "INSERT INTO clore_cancel_leases "
-            "(order_id,server_id,daily_bid_usd,budget_usd,max_minutes,created_at,cutoff_at,phase) "
-            "VALUES(?,?,?,?,?,?,?,'armed')",
-            (order_id, server_id, str(bid), str(budget), max_minutes, created_at, cutoff))
+            "(order_id,server_id,daily_bid_usd,budget_usd,creation_fee_usd,max_minutes,created_at,cutoff_at,phase) "
+            "VALUES(?,?,?,?,?,?,?,?,'armed')",
+            (order_id, server_id, str(bid), str(budget), str(creation_fee),
+             max_minutes, created_at, cutoff))
         db.commit()
     except Exception:
         db.rollback()
@@ -269,6 +282,7 @@ def main():
     ar.add_argument("--server-id", type=int, required=True)
     ar.add_argument("--daily-bid-usd", required=True)
     ar.add_argument("--budget-usd", required=True)
+    ar.add_argument("--creation-fee-usd", required=True)
     ar.add_argument("--max-minutes", type=int, required=True)
     ar.add_argument("--created-unix", type=int, required=True)
     args = parser.parse_args()
@@ -280,6 +294,7 @@ def main():
             if args.action == "arm":
                 output = arm(db, order_id=args.order_id, server_id=args.server_id,
                              daily_bid_usd=args.daily_bid_usd, budget_usd=args.budget_usd,
+                             creation_fee_usd=args.creation_fee_usd,
                              max_minutes=args.max_minutes, created_at=args.created_unix)
             elif args.action == "tick":
                 output = tick(db, CloreAPI(credential()))
