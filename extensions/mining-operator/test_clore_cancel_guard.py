@@ -34,7 +34,8 @@ class CloreWatchTests(unittest.TestCase):
         self.tmp.cleanup()
     def arm(self, **opts):
         inputs = dict(order_id=456, server_id=121322, daily_bid_usd="10",
-                      budget_usd="1", max_minutes=60, created_at=1000, now=1000,
+                      budget_usd="1", creation_fee_usd="0",
+                      max_minutes=60, created_at=1000, now=1000,
                       timer_check=lambda:True)
         inputs.update(opts)
         return arm(self.db, **inputs)
@@ -56,6 +57,20 @@ class CloreWatchTests(unittest.TestCase):
         r=self.arm(budget_usd="0.2", max_minutes=120)
         self.assertLess(r["cutoff_at"], 1000+120*60)
         self.assertGreater(r["cutoff_at"], 1000)
+    def test_actual_creation_fee_reduces_remaining_budget(self):
+        base=self.arm(budget_usd="0.3", max_minutes=120)
+        self.db.execute("DELETE FROM clore_cancel_leases")
+        with_fee=self.arm(budget_usd="0.3", creation_fee_usd="0.10", max_minutes=120)
+        self.assertLess(with_fee["cutoff_at"],base["cutoff_at"])
+    def test_late_registration_is_rejected_before_timer_interval(self):
+        self.db.execute("UPDATE clore_cancel_heartbeat SET completed_at=4565")
+        with self.assertRaisesRegex(GuardError,"insufficient_time_for_independent_cancel_cycle"):
+            self.arm(now=4565)
+    def test_creation_fee_must_fit_in_authorized_total(self):
+        with self.assertRaisesRegex(GuardError,"creation_fee_exceeds_budget"):
+            self.arm(budget_usd="0.1", creation_fee_usd="0.1")
+        with self.assertRaisesRegex(GuardError,"invalid_creation_fee"):
+            self.arm(creation_fee_usd="-2")
     def test_deadline_cancel_needs_separate_provider_confirmation(self):
         r=self.arm()
         p=FakeClore([self.order()])
@@ -131,7 +146,7 @@ class CloreWatchTests(unittest.TestCase):
     def test_bad_inputs_rejected(self):
         for opts in ({"order_id":True},{"server_id":0},{"max_minutes":0},
                      {"max_minutes":1441},{"created_at":1100},
-                     {"daily_bid_usd":"NaN"},{"budget_usd":"-1"},
+                     {"daily_bid_usd":"NaN"},{"budget_usd":"-1"},{"creation_fee_usd":"NaN"},
                      {"budget_usd":"0.00000001"}):
             with self.subTest(opts=opts), self.assertRaises(GuardError):
                 self.arm(**opts)
