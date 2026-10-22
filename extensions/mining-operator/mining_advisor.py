@@ -119,8 +119,8 @@ class Memory:
         rows = self.db.execute('''SELECT billed_hours,gpu_count,prl_mined,setup_minutes,accepted_shares
              FROM prl_observations WHERE provider=? AND gpu_model=? AND observed_at>=? AND observed_at<=?
              ORDER BY observed_at DESC LIMIT 100''', (provider, key, earliest, now.isoformat())).fetchall()
-        valid = [(prl / hours / count, setup) for hours,count,prl,setup,shares in rows if shares > 0 and hours >= 0.25]
-        if len(valid) < 3 or sum(row[0] > 0 for row in valid) < 3 or sum(r[0] for r in rows) < 3:
+        valid = [(prl / hours / count, setup, hours) for hours,count,prl,setup,shares in rows if shares > 0 and hours >= 0.25]
+        if len(valid) < 3 or sum(row[0] > 0 for row in valid) < 3 or sum(r[2] for r in valid) < 3:
             return None
         yields = sorted(r[0] for r in valid)
         setups = sorted(r[1] for r in valid)
