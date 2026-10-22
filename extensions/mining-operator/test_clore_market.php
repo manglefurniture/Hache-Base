@@ -34,7 +34,7 @@ testClore($out['xmr_cpu'][0]['on_demand_usd_hour']===0.05,'Correct daily to hour
 testClore($out['rental_authorized']===false,'Read-only guarantee');
 testClore(!str_contains(json_encode($out,JSON_THROW_ON_ERROR),'NEVER_EXPOSE_THIS_SECRET'),'No sensitive provider fields leaked');
 testClore(op_clore_hourly_usd($noPrice)===null,'Do not equate BTC to USD');
-testClore(op_clore_hourly_usd(['price'=>['on_demand'=>['USD-Blockchain'=>2.4]]])===0.1,'Native USD fallback');
+testClore(abs((float)op_clore_hourly_usd(['price'=>['on_demand'=>['USD-Blockchain'=>2.4]]])-0.1)<0.0000001,'Native USD fallback');
 foreach ([['code'=>5,'servers'=>[]],['code'=>0,'servers'=>'bad'],['code'=>0,'servers'=>[['id'=>'bad']]]] as $bad) {
     try {
         $badResult=op_clore_marketplace_projection($bad);
