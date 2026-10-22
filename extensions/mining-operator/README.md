@@ -22,6 +22,36 @@ contraseñas, SQLGuard, mineros, temporizadores ni umbrales existentes.
   arbitrario **no están habilitados**. Aprovisionamiento/arranque requieren otra
   fase con presupuesto, ventana, parada efectiva y VAST-001 verificados.
 
+## Clore.ai — búsqueda pública XMR y PRL (solo lectura)
+
+El broker incluye `clore.marketplace`. Consume exclusivamente
+`GET https://api.clore.ai/v1/marketplace` sin API Key, porque esa consulta
+pública funciona sin credenciales. **No se lee, copia ni desbloquea** la
+clave privada de Clore ya custodiada por root. No están implementadas
+`create_order`, cancelaciones ni ninguna mutación de Clore.
+
+```sh
+python3 /home/gpt-agent/mining-operator/client.py '{"method":"query","operation":{"action":"clore.marketplace"}}'
+```
+
+El resultado contiene hasta diez candidatos por categoría: CPU AMD
+Ryzen/EPYC/Threadripper para XMR, NVIDIA RTX con al menos 8 GB de VRAM
+para PRL, y equipos combinados; descarta anuncios marcados como alquilados,
+RAM inferior a 8 GB o sin cotización USD comparable. El ranking es por
+precio USD/hora on-demand **para el servidor entero**, usando los
+equivalentes USD de la API, no por producción minera. Un servidor con
+varias GPU no implica alquiler parcial ni precio por GPU.
+
+El ranking inicial **no estima rentabilidad** ni garantiza que RandomX,
+PearlHash, XMRig o SRBMiner funcionen; hay que medir rendimiento real,
+núcleos CPU utilizables, precio final, cargos, reglas de uso y shares.
+Spot publica pisos de oferta, no un precio firme de contratación.
+La API de Clore limita las solicitudes; las respuestas 429 son errores,
+no inventarios vacíos. No se habilita vigilancia automática ni gastos.
+
+Regresión: `php extensions/mining-operator/test_clore_market.php`.
+La implementación deja las credenciales privadas inaccesibles al agente.
+
 ## Uso desde el chat, mediante Desktop Commander del VPS
 
 ```sh

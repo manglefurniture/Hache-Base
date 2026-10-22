@@ -2,6 +2,7 @@
 declare(strict_types=1);
 /** CLI only, service identity only. Never return provider bodies, logs or credentials. */
 final class OperatorRejected extends RuntimeException {}
+require_once __DIR__.'/clore_market.php';
 function op_fail(string $code): never { throw new OperatorRejected($code); }
 function op_http(string $url, array $headers, string $method='GET', ?array $body=null): array {
     $buffer=''; $ch=curl_init($url);
@@ -175,6 +176,7 @@ function op_rental_candidate(array $rows,array $operation): array {
 }
 function op_query(array $operation): array {
     $action=$operation['action'];
+    if($action==='clore.marketplace')return op_clore_marketplace();
     if($action==='vast.rent.reconcile'){
         $inventory=op_vast_inventory();
         $rows=$inventory['instances'];
@@ -443,7 +445,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $request=json_decode($raw,true,16,JSON_THROW_ON_ERROR);
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
-        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry'];
+        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry','clore.marketplace'];
         $writes=['vast.stop','vast.start','vast.register','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);

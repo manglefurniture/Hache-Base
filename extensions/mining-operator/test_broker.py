@@ -51,6 +51,19 @@ class BrokerTests(unittest.TestCase):
         return path
 
 
+    def test_clore_marketplace_only_allows_safe_query(self):
+        op = {'action': 'clore.marketplace'}
+        self.assertEqual(validate_operation(op), op)
+        result = self.broker.handle({'method': 'query', 'operation': op})
+        self.assertIn('actual_status', result)
+        self.assertEqual(self.calls, ['query'])
+        with self.assertRaisesRegex(Rejected, 'unsupported_action_or_fields'):
+            validate_operation({'action': 'clore.marketplace', 'url': 'https://bad.invalid'})
+        with self.assertRaisesRegex(Rejected, 'unsupported_mutation'):
+            self.broker.handle({'method': 'prepare', 'operation': op})
+        self.assertNotIn('clore.marketplace',
+                         self.broker.handle({'method': 'capabilities'})['writes_with_root_grant'])
+
     def test_analyze_requires_explicit_yield_and_is_read_only(self):
         op = {'action': 'vast.analyze', 'gpu_name': 'RTX 4070 Ti SUPER',
               'gpu_count': 1, 'max_hourly_usd': 0.25,
