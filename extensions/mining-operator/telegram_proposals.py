@@ -117,7 +117,7 @@ class ProposalStore:
 
     def pending(self, now=None):
         tick = int(time.time() if now is None else now)
-        return self.db.execute("""SELECT nonce,payload FROM proposals
+        return self.db.execute("""SELECT nonce,payload,expires_at FROM proposals
                WHERE state='pending' AND expires_at>? ORDER BY created_at LIMIT 10""",
                (tick,)).fetchall()
 
@@ -177,6 +177,10 @@ class ProposalStore:
                                 self.db.execute("INSERT INTO audit(nonce,event,at) VALUES(?,?,?)",
                                                 (nonce, state, tick))
                                 answer.update(state=state, proposal_id=nonce)
+                        elif row is not None and row[3] in ("acknowledged", "rejected"):
+                            # The owner might retry the button after Telegram dropped
+                            # the first callback acknowledgement. Do not imply failure.
+                            answer.update(state="already_" + row[3], proposal_id=nonce)
             self.db.execute("UPDATE telegram_cursor SET update_id=? WHERE singleton=1", (update_id,))
             self.db.commit()
             return answer
@@ -229,7 +233,9 @@ class TelegramAPI:
             raise ProposalError("telegram_unavailable") from exc
 
 
-def proposal_text(offer):
+def proposal_text(offer, seconds_remaining):
+    if type(seconds_remaining) is not int or seconds_remaining <= 0:
+        raise ProposalError("proposal_expired")
     return (
         "Hache Mining Agent - propuesta SIN contratar\n"
         f"Vast #{offer['offer_id']} | maquina {offer['machine_id']} | host {offer['host_id']}\n"
@@ -238,7 +244,7 @@ def proposal_text(offer):
         f"Duracion: {offer['max_minutes']} min\n"
         f"Presupuesto indicado: USD {offer['max_total_usd']:.2f}\n"
         f"Neto estimado, no garantizado: USD {offer['projected_net_usd']:.2f}\n"
-        "Respuesta valida 5 min. Faltan validar costos extra y autorizacion comercial.\n"
+        f"Tiempo restante al enviar: {seconds_remaining} segundos. Faltan validar costos extra y autorizacion comercial.\n"
         "Aceptar SOLO registra tu decision: no habilita rentas ni gasto."
     )
 
@@ -251,9 +257,14 @@ class TelegramChannel:
 
     def send_pending(self, now=None):
         sent = 0
-        for nonce, raw in self.store.pending(now):
+        tick = int(time.time() if now is None else now)
+        for nonce, raw, expires_at in self.store.pending(tick):
+            remaining = expires_at - tick
+            # Do not send almost-expired proposals that may mislead the owner.
+            if remaining < 60:
+                continue
             answer = self.api.call("sendMessage", {
-                "chat_id": self.chat_id, "text": proposal_text(json.loads(raw)),
+                "chat_id": self.chat_id, "text": proposal_text(json.loads(raw), remaining),
                 "reply_markup": {"inline_keyboard": [[
                     {"text": "Registrar aceptacion", "callback_data": "approve:" + nonce},
                     {"text": "Rechazar", "callback_data": "reject:" + nonce}
@@ -279,8 +290,11 @@ class TelegramChannel:
             if type(callback) is dict and type(callback.get("id")) is str:
                 self.api.call("answerCallbackQuery", {
                     "callback_query_id": callback["id"],
-                    "text": "Registrado sin rentar" if result["state"] in
-                            ("acknowledged", "rejected") else "No autorizado o vencido"})
+                    "text": ("Aceptacion registrada (sin rentar)" if result["state"] == "acknowledged"
+                             else "Rechazo registrado" if result["state"] == "rejected"
+                             else "Aceptacion ya registrada" if result["state"] == "already_acknowledged"
+                             else "Rechazo ya registrado" if result["state"] == "already_rejected"
+                             else "No autorizado o vencido")})
             results.append(result)
         return results
 
