@@ -134,6 +134,14 @@ class MiningAdvisorTests(unittest.TestCase):
         self.assertEqual(r['offers'][0]['status'],'candidate_for_manual_quote')
         self.assertIn('invalid_or_duplicate_offer_id',r['offers'][1]['reasons'])
 
+    def test_zero_share_hours_cannot_satisfy_duration_gate(self):
+        for i in range(1,4):
+            self.mem.record(dict(observation(i),billed_hours=0.25))
+        self.mem.record(dict(observation(4),billed_hours=2.25,accepted_shares=0))
+        result=advisor.evaluate(offer(),self.mem,market=market(),now=NOW)['offers'][0]
+        self.assertEqual(result['status'],'needs_verification')
+        self.assertIn('insufficient_recent_prl_measurements',result['reasons'])
+
     def test_cli_persists_across_runs_without_provider_mutation(self):
         folder=Path(self.temp.name)
         records=folder/'observations.json'
