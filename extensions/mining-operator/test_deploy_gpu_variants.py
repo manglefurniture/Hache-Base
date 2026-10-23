@@ -48,6 +48,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('hache-miner-vast-watchdog.timer',s)
         self.assertIn('hache-mining-operator-vast-lease.timer',s)
         self.assertNotIn('systemctl stop hache-miner-vast-watchdog',s)
+        self.assertGreaterEqual(s.count("check_clore_leases"), 3)
+        self.assertIn("active_or_unreadable_clore_financial_obligation", s)
+        self.assertIn("hache-mining-operator-clore-cancel.timer", s)
+        self.assertIn("test_clore_cancel_guard.py", s)
 
     def test_no_spend_smoke_and_unit_tests(self):
         s=SCRIPT.read_text()

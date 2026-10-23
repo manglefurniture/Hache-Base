@@ -40,7 +40,26 @@ print("ACTIVE_FINANCIAL_LEASES="+str(n))
 sys.exit(0 if n==0 else 3)
 '
 }
+check_clore_leases() {
+ local db=/var/lib/hache-mining-operator/clore-cancel.sqlite3
+ if [[ ! -e "$db" ]]; then
+   return 0  # Clore guard not installed yet.
+ fi
+ systemctl is-active --quiet hache-mining-operator-clore-cancel.timer || return 2
+ runuser -u hache-miner -- python3 - "$db" <<'PY'
+import sqlite3,sys
+from pathlib import Path
+path=Path(sys.argv[1])
+if not path.is_file() or path.is_symlink():
+    raise SystemExit(2)
+with sqlite3.connect(path.as_uri()+"?mode=ro",uri=True,timeout=5) as conn:
+    n=int(conn.execute("SELECT COUNT(*) FROM clore_cancel_leases WHERE phase='armed'").fetchone()[0])
+print("CLORE_ARMED_ORDERS="+str(n))
+sys.exit(0 if n==0 else 3)
+PY
+}
 check_leases || error 'active_or_unreadable_financial_obligation'
+check_clore_leases || error 'active_or_unreadable_clore_financial_obligation'
 
 stage() {
  local root="$1"
@@ -72,6 +91,7 @@ php -l "$OS/provider.php"
 php "$OS/test_clore_market.php"
 php "$OS/test_provider.php"
 python3 -m unittest discover -s "$OS" -p test_mining_advisor.py -q
+python3 -m unittest discover -s "$OS" -p test_clore_cancel_guard.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_proposals.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_menu.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
@@ -105,6 +125,7 @@ trap 'rollback 143' TERM
 STARTED=1
 systemctl stop hache-mining-operator.socket hache-mining-operator.service
 check_leases
+check_clore_leases
 ln -s "$OS" "$OP/.new.$$"
 mv -Tf "$OP/.new.$$" "$OP/current"
 ln -s "$BS" "$BOT/.new.$$"
