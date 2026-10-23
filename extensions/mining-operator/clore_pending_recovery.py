@@ -61,7 +61,6 @@ def inspect(db, api, *, now=None):
               WHERE reservation_id=?""", (rid,)).fetchone()
         if row is None or row[0] != "uncertain" or row[1] != outcome:
             raise GuardError("pending_state_changed")
-        db.executescript("") if False else None  # schema migration handled outside transaction
         db.execute("""INSERT INTO clore_pending_recovery
             (reservation_id,checked_at,status,candidate_order_id)
             VALUES(?,?,?,?) ON CONFLICT(reservation_id) DO UPDATE SET
