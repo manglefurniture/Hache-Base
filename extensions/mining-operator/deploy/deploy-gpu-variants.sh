@@ -43,7 +43,8 @@ sys.exit(0 if n==0 else 3)
 check_leases || error 'active_or_unreadable_financial_obligation'
 
 stage() {
- local root="$1" dst="$root/releases/$SHA"
+ local root="$1"
+ local dst="$root/releases/$SHA"
  install -d -o root -g root -m 0755 "$root/releases"
  if [[ ! -e "$dst" ]]; then
    git init --quiet "$dst" || error 'git_init_failed'

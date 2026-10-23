@@ -11,6 +11,22 @@ class ReleaseTests(unittest.TestCase):
         r=subprocess.run(["bash","-n",str(SCRIPT)],capture_output=True,text=True)
         self.assertEqual(r.returncode,0,r.stderr)
 
+    def test_stage_nounset_initializes_root_before_dst(self):
+        """Exercise the real Bash statements that previously failed at line 46."""
+        lines=SCRIPT.read_text().splitlines()
+        index=lines.index('stage() {')
+        locals_=[]
+        for line in lines[index+1:]:
+            if line.strip().startswith('local '):
+                locals_.append(line)
+            elif locals_:
+                break
+        self.assertGreaterEqual(len(locals_),2)
+        script="set -u; SHA=fixedsha; stage() {\n"+ "\n".join(locals_)+"\nprintf '%s' \"$dst\";\n}; stage /tmp/hache-test"
+        result=subprocess.run(["bash","-c",script],capture_output=True,text=True,timeout=8)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout,"/tmp/hache-test/releases/fixedsha")
+
     def test_exact_sha_revert_paths(self):
         s=SCRIPT.read_text()
         self.assertIn('invalid_full_commit',s)
