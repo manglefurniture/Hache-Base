@@ -6,7 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from clore_cancel_guard import db_open, GuardError
+from clore_cancel_guard import db_open, GuardError, arm
 from clore_preorder import reserve, evaluate_candidate, init_schema, inventory_baseline
 
 NOW = 1800000000
@@ -149,6 +149,17 @@ class PreorderTests(unittest.TestCase):
         self.db.execute("UPDATE clore_preorders SET terms_json='{}'")
         with self.assertRaisesRegex(GuardError,"preorder_payload_tampered"):
             evaluate_candidate(self.db,reservation_id=receipt["reservation_id"],api=self.provider,now=NOW+3)
+
+    def test_manual_arm_blocked_by_open_preorder(self):
+        self.hold()
+        row={"id":999,"si":456,"ct":NOW,"spot":True,"expired":False,
+             "currency":"USD-Blockchain","price":12,"creation_fee":0.10,
+             "fee":5,"spend":0}
+        with self.assertRaisesRegex(GuardError,"existing_preorder_obligation"):
+            arm(self.db,order_id=999,server_id=456,daily_bid_usd="12",
+                budget_usd="1",creation_fee_usd="0.1",max_minutes=60,
+                created_at=NOW,provider_order=row,now=NOW,
+                timer_check=lambda:True)
 
     def test_reserved_state_persists_after_quote_timeout(self):
         receipt=self.hold()
