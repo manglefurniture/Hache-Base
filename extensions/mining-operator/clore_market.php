@@ -117,7 +117,8 @@ function op_clore_marketplace_projection(array $data): array {
         if($isGpu){
             $prl[]=$safe;
             if($spotHourly!==null)$prlSpot[]=$safe;
-            if(preg_match('/\\bRTX\\s*5090\\b/i',$gpu))$prl5090[]=$safe;
+            if(preg_match('/\\bRTX\\s*5090\\b/i',$gpu) &&
+                !preg_match('/\\b(Laptop|Mobile)\\b/i',$gpu))$prl5090[]=$safe;
         }
         if($isCpu&&$isGpu)$combo[]=$safe;
     }
