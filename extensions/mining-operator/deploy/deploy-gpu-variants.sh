@@ -54,8 +54,11 @@ if not path.is_file() or path.is_symlink():
     raise SystemExit(2)
 with sqlite3.connect(path.as_uri()+"?mode=ro",uri=True,timeout=5) as conn:
     n=int(conn.execute("SELECT COUNT(*) FROM clore_cancel_leases WHERE phase='armed'").fetchone()[0])
+    table_exists=conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clore_preorders'").fetchone()
+    pending=int(conn.execute("SELECT COUNT(*) FROM clore_preorders WHERE phase IN ('reserved','uncertain')").fetchone()[0]) if table_exists else 0
 print("CLORE_ARMED_ORDERS="+str(n))
-sys.exit(0 if n==0 else 3)
+print("CLORE_RESERVED_PREORDERS="+str(pending))
+sys.exit(0 if n==0 and pending==0 else 3)
 PY
 }
 check_leases || error 'active_or_unreadable_financial_obligation'
