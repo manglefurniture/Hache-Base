@@ -24,6 +24,13 @@ foreach ([
        throw new RuntimeException('Invalid universal Vast GPU variant projection: '.$name);
 }
 
+// Regression: the CLI helper must allow exactly the broker's new read action.
+if(!in_array('vast.marketplace',op_readonly_actions(),true))
+    throw new RuntimeException('vast.marketplace absent from provider CLI read allowlist');
+if(in_array('vast.rent',op_readonly_actions(),true)||
+   in_array('vast.start',op_readonly_actions(),true))
+    throw new RuntimeException('Provider read allowlist inadvertently enables spending');
+
 // Marketplace read-only. Multiple models, variants, performance/reliability
 // controls, de-duplication, and no secret fields in the serialized projection.
 $mk=static function(int $id,string $name,float $price,float $reliability=0.97):array{
