@@ -73,6 +73,7 @@ php "$OS/test_clore_market.php"
 php "$OS/test_provider.php"
 python3 -m unittest discover -s "$OS" -p test_mining_advisor.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_proposals.py -q
+python3 -m unittest discover -s "$BS" -p test_telegram_menu.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
 runuser -u hache-miner -- test -r "$OS/broker.py" || error 'broker_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_proposals.py" || error 'bot_release_inaccessible'
