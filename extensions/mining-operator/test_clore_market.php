@@ -56,7 +56,7 @@ testClore(op_clore_spot_floor_hourly_usd(['price'=>['spot'=>['bitcoin'=>0.00001]
     'No BTC to USD conversion');
 testClore(op_clore_spot_floor_hourly_usd(['price'=>['spot'=>['USD-Blockchain'=>0],'usd'=>['spot'=>0]]])===null,
     'Spot zero is unavailable');
-testClore(op_clore_spot_floor_hourly_usd(['price'=>['usd'=>['spot'=>1.20]]])===0.05,
+testClore(abs((float)op_clore_spot_floor_hourly_usd(['price'=>['usd'=>['spot'=>1.20]]])-0.05)<0.000001,
     'Provider USD equivalent permitted');
 $multi=$base;$multi['id']=500;$multi['specs']['gpu']='2x NVIDIA GeForce RTX 5090';
 $multi['gpu_array']=[['index'=>0],['index'=>1]];
