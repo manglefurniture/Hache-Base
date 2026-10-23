@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/gpu_variant.php';
 /** Public Clore marketplace reader. Never reads tokens and never sends mutations. */
 function op_clore_marketplace_fetch(): array {
     $url='https://api.clore.ai/v1/marketplace';
@@ -83,7 +84,7 @@ function op_clore_marketplace_projection(array $data): array {
     if(($data['code']??null)!==0)op_fail('provider_unavailable');
     $servers=$data['servers']??null;
     if(!is_array($servers)||!array_is_list($servers)||count($servers)>10000)op_fail('provider_unavailable');
-    $xmr=[];$prl=[];$combo=[];$prlSpot=[];$prl5090=[];$eligible=0;
+    $xmr=[];$prl=[];$combo=[];$prlSpot=[];$prl5090=[];$prlModelBuckets=[];$eligible=0;
     foreach($servers as $server){
         if(!is_array($server)||($server['rented']??false)!==false)continue;
         $specs=$server['specs']??null;
@@ -95,11 +96,15 @@ function op_clore_marketplace_projection(array $data): array {
         $cpu=(string)($specs['cpu']??'');
         $gpu=(string)($specs['gpu']??'');
         $isCpu=(bool)preg_match('/Ryzen|EPYC|Threadripper/i',$cpu);
-        $isGpu=(bool)preg_match('/RTX (?:20|30|40|50)[0-9]{2}/i',$gpu)
+        // Preserve candidate GPU models beyond RTX 5090: RTX, GTX, Tesla,
+        // CMP, Radeon and Arc. PearlHash compatibility is NOT assumed.
+        $isGpu=(bool)preg_match('/\\b(?:RTX|GTX|TESLA|CMP|NVIDIA|GEFORCE|RADEON|AMD|INTEL\\s+ARC)\\b/i',$gpu)
             &&is_numeric($specs['gpuram']??null)&&(float)$specs['gpuram']>=8;
         if(!$isCpu&&!$isGpu)continue;
         $eligible++;
         $net=$specs['net']??[];
+        $variant=op_gpu_variant_hint($gpu);
+        $family=op_gpu_family_key($gpu);
         $safe=[
             'id'=>$server['id'],
             'cpu'=>substr(preg_replace('/[\x00-\x1f\x7f]/','',$cpu)??'',0,110),
@@ -111,7 +116,11 @@ function op_clore_marketplace_projection(array $data): array {
             'on_demand_usd_hour'=>round($hourly,5),
             'on_demand_usd_day'=>round($hourly*24,4),
             'gpu_count_verified'=>op_clore_verified_gpu_count($server),
-            'gpu_variant_verified'=>false, // Laptop/desktop never inferred by absence of 'Laptop'.
+            'gpu_variant'=>$variant['gpu_variant'],
+            'gpu_variant_evidence'=>$variant['gpu_variant_evidence'],
+            'gpu_variant_verified'=>false, // Provider label does NOT attest physical hardware.
+            'gpu_model_key'=>$family,
+            'prl_compatibility_verified'=>false,
             'spot_floor_usd_hour'=>$spotHourly===null?null:round($spotHourly,5),
             'spot_floor_usd_day'=>$spotHourly===null?null:round($spotHourly*24,4),
         ];
@@ -119,8 +128,18 @@ function op_clore_marketplace_projection(array $data): array {
         if($isGpu){
             $prl[]=$safe;
             if($spotHourly!==null)$prlSpot[]=$safe;
-            if(preg_match('/\\bRTX\\s*5090\\b/i',$gpu) &&
-                !preg_match('/\\b(Laptop|Mobile)\\b/i',$gpu))$prl5090[]=$safe;
+            // Retain Laptop, desktop-labeled AND unknown 5090 listings.
+            if(preg_match('/\\bRTX\\s*5090\\b/i',$gpu))$prl5090[]=$safe;
+            // At least one comparable offer per named GPU family and variant
+            // prevents the cheapest 3060 models from hiding every other model.
+            if($family!==null){
+                $bucket=$family.':'.$variant['gpu_variant'];
+                if(!isset($prlModelBuckets[$bucket])||
+                    $safe['on_demand_usd_hour']<$prlModelBuckets[$bucket]['on_demand_usd_hour']||
+                    ($safe['on_demand_usd_hour']===$prlModelBuckets[$bucket]['on_demand_usd_hour']&&
+                        $safe['id']<$prlModelBuckets[$bucket]['id']))
+                    $prlModelBuckets[$bucket]=$safe;
+            }
         }
         if($isCpu&&$isGpu)$combo[]=$safe;
     }
@@ -134,6 +153,11 @@ function op_clore_marketplace_projection(array $data): array {
             ($a['spot_floor_usd_hour']<=>$b['spot_floor_usd_hour'])?:($a['id']<=>$b['id']));
         $offers=array_slice($offers,0,10);
     };
+    $prlModels=array_values($prlModelBuckets);
+    usort($prlModels,static fn(array $a,array $b):int=>
+        ($a['on_demand_usd_hour']<=>$b['on_demand_usd_hour'])?:($a['id']<=>$b['id']));
+    $prlModelCount=count($prlModels);
+    $prlModels=array_slice($prlModels,0,80);
     $sort($xmr);$sort($prl);$sort($combo);
     $spotSort($prlSpot);
     $sort($prl5090);
@@ -146,9 +170,12 @@ function op_clore_marketplace_projection(array $data): array {
         'prl_gpu'=>$prl,
         'prl_gpu_spot_floor'=>$prlSpot,
         'prl_gpu_5090'=>$prl5090,
+        'prl_gpu_models'=>$prlModels,
+        'prl_gpu_models_total'=>$prlModelCount,
+        'prl_gpu_models_partial'=>$prlModelCount>count($prlModels),
         'xmr_prl_combined'=>$combo,
         'rental_authorized'=>false,
-        'warning'=>'READ ONLY. On-demand prices and Spot MINIMUM floors are whole-server USD/hour, not current winning bids or executable quotes. GPU count requires matching specs and gpu_array; desktop/laptop and PRL yield unverified. Spot competition, storage, fees, taxes, post-stop costs and net profitability must be checked. No rentals or mining performed.',
+        'warning'=>'READ ONLY. All named GPU model families are eligible for review; model/variant labels are provider claims and missing variant is unknown, NEVER desktop by default. Representative models list is capped and marked partial. On-demand and Spot minimum floors cover whole rigs, not executable quotes. Hardware identity, PearlHash compatibility, real PRL yield, bids and all fees remain unverified. No rentals or spending.',
     ];
 }
 function op_clore_marketplace(): array {

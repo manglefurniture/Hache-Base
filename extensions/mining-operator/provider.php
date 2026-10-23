@@ -32,6 +32,12 @@ function op_pick(array $data,array $fields): array {
         $out[$field]=is_scalar($v)||$v===null?$v:null;
     }return $out;
 }
+/** Read-only Vast offer projection: provider labels, never proof of GPU variant. */
+function op_vast_public_offer(array $row): array {
+    $safe=op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus',
+                        'gpu_ram','dph_total','reliability2']);
+    return array_merge($safe,op_gpu_variant_hint($safe['gpu_name']));
+}
 function op_rows(array $data,string $key): array {
     if(!isset($data[$key])||!is_array($data[$key])||!array_is_list($data[$key]))op_fail('provider_unavailable');
     foreach($data[$key] as $row)if(!is_array($row))op_fail('provider_unavailable');
@@ -198,8 +204,8 @@ function op_query(array $operation): array {
             'limit'=>10,'order'=>[['dph_total','asc']],'allocated_storage'=>5];
         $r=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
         $rows=op_rows($r['data'],'offers');
-        return ['offers'=>array_map(static fn(array $r):array=>op_pick($r,
-            ['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),array_slice($rows,0,10)),
+        return ['offers'=>array_map(static fn(array $r):array=>op_vast_public_offer($r),
+            array_slice($rows,0,10)),
             'pricing_note'=>'offer quote for 5 GiB storage; verify final rental and additional charges before creating resources'];
     }
     if($action==='vast.rent.quote'){
@@ -223,7 +229,7 @@ function op_query(array $operation): array {
             $hourly=(float)$row['dph_total'];
             $durationHours=(float)$operation['max_minutes']/60;
             if($hourly*$durationHours>(float)$operation['max_total_usd'])op_fail('estimated_budget_exceeded');
-            return ['offer'=>op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']),
+            return ['offer'=>op_vast_public_offer($row),
                 'estimated_duration_usd'=>round($hourly*$durationHours,4),
                 'max_total_usd'=>(float)$operation['max_total_usd'],
                 'max_minutes'=>$operation['max_minutes'],
@@ -241,7 +247,7 @@ function op_query(array $operation): array {
         $rows=op_rows($r['data'],'offers');
         $analyzed=[];
         foreach(array_slice($rows,0,10) as $row){
-            $safe=op_pick($row,['id','machine_id','host_id','gpu_name','num_gpus','gpu_ram','dph_total','reliability2']);
+            $safe=op_vast_public_offer($row);
             if(!is_numeric($safe['dph_total'])||(float)$safe['dph_total']<=0)continue;
             $economics=op_profit_scenarios($safe,(float)$operation['assumed_prl_per_day']);
             $analyzed[]=['offer'=>$safe,'economics'=>$economics];

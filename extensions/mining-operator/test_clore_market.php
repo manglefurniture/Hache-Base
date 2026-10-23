@@ -19,6 +19,7 @@ $base=[
 $combo=$base;$combo['id']=15;
 $cpu=$base;$cpu['id']=10;
 $cpu['specs']['gpu']='1x NVIDIA GTX 745';
+$cpu['specs']['gpuram']=4; // Below the 8 GB GPU candidate threshold.
 $cpu['price']['usd']=['on_demand_usd'=>1.2];
 $gpu=$base;$gpu['id']=20;
 $gpu['specs']['cpu']='Intel i5-6500T';
@@ -76,8 +77,57 @@ testClore($multiProjection['prl_gpu_5090'][0]['id']===500,'Dedicated 5090 slice'
 testClore($multiProjection['prl_gpu_5090'][0]['gpu_count_verified']===2,'Multi GPU match');
 testClore($multiProjection['prl_gpu_5090'][1]['gpu_count_verified']===null,
     'Mismatched GPU inventory must not pass');
-testClore(!in_array(502,array_column($multiProjection['prl_gpu_5090'],'id'),true),
-    'RTX 5090 Laptop cannot masquerade as desktop shortlist');
+testClore(in_array(502,array_column($multiProjection['prl_gpu_5090'],'id'),true),
+    'RTX 5090 Laptop remains discoverable instead of being silently excluded');
+$laptopRow=array_values(array_filter($multiProjection['prl_gpu_5090'],
+    static fn(array $row):bool=>$row['id']===502))[0];
+testClore($laptopRow['gpu_variant']==='laptop' &&
+    $laptopRow['gpu_variant_evidence']==='provider_label' &&
+    $laptopRow['gpu_variant_verified']===false,
+    'Laptop claim must be identified but not treated as physical verification');
 testClore($multiProjection['prl_gpu_spot_floor'][0]['spot_floor_usd_hour']===0.1,
     'Spot quote remains preliminary floor');
+// Every family participates regardless of RTX generation or special model.
+$variants=[];
+foreach ([
+  [601,'1x NVIDIA GeForce RTX 4070 Laptop GPU',16],
+  [602,'1x NVIDIA GeForce RTX 4070 Desktop GPU',16],
+  [603,'1x NVIDIA GeForce RTX 4070',16],
+  [604,'1x NVIDIA GeForce RTX 4090M',16],
+  [605,'1x NVIDIA GeForce RTX 3060 Ti',8],
+  [606,'1x NVIDIA GTX 1080 Ti',11],
+  [607,'1x AMD Radeon RX 7900 XTX',24],
+  [608,'1x NVIDIA CMP 90HX',10],
+  [609,'1x NVIDIA GeForce RTX 5090 Laptop GPU',32],
+] as [$id,$gpuName,$vram]){
+    $x=$base;
+    $x['id']=$id;
+    $x['specs']['gpu']=$gpuName;
+    $x['specs']['gpuram']=$vram;
+    $x['price']['on_demand']['USD-Blockchain']=$id/100;
+    $x['price']['usd']=['on_demand_usd'=>$id/100,'spot'=>0];
+    $variants[]=$x;
+}
+$variantProjection=op_clore_marketplace_projection(['code'=>0,'servers'=>$variants]);
+$rows=$variantProjection['prl_gpu_models'];
+testClore(count($rows)===count($variants),'Preserve all distinct model/variant groups');
+$byId=array_column($rows,null,'id');
+testClore($byId[601]['gpu_variant']==='laptop','RTX 4070 Laptop');
+testClore($byId[602]['gpu_variant']==='desktop','Explicit desktop claim');
+testClore($byId[603]['gpu_variant']==='unverified','Do not assume desktop from RTX 4070');
+testClore($byId[604]['gpu_variant']==='laptop','RTX 4090M Mobile suffix');
+testClore($byId[605]['gpu_variant']==='unverified','RTX 3060 Ti remains eligible');
+testClore($byId[606]['gpu_variant']==='unverified','GTX 1080 Ti remains discoverable');
+testClore($byId[607]['gpu_variant']==='unverified','AMD RX remains discoverable; compatibility not assumed');
+testClore($byId[608]['gpu_variant']==='unverified','CMP mining GPU remains discoverable');
+testClore($byId[609]['gpu_variant']==='laptop','RTX 5090 Laptop remains discoverable');
+testClore($byId[603]['gpu_model_key']===$byId[601]['gpu_model_key'],
+    'Group RTX 4070 family without mixing Laptop and unknown buckets');
+testClore($byId[603]['prl_compatibility_verified']===false,
+    'Listing does not certify PearlHash compatibility');
+testClore($variantProjection['prl_gpu_models_partial']===false,'No fabricated partial marker');
+testClore(op_gpu_variant_hint('RTX 4090 Desktop Laptop')['gpu_variant']==='unverified',
+    'Conflicting provider descriptions fail closed');
+testClore(op_gpu_variant_hint('RTX 5090 D v2')['gpu_variant']==='unverified',
+    'D suffix is not authoritative desktop evidence');
 echo "CLORE_MARKETPLACE_READONLY_TESTS_OK\n";

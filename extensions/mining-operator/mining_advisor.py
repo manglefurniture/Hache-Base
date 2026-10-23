@@ -46,19 +46,34 @@ def gpu_key(value, variant):
     if not isinstance(value, str) or len(value) > 100:
         fail('invalid_gpu_name')
     name = ' '.join(value.upper().replace('-', ' ').split())
-    match = re.search(r'\bRTX\s*(20|30|40|50)\d{2}\b', name)
+    match = re.search(
+        r'\b(?:RTX\s*PRO\s*\d{4}|RTX\s*[2-9]\d{3}M?|GTX\s*\d{3,4}M?|'
+        r'RX\s*\d{4}M?|ARC\s*[AB]\d{3}|TESLA\s*[A-Z]\d{1,4}|'
+        r'CMP\s*\d{2,3}HX|RADEON\s+PRO\s+W\d{4})\b', name)
     if not match:
         fail('unsupported_gpu')
-    if ('LAPTOP' in name or 'MOBILE' in name) != (variant == 'laptop') and ('LAPTOP' in name or 'MOBILE' in name):
+    laptop_label = bool(re.search(r'\b(LAPTOP|MOBILE|NOTEBOOK|MAX[ -]?Q)\b', name))
+    laptop_label = laptop_label or bool(re.search(r'\b(?:RTX|GTX|RX)\s*\d{3,4}M\b', name))
+    desktop_label = bool(re.search(r'\bDESKTOP\b', name))
+    if (laptop_label and desktop_label) or (laptop_label and variant == 'desktop') or (desktop_label and variant == 'laptop'):
         fail('gpu_variant_conflict')
-    # Keep exact family and TI/SUPER suffix to avoid cross-GPU leakage.
+    # Normalize only exact model IDs, preserving variant and architecture tags.
+    # Unsupported generic labels remain unverified; do not invent a family.
     model = match.group(0).replace(' ', '')
+    # Provider shorthand 4090M refers to a mobile variant; normalize the M
+    # under the laptop model while refusing to map it to any desktop sample.
+    if model.endswith('M') and match.group(0).upper().startswith(('RTX','GTX','RX')):
+        model = model[:-1]
     tail = name[match.end():]
     qualifiers = []
-    for word in ('TI', 'SUPER'):
+    for word in ('TI', 'SUPER', 'XTX', 'XT', 'BLACKWELL', 'ADA', 'AMPERE', 'TURING'):
         if re.search(r'\b' + word + r'\b', tail):
             qualifiers.append(word)
-    return 'RTX' + model[3:] + ''.join(qualifiers) + ':' + variant
+    # 5090 D variants, including v2, are not necessarily equivalent to 5090.
+    d_variant = re.search(r'\bD\b(?:\s*V\s*([0-9]+))?', tail)
+    if d_variant:
+        qualifiers.append('D' + ('V' + d_variant.group(1) if d_variant.group(1) else ''))
+    return model + ''.join(qualifiers) + ':' + variant
 
 
 def read_json(path):
@@ -149,10 +164,14 @@ def normalized_offers(snapshot):
         rows = snapshot.get('prl_gpu')
         spot = snapshot.get('prl_gpu_spot_floor', [])
         special = snapshot.get('prl_gpu_5090', [])
-        if not all(type(a) is list and len(a) <= MAX_OFFERS for a in (rows, spot, special)):
+        models = snapshot.get('prl_gpu_models', [])
+        if not all(type(a) is list and len(a) <= MAX_OFFERS
+                   for a in (rows, spot, special, models)):
             fail('invalid_clore_offers')
         offers, by_id = [], set()
-        for row in rows + spot + special:
+        # Model-family representatives first, so an abundance of cheap RTX
+        # 3060 offers does not crowd out other families or Laptop variants.
+        for row in models + rows + spot + special:
             if type(row) is not dict:
                 continue
             oid = str(row.get('id', ''))
@@ -163,6 +182,9 @@ def normalized_offers(snapshot):
                 'provider': 'clore', 'offer_id': oid,
                 'gpu_name': row.get('gpu'), 'gpu_count': row.get('gpu_count_verified'),
                 'gpu_variant_verified': row.get('gpu_variant_verified') is True,
+                'gpu_variant': row.get('gpu_variant', 'unverified'),
+                'gpu_variant_evidence': row.get('gpu_variant_evidence', 'not_provided'),
+                'gpu_model_key': row.get('gpu_model_key'),
                 'on_demand_usd_hour': row.get('on_demand_usd_hour'),
                 'spot_floor_usd_hour': row.get('spot_floor_usd_hour'),
                 'snapshot_utc': snapshot.get('snapshot_utc')
@@ -202,6 +224,13 @@ def evaluate(snapshot, memory, *, market, now=None):
             verdict['reasons'].append('invalid_or_duplicate_offer_id'); continue
         seen.add(identifier)
         if provider == 'clore':
+            # Display the label-derived variant but require independent hardware
+            # verification before attributing PRL samples to this host.
+            hint = offer.get('gpu_variant')
+            verdict['gpu_variant_hint'] = hint if hint in ('desktop', 'laptop') else 'unverified'
+            verdict['gpu_variant_verified'] = False
+            verdict['gpu_variant_evidence'] = offer.get('gpu_variant_evidence')
+            verdict['gpu_model_key'] = offer.get('gpu_model_key')
             verdict['rental_mode_prices'] = {}
             fresh = False
             try:
@@ -236,8 +265,16 @@ def evaluate(snapshot, memory, *, market, now=None):
             continue
         if provider!='vast':
             verdict['reasons'].append('unsupported_provider'); continue
-        # Vast's search readout alone does not prove RTX desktop/laptop or full cost.
+        # Provider GPU name is a hint only. Never infer desktop from silence.
+        provider_hint=offer.get('gpu_variant')
+        verdict['gpu_variant_hint'] = provider_hint if provider_hint in ('desktop','laptop') else 'unverified'
+        verdict['gpu_variant_verified'] = False
+        # 'variant' is a distinct manually established assessment input, never
+        # automatically copied from a provider-advertised GPU name.
         variant=offer.get('variant')
+        if provider_hint in ('desktop','laptop') and variant in ('desktop','laptop') and provider_hint != variant:
+            verdict['reasons'].append('provider_label_conflicts_with_verified_variant')
+            continue
         try:
             key=gpu_key(offer.get('gpu_name'),variant)
         except ValueError as e:

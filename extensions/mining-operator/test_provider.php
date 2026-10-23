@@ -2,6 +2,28 @@
 declare(strict_types=1);
 require __DIR__.'/provider.php';
 
+// Vast search/analyze returns model-independent provider-label hints, not
+// independently verified desktop/laptop hardware and never raw credentials.
+foreach ([
+    ['RTX 3070 Laptop GPU','laptop'],
+    ['RTX 5070 Desktop Edition','desktop'],
+    ['RTX 4080 SUPER','unverified'],
+    ['NVIDIA GeForce GTX 1080 Ti Laptop','laptop'],
+    ['Radeon RX 7900 XTX Mobile','laptop'],
+    ['NVIDIA RTX PRO 6000 Blackwell Workstation','unverified'],
+    ['NVIDIA GeForce RTX 5090 D v2','unverified'],
+] as [$name,$expected]){
+    $projected=op_vast_public_offer([
+        'id'=>678,'machine_id'=>345,'host_id'=>12,'gpu_name'=>$name,
+        'num_gpus'=>1,'gpu_ram'=>24,'dph_total'=>0.15,'reliability2'=>0.97,
+        'api_key'=>'NEVER_SEND_THIS_TOKEN'
+    ]);
+    if($projected['gpu_variant']!==$expected ||
+       $projected['gpu_variant_verified']!==false ||
+       isset($projected['api_key']))
+       throw new RuntimeException('Invalid universal Vast GPU variant projection: '.$name);
+}
+
 $scenario=op_profit_scenarios(['id'=>123,'dph_total'=>0.10],2.0);
 if($scenario['estimated_daily_cost_usd']!==2.4||
    $scenario['scenarios'][0]['daily_net_usd']!==0.148||

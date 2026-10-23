@@ -206,6 +206,75 @@ class MiningAdvisorTests(unittest.TestCase):
         short=subprocess.run(args[:-4]+args[-2:],capture_output=True,text=True)
         self.assertNotEqual(short.returncode,0)
 
+    def test_model_representatives_include_laptop_desktop_and_unknown(self):
+        family='RTX 4070 Ti SUPER'
+        clore={'ok':True,'result':{'snapshot_utc':NOW.isoformat(),
+            'prl_gpu_models':[
+              {'id':1101,'gpu':'1x NVIDIA GeForce RTX 4070 Ti SUPER Laptop GPU',
+               'gpu_count_verified':1,'gpu_variant':'laptop',
+               'gpu_variant_evidence':'provider_label','gpu_variant_verified':False,
+               'gpu_model_key':family,'on_demand_usd_hour':0.24,
+               'spot_floor_usd_hour':0.18},
+              {'id':1102,'gpu':'1x NVIDIA GeForce RTX 4070 Ti SUPER Desktop GPU',
+               'gpu_count_verified':1,'gpu_variant':'desktop',
+               'gpu_variant_evidence':'provider_label','gpu_variant_verified':False,
+               'gpu_model_key':family,'on_demand_usd_hour':0.33,
+               'spot_floor_usd_hour':0.27},
+              {'id':1103,'gpu':'1x NVIDIA GeForce RTX 4070 Ti SUPER',
+               'gpu_count_verified':1,'gpu_variant':'unverified',
+               'gpu_variant_evidence':'missing_provider_label',
+               'gpu_variant_verified':False,'gpu_model_key':family,
+               'on_demand_usd_hour':0.31,'spot_floor_usd_hour':None}],
+            'prl_gpu':[], 'prl_gpu_spot_floor':[], 'prl_gpu_5090':[]}}
+        out=advisor.evaluate(clore,self.mem,market=market(),now=NOW)
+        self.assertEqual(len(out['offers']),3)
+        self.assertEqual(set(r['gpu_variant_hint'] for r in out['offers']),
+                         {'laptop','desktop','unverified'})
+        for entry in out['offers']:
+            self.assertEqual(entry['status'],'needs_verification')
+            self.assertFalse(entry['gpu_variant_verified'])
+            self.assertNotIn('projected_net_usd',entry)
+        self.assertEqual(out['offers'][0]['gpu_model_key'],family)
+
+    def test_all_gpu_families_separate_evidence_and_conflicts(self):
+        for label,variant,expected in (
+            ('RTX 3070 Laptop GPU','laptop','RTX3070:laptop'),
+            ('RTX 3070 Desktop','desktop','RTX3070:desktop'),
+            ('RTX 4070 Ti SUPER Laptop','laptop','RTX4070TISUPER:laptop'),
+            ('RTX 6090 Laptop','laptop','RTX6090:laptop'),
+            ('RTX 4090M','laptop','RTX4090:laptop'),
+            ('Tesla V100 Desktop','desktop','TESLAV100:desktop'),
+            ('NVIDIA CMP 90HX Desktop','desktop','CMP90HX:desktop'),
+            ('NVIDIA RTX PRO 6000 Blackwell Laptop','laptop','RTXPRO6000BLACKWELL:laptop'),
+            ('RTX PRO 6000 Ada Desktop','desktop','RTXPRO6000ADA:desktop'),
+            ('Radeon Pro W7900 Desktop','desktop','RADEONPROW7900:desktop'),
+            ('GTX 1080 Ti Desktop','desktop','GTX1080TI:desktop'),
+            ('Radeon RX 7900 XTX Laptop','laptop','RX7900XTX:laptop'),
+            ('Intel ARC A770 Desktop','desktop','ARCA770:desktop'),
+        ):
+            with self.subTest(label=label):
+                self.assertEqual(advisor.gpu_key(label,variant),expected)
+                with self.assertRaisesRegex(ValueError,'gpu_variant_conflict'):
+                    advisor.gpu_key(label,'desktop' if variant=='laptop' else 'laptop')
+        with self.assertRaisesRegex(ValueError,'gpu_variant_unverified'):
+            advisor.gpu_key('RTX 4090',None)
+        self.assertNotEqual(advisor.gpu_key('RTX 5090 D v2','desktop'),
+                            advisor.gpu_key('RTX 5090','desktop'))
+        self.assertNotEqual(advisor.gpu_key('RTX PRO 6000 Blackwell','desktop'),
+                            advisor.gpu_key('RTX PRO 6000 Ada','desktop'))
+        with self.assertRaisesRegex(ValueError,'unsupported_gpu'):
+            advisor.gpu_key('NVIDIA Graphics Device','desktop')
+
+    def test_vast_label_conflict_does_not_use_desktop_yield(self):
+        self.seed()
+        o=offer(gpu='RTX 5090 Laptop',variant='desktop')
+        o['result']['offers'][0]['gpu_variant']='laptop'
+        row=advisor.evaluate(o,self.mem,market=market(),now=NOW)['offers'][0]
+        self.assertEqual(row['status'],'needs_verification')
+        self.assertIn('provider_label_conflicts_with_verified_variant',row['reasons'])
+        self.assertNotIn('projected_net_usd',row)
+        assert not row['gpu_variant_verified']
+
     def test_no_provider_success_no_eval(self):
         with self.assertRaisesRegex(ValueError,'provider_query_failed'):
             advisor.evaluate({'ok':False,'error':'timeout'},self.mem,market=market(),now=NOW)
