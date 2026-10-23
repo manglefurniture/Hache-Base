@@ -1,4 +1,4 @@
-# TEMPLATE ONLY - not an activated service. Configure IDs and systemd credentials securely.
+# TEMPLATE ONLY. Install only from reviewed GitHub release after root-only Telegram recipient discovery.
 # This service records acknowledgements only. It cannot rent, mutate, or issue grants.
 [Unit]
 Description=Hache Mining Agent Telegram proposals (no rental authority)
@@ -10,9 +10,10 @@ Type=simple
 User=hache-telegram
 Group=hache-telegram
 WorkingDirectory=/opt/hache-mining-agent/current
-ExecStart=/usr/bin/python3 /opt/hache-mining-agent/current/telegram_proposals.py --database /var/lib/hache-mining-agent/proposals.sqlite --poll --chat-id REPLACE_PRIVATE_CHAT_ID --user-id REPLACE_PRIVATE_USER_ID
+EnvironmentFile=/etc/hache-mining-agent/telegram-recipient.env
+ExecStart=/usr/bin/python3 /opt/hache-mining-agent/current/telegram_proposals.py --database /var/lib/hache-mining-telegram/proposals.sqlite --poll --chat-id ${HACHE_TELEGRAM_CHAT_ID} --user-id ${HACHE_TELEGRAM_USER_ID}
 LoadCredential=telegram_token:/etc/hache-mining-agent/telegram_token
-StateDirectory=hache-mining-agent
+StateDirectory=hache-mining-telegram
 StateDirectoryMode=0700
 UMask=0077
 NoNewPrivileges=yes
@@ -23,6 +24,8 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 LockPersonality=yes
 MemoryMax=128M
 TasksMax=16
