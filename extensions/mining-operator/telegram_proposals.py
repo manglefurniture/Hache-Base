@@ -16,6 +16,8 @@ import time
 import urllib.error
 import urllib.request
 
+from telegram_menu import CALLBACKS as MENU_CALLBACKS, markup as menu_markup, reply as menu_reply
+
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
           "projected_net_usd", "quote_observed_at"}
@@ -181,6 +183,23 @@ class ProposalStore:
                             # The owner might retry the button after Telegram dropped
                             # the first callback acknowledgement. Do not imply failure.
                             answer.update(state="already_" + row[3], proposal_id=nonce)
+                    elif data in MENU_CALLBACKS:
+                        # Private owner-only, static read-only actions. No free-form
+                        # commands, commercial operations or cross-chat callbacks.
+                        answer.update(state="menu", action=data.split(":", 1)[1])
+            message = update.get("message")
+            if type(message) is dict:
+                origin, chat = message.get("from"), message.get("chat")
+                if (type(origin) is dict and type(chat) is dict and
+                        type(origin.get("id")) is int and origin["id"] == user_id and
+                        type(chat.get("id")) is int and chat["id"] == chat_id and
+                        chat.get("type") == "private"):
+                    commands = {"/start": "home", "/menu": "home",
+                                "/ofertas": "vast", "/estado": "status",
+                                "/ayuda": "help"}
+                    command = message.get("text")
+                    if type(command) is str and command in commands:
+                        answer.update(state="menu", action=commands[command])
             self.db.execute("UPDATE telegram_cursor SET update_id=? WHERE singleton=1", (update_id,))
             self.db.commit()
             return answer
@@ -280,12 +299,22 @@ class TelegramChannel:
             "SELECT update_id FROM telegram_cursor WHERE singleton=1").fetchone()[0]
         updates = self.api.call("getUpdates", {
             "offset": last+1, "timeout": 20, "limit": 50,
-            "allowed_updates": ["callback_query"]})
+            "allowed_updates": ["callback_query", "message"]})
         if type(updates) is not list or len(updates) > 50:
             raise ProposalError("invalid_telegram_updates")
         results = []
         for update in updates:
             result = self.store.process_update(update, self.chat_id, self.user_id, now)
+            if result["state"] == "menu":
+                # The menu has no broker socket or provider keys. A missing or
+                # stale hourly spool produces a safe "unavailable" response.
+                self.api.call("sendMessage", {
+                    "chat_id": self.chat_id,
+                    "text": menu_reply(result["action"]),
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                    "reply_markup": menu_markup(),
+                })
             callback = update.get("callback_query") if type(update) is dict else None
             if type(callback) is dict and type(callback.get("id")) is str:
                 self.api.call("answerCallbackQuery", {
@@ -294,6 +323,7 @@ class TelegramChannel:
                              else "Rechazo registrado" if result["state"] == "rejected"
                              else "Aceptacion ya registrada" if result["state"] == "already_acknowledged"
                              else "Rechazo ya registrado" if result["state"] == "already_rejected"
+                             else "Consulta enviada" if result["state"] == "menu"
                              else "No autorizado o vencido")})
             results.append(result)
         return results
