@@ -243,6 +243,11 @@ class MiningAdvisorTests(unittest.TestCase):
             ('RTX 4070 Ti SUPER Laptop','laptop','RTX4070TISUPER:laptop'),
             ('RTX 6090 Laptop','laptop','RTX6090:laptop'),
             ('RTX 4090M','laptop','RTX4090:laptop'),
+            ('Tesla V100 Desktop','desktop','TESLAV100:desktop'),
+            ('NVIDIA CMP 90HX Desktop','desktop','CMP90HX:desktop'),
+            ('NVIDIA RTX PRO 6000 Blackwell Laptop','laptop','RTXPRO6000BLACKWELL:laptop'),
+            ('RTX PRO 6000 Ada Desktop','desktop','RTXPRO6000ADA:desktop'),
+            ('Radeon Pro W7900 Desktop','desktop','RADEONPROW7900:desktop'),
             ('GTX 1080 Ti Desktop','desktop','GTX1080TI:desktop'),
             ('Radeon RX 7900 XTX Laptop','laptop','RX7900XTX:laptop'),
             ('Intel ARC A770 Desktop','desktop','ARCA770:desktop'),
@@ -253,6 +258,12 @@ class MiningAdvisorTests(unittest.TestCase):
                     advisor.gpu_key(label,'desktop' if variant=='laptop' else 'laptop')
         with self.assertRaisesRegex(ValueError,'gpu_variant_unverified'):
             advisor.gpu_key('RTX 4090',None)
+        self.assertNotEqual(advisor.gpu_key('RTX 5090 D v2','desktop'),
+                            advisor.gpu_key('RTX 5090','desktop'))
+        self.assertNotEqual(advisor.gpu_key('RTX PRO 6000 Blackwell','desktop'),
+                            advisor.gpu_key('RTX PRO 6000 Ada','desktop'))
+        with self.assertRaisesRegex(ValueError,'unsupported_gpu'):
+            advisor.gpu_key('NVIDIA Graphics Device','desktop')
 
     def test_vast_label_conflict_does_not_use_desktop_yield(self):
         self.seed()
