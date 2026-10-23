@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly read-only Hache mining market comparison
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=240
+AccuracySec=60
+Unit=hache-mining-market-scout.service
+
+[Install]
+WantedBy=timers.target
