@@ -38,6 +38,48 @@ function op_vast_public_offer(array $row): array {
                         'gpu_ram','dph_total','reliability2']);
     return array_merge($safe,op_gpu_variant_hint($safe['gpu_name']));
 }
+/** Sanitize a read-only Vast marketplace batch; never leak host fields. */
+function op_vast_marketplace_projection(array $rows): array {
+    if(count($rows)>160)op_fail('provider_unavailable');
+    $selected=[];$seen=[];$eligible=0;
+    foreach($rows as $row){
+        if(!is_array($row))continue;
+        $offer=op_vast_public_offer($row);
+        $id=$offer['id'];$name=$offer['gpu_name'];$count=$offer['num_gpus'];
+        $price=$offer['dph_total'];$reliability=$offer['reliability2'];
+        if(!is_int($id)||$id<1||isset($seen[$id])||
+            !is_string($name)||strlen($name)<3||
+            !is_int($count)||$count<1||$count>16||
+            !is_numeric($price)||!is_finite((float)$price)||
+            (float)$price<=0||(float)$price>2||
+            !is_numeric($reliability)||!is_finite((float)$reliability)||
+            (float)$reliability<0.90||(float)$reliability>1)continue;
+        $family=op_gpu_family_key($name);
+        if($family===null||!preg_match('/[0-9]/',$family))continue;
+        $seen[$id]=true;$eligible++;
+        $offer['gpu_model_key']=$family;
+        $offer['gpu_variant_verified']=false;
+        $offer['hourly_usd'] = round((float)$price,6);
+        $bucket=$family.':'.$offer['gpu_variant'].':'.$count;
+        if(!isset($selected[$bucket])||
+            $offer['hourly_usd']<$selected[$bucket]['hourly_usd']||
+            ($offer['hourly_usd']===$selected[$bucket]['hourly_usd']&&$id<$selected[$bucket]['id']))
+            $selected[$bucket]=$offer;
+    }
+    $offers=array_values($selected);
+    usort($offers,static fn(array $a,array $b):int=>
+        ($a['hourly_usd']<=>$b['hourly_usd'])?:($a['id']<=>$b['id']));
+    $total=count($offers);
+    return ['source'=>'vast_on_demand_public_offers',
+        'snapshot_utc'=>gmdate('Y-m-d\\TH:i:s\\Z'),
+        'offers'=>array_slice($offers,0,80),
+        'model_variants_total'=>$total,
+        'model_variants_partial'=>$total>80,
+        'scanned_offers'=>count($rows),
+        'eligible_offers'=>$eligible,
+        'rental_authorized'=>false,
+        'warning'=>'READ ONLY. Lowest on-demand advertised 5 GiB storage quotes, not net PRL earnings or an all-in rent. GPU laptop/desktop labels are not physically verified. Snapshot is limited to provider first 160 offers. No rental, bid or spend.'];
+}
 function op_rows(array $data,string $key): array {
     if(!isset($data[$key])||!is_array($data[$key])||!array_is_list($data[$key]))op_fail('provider_unavailable');
     foreach($data[$key] as $row)if(!is_array($row))op_fail('provider_unavailable');
@@ -197,6 +239,18 @@ function op_query(array $operation): array {
     }
     if($action==='vast.status')return op_vast_status($operation['instance_id']);
     if($action==='vast.inspect')return op_vast_inspect($operation['instance_id']);
+    if($action==='vast.marketplace'){
+        // Fetch only ranked, currently offered, on-demand hosts. A provider
+        // query result is not an executable rental quote or proven PRL yield.
+        $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],
+            'rented'=>['eq'=>false], 'type'=>'on-demand',
+            'dph_total'=>['lte'=>2], 'limit'=>160,
+            'order'=>[['dph_total','asc']], 'allocated_storage'=>5];
+        $response=op_vast('/api/v0/bundles/?q='.rawurlencode(json_encode($q,JSON_THROW_ON_ERROR)));
+        $rows=op_rows($response['data'],'offers');
+        if(count($rows)>160)op_fail('provider_unavailable');
+        return op_vast_marketplace_projection($rows);
+    }
     if($action==='vast.search'){
         $q=['verified'=>['eq'=>true],'rentable'=>['eq'=>true],'rented'=>['eq'=>false],
             'gpu_name'=>['eq'=>$operation['gpu_name']],'num_gpus'=>['eq'=>$operation['gpu_count']],
