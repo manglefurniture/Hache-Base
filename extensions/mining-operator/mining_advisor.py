@@ -134,7 +134,7 @@ class Memory:
 
 
 def normalized_offers(snapshot):
-    """Consume sanitized provider broker output; never parse raw offers with hidden fees."""
+    """Consume sanitized provider broker output; never parse hidden provider fees."""
     if not isinstance(snapshot, dict):
         fail('invalid_snapshot')
     if 'ok' in snapshot:
@@ -143,9 +143,31 @@ def normalized_offers(snapshot):
         snapshot = snapshot.get('result')
     if not isinstance(snapshot, dict):
         fail('invalid_snapshot')
-    if 'prl_gpu' in snapshot:  # Clore projection omits reliable per-GPU count and variant.
-        return [{'provider':'clore', 'offer_id':str(r.get('id','')), 'status':'needs_hardware_verification'}
-                for r in snapshot['prl_gpu'][:MAX_OFFERS] if isinstance(r, dict)]
+    if 'prl_gpu' in snapshot:
+        # The Clore broker exposes whole-server On-Demand USD and Spot MINIMUM
+        # bid floors. Neither proves an executable Spot bid or desktop hardware.
+        rows = snapshot.get('prl_gpu')
+        spot = snapshot.get('prl_gpu_spot_floor', [])
+        special = snapshot.get('prl_gpu_5090', [])
+        if not all(type(a) is list and len(a) <= MAX_OFFERS for a in (rows, spot, special)):
+            fail('invalid_clore_offers')
+        offers, by_id = [], set()
+        for row in rows + spot + special:
+            if type(row) is not dict:
+                continue
+            oid = str(row.get('id', ''))
+            if oid in by_id:
+                continue
+            by_id.add(oid)
+            offers.append({
+                'provider': 'clore', 'offer_id': oid,
+                'gpu_name': row.get('gpu'), 'gpu_count': row.get('gpu_count_verified'),
+                'gpu_variant_verified': row.get('gpu_variant_verified') is True,
+                'on_demand_usd_hour': row.get('on_demand_usd_hour'),
+                'spot_floor_usd_hour': row.get('spot_floor_usd_hour'),
+                'snapshot_utc': snapshot.get('snapshot_utc')
+            })
+        return offers[:MAX_OFFERS]
     rows = snapshot.get('offers')
     if type(rows) is not list or len(rows) > MAX_OFFERS:
         fail('invalid_offers')
@@ -179,8 +201,33 @@ def evaluate(snapshot, memory, *, market, now=None):
         if not re.fullmatch(r'[1-9][0-9]{0,14}', oid) or identifier in seen:
             verdict['reasons'].append('invalid_or_duplicate_offer_id'); continue
         seen.add(identifier)
+        if provider == 'clore':
+            verdict['rental_mode_prices'] = {}
+            for mode, field in (('on_demand', 'on_demand_usd_hour'),
+                                ('spot_minimum_floor', 'spot_floor_usd_hour')):
+                quoted = offer.get(field)
+                if type(quoted) in (int, float) and math.isfinite(quoted) and 0 < quoted <= 100:
+                    verdict['rental_mode_prices'][mode] = round(float(quoted), 6)
+            count = offer.get('gpu_count')
+            if type(count) is int and 1 <= count <= 16:
+                verdict['gpu_count'] = count
+            else:
+                verdict['reasons'].append('gpu_count_and_quote_not_verified')
+            name = offer.get('gpu_name')
+            if type(name) is str and len(name) <= 100:
+                verdict['gpu_name'] = name
+            if offer.get('gpu_variant_verified') is not True:
+                verdict['reasons'].append('gpu_variant_unverified')
+            if 'spot_minimum_floor' in verdict['rental_mode_prices']:
+                verdict['reasons'].append('spot_floor_not_executable_bid')
+            if 'on_demand' not in verdict['rental_mode_prices']:
+                verdict['reasons'].append('on_demand_price_unverified')
+            verdict['reasons'].append('clore_market_bid_and_all_in_fees_unverified')
+            verdict['reasons'].append('prl_yield_per_instance_unverified')
+            # Never label a Spot floor or whole-server quote as a rentable profit.
+            continue
         if provider!='vast':
-            verdict['reasons'].append('gpu_count_and_quote_not_verified'); continue
+            verdict['reasons'].append('unsupported_provider'); continue
         # Vast's search readout alone does not prove RTX desktop/laptop or full cost.
         variant=offer.get('variant')
         try:
@@ -225,11 +272,40 @@ def evaluate(snapshot, memory, *, market, now=None):
             'warning':'Estimates use user-supplied PRL price and measured PRL observations, not TH/s. Unknown post-stop/provider charges remain; NEVER authorize rentals from this output.'}
 
 
+def evaluate_sources(snapshots, memory, *, market, now=None):
+    """One deterministic read-only comparison covering Clore AND Vast."""
+    if type(snapshots) is not dict or not snapshots or not set(snapshots) <= {'vast', 'clore'}:
+        fail('invalid_sources')
+    if 'vast' not in snapshots or 'clore' not in snapshots:
+        fail('both_providers_required')
+    vast = evaluate(snapshots['vast'], memory, market=market, now=now)
+    clore = evaluate(snapshots['clore'], memory, market=market, now=now)
+    items = vast['offers'] + clore['offers']
+    # Preserve both provider labels; an indicative Spot floor never outranks an
+    # offer supported by measured PRL yield, as it lacks a valid net projection.
+    items.sort(key=lambda r: (r['status'] != 'candidate_for_manual_quote',
+                              -r.get('projected_net_usd', -1e9), r['provider'],
+                              r['offer_id']))
+    return {
+        'mode': 'read_only',
+        'renting_enabled': False,
+        'providers_checked': ['vast', 'clore'],
+        'evaluated_at': vast['evaluated_at'],
+        'price_observed_at': vast['price_observed_at'],
+        'offers': items,
+        'warning': ('Vast uses empirical yield when available; Clore Spot prices '
+                    'are minimum bid floors, not winning prices. No BTC-to-USD '
+                    'assumptions, no TH/s-to-PRL conversion, no rentals or grants.')
+    }
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True, help='Local SQLite history; restrict OS permissions in deployment')
     parser.add_argument('--import-measurements',help='JSON list of factual observations with evidence IDs')
-    parser.add_argument('--offers', help='JSON broker query response saved locally, not provider credentials')
+    parser.add_argument('--offers', help='Legacy: one sanitized provider broker JSON response')
+    parser.add_argument('--offers-vast', help='Sanitized Vast read-only JSON response')
+    parser.add_argument('--offers-clore', help='Sanitized Clore read-only JSON response')
     parser.add_argument('--market', help='Explicit fresh market-price and fee assumptions JSON')
     args=parser.parse_args(argv)
     memory=Memory(args.database)
@@ -240,9 +316,21 @@ def main(argv=None):
                 fail('invalid_measurements')
             for measurement in observations:
                 memory.record(measurement)
-        if bool(args.offers)!=bool(args.market):
+        combined = bool(args.offers_vast or args.offers_clore)
+        if args.offers and combined:
+            fail('choose_single_or_both_sources')
+        if combined and not (args.offers_vast and args.offers_clore):
+            fail('both_providers_required')
+        if bool(args.offers or combined) != bool(args.market):
             fail('offers_and_market_required_together')
-        result=evaluate(read_json(args.offers),memory,market=read_json(args.market)) if args.offers else {'mode':'read_only','measurements_imported':True}
+        if combined:
+            result = evaluate_sources({'vast':read_json(args.offers_vast),
+                                       'clore':read_json(args.offers_clore)},
+                                      memory,market=read_json(args.market))
+        elif args.offers:
+            result = evaluate(read_json(args.offers),memory,market=read_json(args.market))
+        else:
+            result = {'mode':'read_only','measurements_imported':True}
         print(json.dumps(result,sort_keys=True))
     finally:
         memory.close()
