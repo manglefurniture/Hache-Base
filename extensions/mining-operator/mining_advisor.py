@@ -46,7 +46,10 @@ def gpu_key(value, variant):
     if not isinstance(value, str) or len(value) > 100:
         fail('invalid_gpu_name')
     name = ' '.join(value.upper().replace('-', ' ').split())
-    match = re.search(r'\b(?:RTX\s*[2-9]\d{3}M?|GTX\s*\d{3,4}M?|RX\s*\d{4}M?|ARC\s*[AB]\d{3})\b', name)
+    match = re.search(
+        r'\b(?:RTX\s*PRO\s*\d{4}|RTX\s*[2-9]\d{3}M?|GTX\s*\d{3,4}M?|'
+        r'RX\s*\d{4}M?|ARC\s*[AB]\d{3}|TESLA\s*[A-Z]\d{1,4}|'
+        r'CMP\s*\d{2,3}HX|RADEON\s+PRO\s+W\d{4})\b', name)
     if not match:
         fail('unsupported_gpu')
     laptop_label = bool(re.search(r'\b(LAPTOP|MOBILE|NOTEBOOK|MAX[ -]?Q)\b', name))
@@ -54,7 +57,8 @@ def gpu_key(value, variant):
     desktop_label = bool(re.search(r'\bDESKTOP\b', name))
     if (laptop_label and desktop_label) or (laptop_label and variant == 'desktop') or (desktop_label and variant == 'laptop'):
         fail('gpu_variant_conflict')
-    # Keep exact family and TI/SUPER suffix to avoid cross-GPU leakage.
+    # Normalize only exact model IDs, preserving variant and architecture tags.
+    # Unsupported generic labels remain unverified; do not invent a family.
     model = match.group(0).replace(' ', '')
     # Provider shorthand 4090M refers to a mobile variant; normalize the M
     # under the laptop model while refusing to map it to any desktop sample.
@@ -62,9 +66,13 @@ def gpu_key(value, variant):
         model = model[:-1]
     tail = name[match.end():]
     qualifiers = []
-    for word in ('TI', 'SUPER', 'XTX', 'XT'):
+    for word in ('TI', 'SUPER', 'XTX', 'XT', 'BLACKWELL', 'ADA', 'AMPERE', 'TURING'):
         if re.search(r'\b' + word + r'\b', tail):
             qualifiers.append(word)
+    # 5090 D variants, including v2, are not necessarily equivalent to 5090.
+    d_variant = re.search(r'\bD\b(?:\s*V\s*([0-9]+))?', tail)
+    if d_variant:
+        qualifiers.append('D' + ('V' + d_variant.group(1) if d_variant.group(1) else ''))
     return model + ''.join(qualifiers) + ':' + variant
 
 
