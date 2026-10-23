@@ -146,6 +146,17 @@ class MiningAdvisorTests(unittest.TestCase):
         self.assertIn('gpu_variant_unverified', item['reasons'])
         self.assertNotIn('projected_net_usd', item)
 
+    def test_clore_outdated_or_undated_prices_suppressed(self):
+        row = {'id': 991, 'gpu':'1x RTX 5090', 'gpu_count_verified':1,
+               'on_demand_usd_hour':0.42, 'spot_floor_usd_hour':0.30}
+        for stamp in (None, (NOW-timedelta(minutes=6)).isoformat(),
+                      (NOW+timedelta(minutes=1)).isoformat()):
+            data = {'snapshot_utc':stamp, 'prl_gpu':[row]}
+            out=advisor.evaluate(data,self.mem,market=market(),now=NOW)['offers'][0]
+            self.assertEqual(out['rental_mode_prices'], {})
+            self.assertIn('clore_market_snapshot_stale_or_undated',out['reasons'])
+            self.assertEqual(out['status'],'needs_verification')
+
     def test_clore_remains_unapproved_even_with_legacy_yield_samples(self):
         for i in range(1, 4):
             self.mem.record(observation(i, provider='clore'))
@@ -159,6 +170,7 @@ class MiningAdvisorTests(unittest.TestCase):
 
     def test_clore_native_spot_and_vast_both_in_same_readonly_result(self):
         clore={'ok': True, 'result': {
+            'snapshot_utc': NOW.isoformat(),
             'prl_gpu':[{'id':555,'gpu':'RTX 5070','gpu_count_verified':1,
                         'on_demand_usd_hour':0.22,'spot_floor_usd_hour':0.11}],
             'prl_gpu_spot_floor': [], 'prl_gpu_5090': []}}
@@ -179,7 +191,7 @@ class MiningAdvisorTests(unittest.TestCase):
         clore=folder/'clore.json'
         m=folder/'market.json'
         vast.write_text(json.dumps(offer()))
-        clore.write_text(json.dumps({'prl_gpu':[{'id':44,'gpu':'1x RTX 5090',
+        clore.write_text(json.dumps({'snapshot_utc': NOW.isoformat(), 'prl_gpu':[{'id':44,'gpu':'1x RTX 5090',
             'gpu_count_verified':1,'on_demand_usd_hour':0.4,'spot_floor_usd_hour':0.3}]}))
         m.write_text(json.dumps(market()))
         program=str(Path(__file__).with_name('mining_advisor.py'))
