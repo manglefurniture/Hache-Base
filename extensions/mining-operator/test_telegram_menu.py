@@ -52,10 +52,13 @@ class FakeTelegram:
     def __init__(self):
         self.calls = []
         self.updates = []
+        self.fail_send = False
 
     def __call__(self, url, data):
         method = url.rsplit("/", 1)[-1]
         self.calls.append((method, data))
+        if method == "sendMessage" and self.fail_send:
+            return {"ok": False}
         return {"ok": True, "result": (
             self.updates if method == "getUpdates"
             else {"message_id": 111} if method == "sendMessage" else True)}
@@ -144,6 +147,34 @@ class MenuTests(unittest.TestCase):
         self.assertEqual(self.fake.calls[0][1]["allowed_updates"], ["callback_query", "message"])
         self.assertFalse(any("rent" in name.lower() or "order" in name.lower() for name in methods))
         self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM proposals").fetchone()[0], 0)
+
+    def test_menu_reply_survives_send_error_and_cursor_commit(self):
+        self.fake.updates = [message("/menu", 16)]
+        self.fake.fail_send = True
+        with self.assertRaisesRegex(tp.ProposalError, "telegram_unavailable"):
+            self.channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual(self.store.pending_menu(), [(16, "home")])
+        cursor = self.store.db.execute(
+            "SELECT update_id FROM telegram_cursor WHERE singleton=1").fetchone()[0]
+        self.assertEqual(cursor, 16)
+        self.fake.fail_send = False
+        self.fake.calls.clear()
+        self.fake.updates = []
+        self.channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual([name for name, _ in self.fake.calls],
+                         ["sendMessage", "getUpdates"])
+        self.assertEqual(self.store.pending_menu(), [])
+        self.assertIn("AGENTE DE MINERÍA", self.fake.calls[0][1]["text"])
+
+    def test_replay_does_not_duplicate_delivered_menu(self):
+        self.fake.updates = [cb("menu:home", update_id=17)]
+        self.channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual(self.store.pending_menu(), [])
+        self.fake.calls.clear()
+        self.fake.updates = [cb("menu:home", update_id=17)]
+        self.channel.poll_once(int(NOW.timestamp()))
+        self.assertEqual([name for name, _ in self.fake.calls],
+                         ["getUpdates", "answerCallbackQuery"])
 
     def test_command_from_foreign_user_sends_nothing(self):
         self.fake.updates = [message("/menu", user=123)]
