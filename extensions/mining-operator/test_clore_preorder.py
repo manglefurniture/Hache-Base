@@ -144,6 +144,8 @@ class PreorderTests(unittest.TestCase):
             ([order(222,currency="bitcoin")],"identity_mismatch"),
             ([order(222,image="other/image@sha256:"+"b"*64)],"identity_mismatch"),
             ([order(222,ct=NOW-100)],"identity_mismatch"),
+            ([order(222,si=999)],"unrelated_new_order"),
+            ([order(222),order(223,si=999)],"ambiguous"),
             ([order(222,specs={"gpu":"8x RTX 5090"})],"identity_mismatch"),
             ([order(222,price=99)],"price_or_fee_mismatch"),
             ([order(222,fee=10)],"price_or_fee_mismatch"),
