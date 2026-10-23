@@ -115,7 +115,6 @@ class RecoveryTests(unittest.TestCase):
                (dict(spend="0.9"),"price_or_fee_mismatch")]
         for changes, status in cases:
             with self.subTest(changes=changes):
-                self.db.execute("DELETE FROM clore_pending_recovery")
                 self.api.records=[order(88,**changes)]
                 self.check(status)
         self.assertEqual(self.api.cancels,[])
