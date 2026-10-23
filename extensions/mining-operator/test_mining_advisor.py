@@ -122,6 +122,78 @@ class MiningAdvisorTests(unittest.TestCase):
         self.assertEqual(r['offers'][0]['status'],'needs_verification')
         self.assertIn('gpu_count_and_quote_not_verified',r['offers'][0]['reasons'])
 
+    def test_clore_spot_minimum_and_on_demand_visible_but_not_rentable(self):
+        clore = {'ok': True, 'result': {
+            'source': 'clore_public_marketplace',
+            'snapshot_utc': NOW.isoformat(),
+            'prl_gpu': [
+                {'id': 981, 'gpu': '1x NVIDIA GeForce RTX 5090',
+                 'gpu_count_verified': 1, 'gpu_variant_verified': False,
+                 'on_demand_usd_hour': 0.58, 'spot_floor_usd_hour': 0.47}],
+            'prl_gpu_spot_floor': [
+                {'id': 981, 'gpu': '1x NVIDIA GeForce RTX 5090',
+                 'gpu_count_verified': 1, 'gpu_variant_verified': False,
+                 'on_demand_usd_hour': 0.58, 'spot_floor_usd_hour': 0.47}]}}
+        r = advisor.evaluate(clore, self.mem, market=market(), now=NOW)
+        self.assertFalse(r['renting_enabled'])
+        self.assertEqual(len(r['offers']), 1, 'Deduplicate Clore modes by server ID')
+        item = r['offers'][0]
+        self.assertEqual(item['provider'], 'clore')
+        self.assertEqual(item['rental_mode_prices'],
+                         {'on_demand':0.58,'spot_minimum_floor':0.47})
+        self.assertEqual(item['status'], 'needs_verification')
+        self.assertIn('spot_floor_not_executable_bid', item['reasons'])
+        self.assertIn('gpu_variant_unverified', item['reasons'])
+        self.assertNotIn('projected_net_usd', item)
+
+    def test_clore_remains_unapproved_even_with_legacy_yield_samples(self):
+        for i in range(1, 4):
+            self.mem.record(observation(i, provider='clore'))
+        input_data = {'prl_gpu':[{'id':45,'gpu':'1x NVIDIA GeForce RTX 5090',
+                     'gpu_count_verified':1,'gpu_variant_verified':True,
+                     'on_demand_usd_hour':0.3,'spot_floor_usd_hour':0.1}]}
+        r = advisor.evaluate(input_data, self.mem, market=market(), now=NOW)
+        self.assertEqual(r['offers'][0]['status'], 'needs_verification')
+        self.assertNotIn('projected_net_usd', r['offers'][0])
+        self.assertFalse(r['renting_enabled'])
+
+    def test_clore_native_spot_and_vast_both_in_same_readonly_result(self):
+        clore={'ok': True, 'result': {
+            'prl_gpu':[{'id':555,'gpu':'RTX 5070','gpu_count_verified':1,
+                        'on_demand_usd_hour':0.22,'spot_floor_usd_hour':0.11}],
+            'prl_gpu_spot_floor': [], 'prl_gpu_5090': []}}
+        self.seed()
+        out=advisor.evaluate_sources({'vast':offer(),'clore':clore},
+                                     self.mem,market=market(),now=NOW)
+        self.assertEqual(out['providers_checked'], ['vast','clore'])
+        self.assertEqual(set(x['provider'] for x in out['offers']), {'vast','clore'})
+        self.assertFalse(out['renting_enabled'])
+        self.assertEqual(out['offers'][0]['provider'],'vast')
+        self.assertEqual(out['offers'][1]['rental_mode_prices']['spot_minimum_floor'],0.11)
+        with self.assertRaisesRegex(ValueError, 'both_providers_required'):
+            advisor.evaluate_sources({'vast':offer()},self.mem,market=market(),now=NOW)
+
+    def test_dual_provider_cli_requires_both_snapshots_and_market(self):
+        folder=Path(self.temp.name)
+        vast=folder/'vast.json'
+        clore=folder/'clore.json'
+        m=folder/'market.json'
+        vast.write_text(json.dumps(offer()))
+        clore.write_text(json.dumps({'prl_gpu':[{'id':44,'gpu':'1x RTX 5090',
+            'gpu_count_verified':1,'on_demand_usd_hour':0.4,'spot_floor_usd_hour':0.3}]}))
+        m.write_text(json.dumps(market()))
+        program=str(Path(__file__).with_name('mining_advisor.py'))
+        args=[sys.executable,program,'--database',str(folder/'dual.db'),
+              '--offers-vast',str(vast),'--offers-clore',str(clore),'--market',str(m)]
+        run=subprocess.run(args,capture_output=True,text=True)
+        self.assertEqual(run.returncode,0,run.stdout+run.stderr)
+        out=json.loads(run.stdout)
+        self.assertEqual(out['providers_checked'],['vast','clore'])
+        self.assertTrue(all(x['status'] != 'candidate_for_manual_quote'
+                            for x in out['offers']), 'No empirical samples supplied')
+        short=subprocess.run(args[:-4]+args[-2:],capture_output=True,text=True)
+        self.assertNotEqual(short.returncode,0)
+
     def test_no_provider_success_no_eval(self):
         with self.assertRaisesRegex(ValueError,'provider_query_failed'):
             advisor.evaluate({'ok':False,'error':'timeout'},self.mem,market=market(),now=NOW)
