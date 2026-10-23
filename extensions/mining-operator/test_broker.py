@@ -51,6 +51,21 @@ class BrokerTests(unittest.TestCase):
         return path
 
 
+    def test_vast_marketplace_is_readonly_with_no_arguments(self):
+        op={'action':'vast.marketplace'}
+        self.assertEqual(validate_operation(op),op)
+        answer=self.broker.handle({'method':'query','operation':op})
+        self.assertIn('actual_status',answer)
+        self.assertEqual(self.calls,['query'])
+        with self.assertRaisesRegex(Rejected,'unsupported_action_or_fields'):
+            validate_operation({'action':'vast.marketplace','gpu_name':'RTX 5090'})
+        with self.assertRaisesRegex(Rejected,'unsupported_mutation'):
+            self.broker.handle({'method':'prepare','operation':op})
+        self.assertIn('vast.marketplace',
+                      self.broker.handle({'method':'capabilities'})['reads'])
+        self.assertNotIn('vast.marketplace',
+                         self.broker.handle({'method':'capabilities'})['writes_with_root_grant'])
+
     def test_clore_marketplace_only_allows_safe_query(self):
         op = {'action': 'clore.marketplace'}
         self.assertEqual(validate_operation(op), op)
