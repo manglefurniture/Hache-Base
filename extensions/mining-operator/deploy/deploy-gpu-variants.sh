@@ -3,7 +3,7 @@
 # No provider mutating API calls. Existing finance/watchdog timers remain on.
 set -Eeuo pipefail
 umask 022
-SHA="\${1:-}"
+SHA="${1:-}"
 OP=/opt/hache-mining-operator
 BOT=/opt/hache-mining-agent
 REPO=https://github.com/manglefurniture/Hache-Base.git
