@@ -62,11 +62,15 @@ $multi=$base;$multi['id']=500;$multi['specs']['gpu']='2x NVIDIA GeForce RTX 5090
 $multi['gpu_array']=[['index'=>0],['index'=>1]];
 $multi['price']['spot']['USD-Blockchain']=2.4;
 $mismatch=$multi;$mismatch['id']=501;$mismatch['gpu_array']=[['index'=>0]];
-$multiProjection=op_clore_marketplace_projection(['code'=>0,'servers'=>[$multi,$mismatch]]);
+$laptop=$multi;$laptop['id']=502;$laptop['specs']['gpu']='1x NVIDIA GeForce RTX 5090 Laptop GPU';
+$laptop['gpu_array']=[['index'=>0]];
+$multiProjection=op_clore_marketplace_projection(['code'=>0,'servers'=>[$multi,$mismatch,$laptop]]);
 testClore($multiProjection['prl_gpu_5090'][0]['id']===500,'Dedicated 5090 slice');
 testClore($multiProjection['prl_gpu_5090'][0]['gpu_count_verified']===2,'Multi GPU match');
 testClore($multiProjection['prl_gpu_5090'][1]['gpu_count_verified']===null,
     'Mismatched GPU inventory must not pass');
+testClore(!in_array(502,array_column($multiProjection['prl_gpu_5090'],'id'),true),
+    'RTX 5090 Laptop cannot masquerade as desktop shortlist');
 testClore($multiProjection['prl_gpu_spot_floor'][0]['spot_floor_usd_hour']===0.1,
     'Spot quote remains preliminary floor');
 echo "CLORE_MARKETPLACE_READONLY_TESTS_OK\n";
