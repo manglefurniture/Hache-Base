@@ -206,9 +206,9 @@ def save_report(report, path=OUTPUT, *, uid=None, gid=None):
 def main():
     if os.geteuid() == 0:
         raise ScanError("do_not_run_as_root")
-    now = dt.datetime.now(UTC)
     vast = query_broker("vast.marketplace")
     clore = query_broker("clore.marketplace")
+    now = dt.datetime.now(UTC)  # stamp after both network calls, not before
     report = make_report(vast, clore, now, pool_observation(now))
     group = grp.getgrnam("hache-telegram").gr_gid
     save_report(report, uid=os.geteuid(), gid=group)
