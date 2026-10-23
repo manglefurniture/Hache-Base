@@ -52,6 +52,9 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("active_or_unreadable_clore_financial_obligation", s)
         self.assertIn("hache-mining-operator-clore-cancel.timer", s)
         self.assertIn("test_clore_cancel_guard.py", s)
+        self.assertIn("CLORE_RESERVED_PREORDERS=",s)
+        self.assertIn("clore_preorders WHERE phase IN",s)
+        self.assertIn("n==0 and pending==0",s)
 
     def test_no_spend_smoke_and_unit_tests(self):
         s=SCRIPT.read_text()
