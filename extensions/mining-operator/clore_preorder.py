@@ -189,12 +189,16 @@ def evaluate_candidate(db, *, reservation_id, api, now=None):
     if now < created_at or now - created_at > 86400:
         raise GuardError("preorder_reconciliation_out_of_range")
     added = [order for order in inventory["orders"] if order["id"] not in baseline]
-    related = [o for o in added if o.get("si") == terms["server_id"]]
-    if not related:
-        return {"status": "not_found", "rental_permitted": False}
-    if len(related) != 1:
+    # A baseline delta involving ANY unrelated new order is ambiguous: a
+    # customer action on another server must not be taken as proof that our
+    # unacknowledged create request succeeded or failed.
+    if len(added) > 1:
         return {"status": "ambiguous", "rental_permitted": False}
-    candidate = related[0]
+    if not added:
+        return {"status": "not_found", "rental_permitted": False}
+    candidate = added[0]
+    if candidate.get("si") != terms["server_id"]:
+        return {"status": "unrelated_new_order", "rental_permitted": False}
     if (candidate.get("expired") is not False or candidate.get("spot") is not True or
             candidate.get("currency") != "USD-Blockchain" or
             candidate.get("image") != terms["image"] or

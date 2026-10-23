@@ -251,6 +251,11 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
     now = int(time.time()) if now is None else int(now)
     leases = db.execute("SELECT * FROM clore_cancel_leases WHERE phase='armed' ORDER BY cutoff_at").fetchall()
     if not leases:
+        # A submitted or timed-out create with no bound lease is NOT idle.
+        # Only inspect authenticated inventory and persist evidence: never
+        # cancel an ambiguous order belonging to somebody else.
+        from clore_pending_recovery import inspect_and_alert
+        inspect_and_alert(db, api, now=now)
         # The heartbeat must prove actual API authentication even while idle.
         api.orders()
         heartbeat(db, now)
@@ -379,9 +384,23 @@ def main():
             elif args.action == "tick":
                 output = tick(db, CloreAPI(credential()))
             else:
+                # Status is local read-only state. Include unresolved financial
+                # risk explicitly without disclosing API keys, grants, or terms.
+                from clore_pending_recovery import pending
+                outstanding = pending(db)
+                exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                    "AND name='clore_pending_recovery'").fetchone()
+                evidence = []
+                if exists:
+                    evidence = [dict(row) for row in db.execute(
+                        "SELECT reservation_id,checked_at,status,candidate_order_id "
+                        "FROM clore_pending_recovery ORDER BY checked_at DESC LIMIT 5")]
                 output = {"leases": [dict(row) for row in db.execute(
                     "SELECT order_id,server_id,cutoff_at,phase,last_attempt,last_outcome,confirmed_at "
-                    "FROM clore_cancel_leases ORDER BY cutoff_at DESC LIMIT 10")]}
+                    "FROM clore_cancel_leases ORDER BY cutoff_at DESC LIMIT 10")],
+                    "unresolved_preorders": len(outstanding),
+                    "pending_recovery": evidence,
+                    "rental_permitted": False}
         finally:
             db.close()
         print(json.dumps(output, sort_keys=True))
@@ -393,4 +412,7 @@ def main():
     return 0
 
 if __name__ == "__main__":
+    # Keep the same exception class for watchdog recovery imported by the
+    # command-line entrypoint, avoiding duplicate __main__/module instances.
+    sys.modules.setdefault("clore_cancel_guard", sys.modules[__name__])
     sys.exit(main())

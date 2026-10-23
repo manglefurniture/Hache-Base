@@ -1,3 +1,32 @@
+## Recuperación independiente de órdenes inciertas (fase de seguridad)
+
+El watchdog ahora inspecciona en cada ciclo los prealquileres de SQLite con
+`phase=uncertain` y `outcome=create_submitted_once` o
+`create_response_unknown`. Estas marcas **no se generan por este PR**:
+requieren un futuro ejecutor con autorización criptográfica de una oferta
+específica y registro duradero anterior al único POST `create_order`.
+
+Consulta exclusivamente `my_orders?return_completed=true`. Compara el
+inventario posterior con el baseline guardado y verifica identidad exacta
+de servidor, imagen Docker, GPU, moneda `USD-Blockchain`, fecha y costes.
+Un cambio en **cualquier otro servidor** se trata como actividad ajena,
+nunca como evidencia concluyente de nuestro alquiler.
+
+La tabla `clore_pending_recovery` conserva `checked_at`, clasificación
+y posible ID candidato, sin guardar credenciales. Aun ante una coincidencia
+única, no vincula la orden ni envía `cancel_order`: el ID es **candidato**,
+no una prueba del origen de la orden. El servicio falla con
+`possible_unprotected_clore_order`, dejando una evidencia visible en
+`clore_cancel_guard.py status`. Los fallos de red no refrescan el
+heartbeat ni desbloquean reservas.
+
+Es una medida de **detección y bloqueo**, no una protección financiera
+completa. Ante una respuesta de creación desconocida, hay riesgo de cargo
+sin un ID vinculable: **las rentas reales siguen deshabilitadas** hasta
+resolver autenticación del intento, exclusividad global de la cuenta,
+identificación inequívoca, vinculación atómica al lease financiero y
+apagado confirmado por API. Las pruebas de este PR son simuladas.
+
 ## Reserva previa sin contratación (fase segura)
 
 Se añadió `clore_preorder.py` como **libro de exposición local** para preparar
