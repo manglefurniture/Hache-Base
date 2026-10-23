@@ -177,11 +177,13 @@ def render(report, reason):
     for provider, heading in (("vast", "VAST.AI · ON-DEMAND"),
                               ("clore", "CLORE.AI · ON-DEMAND / SPOT")):
         matches = [x for x in report["offers"] if x["provider"] == provider]
-        lines.extend(("", f"<b>{heading}</b>"))
+        lines.extend(("", f"<b>{heading} · {len(matches)} ofertas</b>"))
         if not matches:
             lines.append("<i>Sin resultados válidos en esta consulta.</i>")
             continue
         for index, offer in enumerate(matches, 1):
+            if index > 1:
+                lines.append("")
             name = _display_model(offer["gpu_name"])
             count = offer["gpu_count"]
             prefix = f"{count}× " if count != 1 else ""
@@ -201,14 +203,17 @@ def render(report, reason):
         "<b>VERIFICACIÓN</b>",
         "Kryptex: " + ("pool reciente, sin PRL por GPU" if report["pool_recent"]
                      else "datos recientes no disponibles"),
-        "<b>Neto: sin verificar.</b> Faltan producción por GPU, "
+        "<b>Rentabilidad neta: NO verificada.</b> Faltan PRL por GPU, "
         "precio de venta y todos los cargos.",
         "<i>OD = On-Demand · Spot = mínimo, no puja ganadora.</i>",
         "<i>Escritorio*/Laptop* = etiqueta del proveedor; "
         "s/d = variante desconocida.</i>",
-        "<b>Solo observación · Sin rentas ni pujas.</b>",
+        "<b>SIN renta, puja ni gasto.</b>",
     ))
-    return "\n".join(lines)[:3500]
+    rendered = "\n".join(lines)
+    if len(rendered) > 3500:
+        raise NotifyError("telegram_report_too_long")
+    return rendered
 
 
 class NotificationState:
