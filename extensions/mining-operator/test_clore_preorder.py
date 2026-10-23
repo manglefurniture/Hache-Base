@@ -122,6 +122,19 @@ class PreorderTests(unittest.TestCase):
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM clore_cancel_leases").fetchone()[0],0)
         self.assertEqual(self.provider.calls,["GET my_orders","GET my_orders"])
 
+    def test_reconcile_order_that_fills_the_final_account_slot(self):
+        self.provider.limit = 1
+        self.assertEqual(len([o for o in self.provider.orders if not o["expired"]]), 0)
+        receipt = self.hold()
+        self.provider.orders.append(order(222))
+        self.assertEqual(
+            evaluate_candidate(self.db, reservation_id=receipt["reservation_id"],
+                               api=self.provider, now=NOW+3)["status"],
+            "candidate_unbound")
+        # A new reservation would be blocked while all capacity is consumed.
+        with self.assertRaisesRegex(GuardError, "inventory_capacity_or_completeness_uncertain"):
+            inventory_baseline(self.provider)
+
     def test_missing_ambiguous_or_mismatched_candidates_never_bind(self):
         receipt=self.hold()
         rid=receipt["reservation_id"]
