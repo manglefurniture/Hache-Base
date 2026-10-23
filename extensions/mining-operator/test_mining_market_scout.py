@@ -19,6 +19,7 @@ def vast(name="RTX 4070 Laptop GPU", price=0.3, suffix=1):
         "model_variants_partial": False, "offers": [
             {"id": 1000+suffix, "gpu_name": name, "num_gpus": 1,
              "hourly_usd": price, "gpu_variant": "laptop",
+             "gpu_model_key": "RTX 4070",
              "gpu_variant_verified": False, "reliability2": 0.95}]
     }
 
@@ -29,7 +30,7 @@ def clore(name="1x NVIDIA GeForce RTX 5090", price=0.5):
         "snapshot_utc": NOW.isoformat(), "rental_authorized": False,
         "prl_gpu_models_partial": False, "prl_gpu_models": [
             {"id": 2001, "gpu": name, "gpu_count_verified": 1,
-             "on_demand_usd_hour": price,
+             "on_demand_usd_hour": price, "gpu_model_key": "RTX 5090",
              "spot_floor_usd_hour": 0.35, "gpu_variant": "unverified",
              "gpu_variant_verified": False}]
     }
@@ -147,6 +148,16 @@ class MarketNotificationTests(unittest.TestCase):
         self.assertEqual(self.state.current()[2],expected_count)
         self.assertEqual(notify.send_report(self.api,123,improved,self.state,
                                             NOW+timedelta(hours=23)),"unchanged")
+        self.assertEqual(len(self.api.sent),2)
+
+    def test_label_alias_does_not_hide_real_same_family_price_drop(self):
+        notify.send_report(self.api,123,self.report,self.state,NOW)
+        aliased=scout.make_report(vast(name="NVIDIA GeForce RTX 4070 Laptop GPU",
+                                       price=0.25,suffix=30),clore(),NOW)
+        self.assertEqual(aliased["offers"][0]["gpu_model_key"],"RTX 4070")
+        status=notify.send_report(self.api,123,aliased,self.state,
+                                  NOW+timedelta(hours=7))
+        self.assertEqual(status,"improved_advertised_quote")
         self.assertEqual(len(self.api.sent),2)
 
     def test_does_not_alert_for_spot_floor_only(self):
