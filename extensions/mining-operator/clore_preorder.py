@@ -100,7 +100,7 @@ def validate_terms(terms, now):
     return canonical(terms)
 
 
-def inventory_baseline(api):
+def inventory_baseline(api, *, require_spare_slot=True):
     """Require authenticated, whole inventory. No silent pagination/truncation."""
     data = api.inventory()  # Authenticated GET only, never creates an order.
     if type(data) is not dict or type(data.get("limit")) is not int or not 1 <= data["limit"] <= 10000:
@@ -119,7 +119,7 @@ def inventory_baseline(api):
         raise GuardError("duplicate_order_identity")
     # Saturated inventory risks missing a parallel order or a provider-side
     # capacity ambiguity; refuse instead of pretending the baseline is full.
-    if active >= data["limit"]:
+    if require_spare_slot and active >= data["limit"]:
         raise GuardError("inventory_capacity_or_completeness_uncertain")
     return sorted(ids)
 
@@ -185,7 +185,7 @@ def evaluate_candidate(db, *, reservation_id, api, now=None):
     terms = json.loads(payload)
     baseline = set(json.loads(baseline_json))
     inventory = api.inventory()
-    ids = inventory_baseline_from_payload(inventory)
+    inventory_baseline_from_payload(inventory)
     if now < created_at or now - created_at > 86400:
         raise GuardError("preorder_reconciliation_out_of_range")
     added = [order for order in inventory["orders"] if order["id"] not in baseline]
@@ -223,4 +223,6 @@ def inventory_baseline_from_payload(inventory):
     class _Snapshot:
         def inventory(self):
             return inventory
-    return inventory_baseline(_Snapshot())
+    # Reconciliation observes an already-created order, which may occupy the
+    # final account slot. Never apply the *pre-create* spare-capacity gate here.
+    return inventory_baseline(_Snapshot(), require_spare_slot=False)
