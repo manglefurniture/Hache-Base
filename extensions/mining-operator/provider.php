@@ -222,6 +222,10 @@ function op_rental_candidate(array $rows,array $operation): array {
     if(count($matches)!==1)op_fail(count($matches)===0?'rental_not_confirmed':'ambiguous_rental_identity');
     return $matches[0];
 }
+/** Explicitly allowed provider-side read operations (CLI and regression tests). */
+function op_readonly_actions():array {
+    return ['vast.list','vast.status','vast.inspect','vast.search','vast.marketplace','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry','clore.marketplace'];
+}
 function op_query(array $operation): array {
     $action=$operation['action'];
     if($action==='clore.marketplace')return op_clore_marketplace();
@@ -505,7 +509,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $request=json_decode($raw,true,16,JSON_THROW_ON_ERROR);
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
-        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.marketplace','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry','clore.marketplace'];
+        $reads=op_readonly_actions();
         $writes=['vast.stop','vast.start','vast.register','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);
