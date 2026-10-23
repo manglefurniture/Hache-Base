@@ -251,6 +251,11 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
     now = int(time.time()) if now is None else int(now)
     leases = db.execute("SELECT * FROM clore_cancel_leases WHERE phase='armed' ORDER BY cutoff_at").fetchall()
     if not leases:
+        # A submitted or timed-out create with no bound lease is NOT idle.
+        # Only inspect authenticated inventory and persist evidence: never
+        # cancel an ambiguous order belonging to somebody else.
+        from clore_pending_recovery import inspect_and_alert
+        inspect_and_alert(db, api, now=now)
         # The heartbeat must prove actual API authentication even while idle.
         api.orders()
         heartbeat(db, now)
@@ -393,4 +398,7 @@ def main():
     return 0
 
 if __name__ == "__main__":
+    # Keep the same exception class for watchdog recovery imported by the
+    # command-line entrypoint, avoiding duplicate __main__/module instances.
+    sys.modules.setdefault("clore_cancel_guard", sys.modules[__name__])
     sys.exit(main())
