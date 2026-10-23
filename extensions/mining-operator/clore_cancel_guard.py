@@ -126,15 +126,15 @@ def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
         raise GuardError("unverified_creation_time")
     bid = decimal_amount(daily_bid_usd, "daily_bid")
     budget = decimal_amount(budget_usd, "budget")
-    verify_billing_order(provider_order, order_id=order_id, server_id=server_id,
-                         daily_bid_usd=daily_bid_usd, creation_fee_usd=creation_fee_usd,
-                         created_at=created_at)
     try:
         creation_fee = Decimal(str(creation_fee_usd))
     except (InvalidOperation, ValueError, TypeError):
         raise GuardError("invalid_creation_fee") from None
     if not creation_fee.is_finite() or not 0 <= creation_fee <= Decimal("1000"):
         raise GuardError("invalid_creation_fee")
+    verify_billing_order(provider_order, order_id=order_id, server_id=server_id,
+                         daily_bid_usd=daily_bid_usd, creation_fee_usd=creation_fee_usd,
+                         created_at=created_at)
     remaining = budget - creation_fee
     if remaining <= 0:
         raise GuardError("creation_fee_exceeds_budget")
