@@ -126,10 +126,48 @@ class MarketNotificationTests(unittest.TestCase):
         self.assertEqual(len(self.api.sent),1)
         text=self.api.sent[0]["text"]
         self.assertIn("SIN renta, puja ni gasto",text)
-        self.assertIn("Spot mínimo",text)
+        self.assertIn("Spot desde:",text)
         self.assertIn("Rentabilidad neta: NO verificada",text)
+        self.assertIn("<b>HACHE · RADAR DE GPU</b>",text)
+        self.assertIn("VAST.AI · ON-DEMAND · 1 oferta",text)
+        self.assertIn("CLORE.AI · ON-DEMAND / SPOT · 1 oferta",text)
+        self.assertIn("<b>1. RTX 5090</b>",text)
+        self.assertNotIn("1× 1x",text)
+        self.assertIn("US$0.5000/h",text)
+        self.assertIn("US$12.00/24h",text)
+        self.assertEqual(self.api.sent[0]["parse_mode"],"HTML")
         self.assertEqual(self.api.sent[0]["chat_id"],123)
         self.assertEqual(self.state.current()[2],1)
+
+    def test_html_escaping_double_count_and_variant_status(self):
+        raw=scout.make_report(vast(name="NVIDIA GeForce RTX 4070 Laptop GPU"),
+                              clore(name="1x NVIDIA GeForce RTX 3060 Ti & <tag>"),NOW)
+        rendered=notify.render(raw,"daily_digest")
+        self.assertNotIn("1x 1x",rendered.lower())
+        self.assertIn("RTX 3060 Ti &amp;",rendered)
+        self.assertNotIn("<tag>",rendered)
+        self.assertIn("Laptop*",rendered)
+        self.assertIn("s/d",rendered)
+        self.assertIn("<b>Rentabilidad neta: NO verificada.</b>",rendered)
+        self.assertIn("no ranking de rentabilidad",rendered)
+        self.assertLess(len(rendered),3500)
+
+    def test_cancun_timestamp_and_four_offers_each_render_with_spacing(self):
+        report=scout.make_report(vast(),clore(),NOW)
+        report["offers"]=[]
+        for provider in ("vast","clore"):
+            for index in range(4):
+                item=(scout.make_report(vast(suffix=index+1),
+                                        clore(),NOW))["offers"][
+                                            0 if provider=="vast" else 1].copy()
+                item["offer_id"]+=index+10
+                report["offers"].append(item)
+        printed=notify.render(report,"daily_digest")
+        self.assertIn("VAST.AI · ON-DEMAND · 4 ofertas",printed)
+        self.assertIn("CLORE.AI · ON-DEMAND / SPOT · 4 ofertas",printed)
+        self.assertIn("Cancún",printed)
+        self.assertEqual(printed.count("<b>4. "),2)
+        self.assertLess(len(printed),3500)
 
     def test_hourly_dedupe_and_six_hour_cooldown(self):
         notify.send_report(self.api,123,self.report,self.state,NOW)
