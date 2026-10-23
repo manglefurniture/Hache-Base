@@ -1,26 +1,27 @@
-## Bloqueo de seguridad de divisas (octubre 2026)
+## Contabilidad del saldo USDT/USDC (octubre 2026)
 
-La documentación pública de Clore describe pagos de alquiler en **Bitcoin o CLORE**
-y la facturación en USD como una función pendiente. Los campos de
-`my_orders` (`price`, `spend`, `creation_fee`) se expresan en la
-**moneda nativa de la orden**, no necesariamente en USD. Por tanto, calcular
-un corte como si esos importes fueran dólares sería inseguro.
+Clore admite pagos de alquiler con USDT y USDC, acreditados en un **saldo
+unificado en USD**. En la API, ese saldo y las órdenes cobradas contra él
+utilizan el identificador exacto **`USD-Blockchain`**, no `usd`, `usdt` ni
+`USDT`. La versión anterior rechazaba erróneamente esas órdenes.
 
-Antes de registrar una orden, el código exige una consulta privada
-autenticada de `my_orders` y valida exactamente ID, servidor, momento,
-modalidad Spot, estado no vencido, moneda USD, precio, comisión y cargo fijo.
-Una orden `bitcoin`, `clore`, de moneda omitida o distinta de USD se
-**rechaza**. Si una obligación previamente armada presenta después
-moneda o comisión incompatible, el guard solicita cancelación temprana y
-no marca cierre hasta `expired: true`.
+El supervisor ahora acepta exclusivamente `orders[x].currency=USD-Blockchain`
+para presupuesto, tarifa diaria, comisión de creación y gasto en unidades de
+saldo USD respaldado por stablecoins. Rechaza otras monedas, incluso alias
+no documentados, sin hacer conversiones automáticas BTC/CLORE a USD.
 
-Esto **no quiere decir que Clore admita actualmente alquileres en USD**.
-En la práctica, las rentas nuevas seguirán bloqueadas hasta desarrollar y
-verificar contabilización independiente en moneda nativa, cambio a USD
-actualizado, costes totales, ventana previa al `create_order` y autorización
-unívoca. El supervisor instalable puede permanecer activo **sin órdenes**
-para comprobar conexión, permisos y heartbeat; nunca basta por sí solo
-para autorizar un gasto.
+Antes de registrar una orden exige respuesta autenticada de `my_orders`
+con identidad exacta, Spot, estado activo, marca de tiempo y valores de gastos
+verificables. Durante cada tick compara los mismos campos; cualquier moneda,
+tarifa o gasto incompatible desencadena intento de cancelación conservadora.
+Un POST no confirma el cierre: sólo `expired: true` en la orden.
+
+**No habilita nuevas rentas automáticamente.** Faltan reserva presupuestaria
+previa al `create_order`, conciliación de timeouts, límites totales
+independientes y medición empírica de PRL y rentabilidad neta para el agente.
+
+Documentación: https://clore.ai/api-docs y
+https://docs.clore.ai/getting-started/deposit-withdrawal/supported-currencies
 
 ## Instalador revisado, sin nuevas rentas
 
