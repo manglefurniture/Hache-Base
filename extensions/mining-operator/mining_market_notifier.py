@@ -6,6 +6,7 @@ has no broker permissions and no rental or approval functionality.
 """
 from datetime import datetime, timedelta, timezone
 import json
+import html
 import os
 from pathlib import Path
 import pwd
@@ -125,37 +126,88 @@ def decide(report, state, now):
     return "skip"
 
 
+def _display_model(name):
+    """Collapse marketing prefixes and repeated GPU counts for mobile chat."""
+    label = re.sub(r"[\x00-\x1f\x7f-\x9f<>]", "", name).strip()
+    label = re.sub(r"^\d{1,2}\s*[x×]\s*", "", label, flags=re.I)
+    label = re.sub(r"^(?:NVIDIA\s+)?(?:GeForce\s+)?", "", label, flags=re.I)
+    label = re.sub(r"\b(?:Laptop|Desktop)\s+GPU\b", "", label, flags=re.I)
+    label = re.sub(r"\s+GPU$", "", label, flags=re.I)
+    label = re.sub(r"\s+", " ", label).strip()
+    return html.escape(label[:45] or "Modelo no identificado", quote=True)
+
+
+def _display_date(value):
+    """Stable locale-free Spanish Cancun timestamp, never UTC assumed local."""
+    try:
+        t = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            raise ValueError("timezone_required")
+        t = t.astimezone(LOCAL_TZ)
+        months = ("ene", "feb", "mar", "abr", "may", "jun",
+                  "jul", "ago", "sep", "oct", "nov", "dic")
+        return f"{t.day} {months[t.month-1]} · {t:%H:%M} Cancún"
+    except (AttributeError, TypeError, ValueError):
+        return "Fecha pendiente"
+
+
 def render(report, reason):
-    heading = ("Hache Mining Agent | Comparador Vast + Clore\n"
-               "Solo observación: SIN renta, puja ni gasto\n")
-    if reason == "improved_advertised_quote":
-        heading += "Cambio detectado: bajó una tarifa anunciada comparable.\n"
-    elif reason == "daily_digest":
-        heading += "Resumen diario de tarifas para revisar.\n"
-    else:
-        heading += "Primera lectura de ambos proveedores.\n"
-    model_tag = {"desktop": "escritorio (etiqueta)", "laptop": "Laptop (etiqueta)",
-                 "unverified": "variante desconocida"}
-    lines = [heading]
-    for provider, description in (("vast", "Vast.ai On-Demand"),
-                                  ("clore", "Clore.ai On-Demand / Spot")):
-        lines.append(description + ":")
-        matches = [o for o in report["offers"] if o["provider"] == provider]
+    """Compact native Telegram HTML: separate models, rates and caveats.
+
+    No links/buttons or clickable rental actions; provider fields are escaped.
+    Costs are whole-rig estimates at the *hourly* rate for 24 continuous hours.
+    """
+    reasons = {
+        "initial": "Primera lectura",
+        "daily_digest": "Resumen diario",
+        "improved_advertised_quote": "Tarifa anunciada más baja",
+    }
+    variant_tags = {
+        "desktop": "Escritorio*",
+        "laptop": "Laptop*",
+        "unverified": "s/d",
+    }
+    lines = [
+        "<b>HACHE · RADAR DE GPU</b>",
+        f"{_display_date(report.get('observed_at'))} · "
+        f"{reasons.get(reason, 'Lectura automática')}",
+        "<i>Tarifas anunciadas, no ranking de rentabilidad.</i>",
+    ]
+
+    for provider, heading in (("vast", "VAST.AI · ON-DEMAND"),
+                              ("clore", "CLORE.AI · ON-DEMAND / SPOT")):
+        matches = [x for x in report["offers"] if x["provider"] == provider]
+        lines.extend(("", f"<b>{heading}</b>"))
         if not matches:
-            lines.append("  Sin muestras aptas en esta consulta (no implica falta de oferta).")
-        for offer in matches:
-            name = re.sub(r"[\x00-\x1f\x7f-\x9f<>]", "", offer["gpu_name"])[:75]
-            line = (f"  #{offer['offer_id']}: {offer['gpu_count']}x {name}"
-                    f" [{model_tag[offer['gpu_variant']]}]"
-                    f" USD {offer['on_demand_usd_hour']:.4f}/h")
-            if provider == "clore" and type(offer.get("spot_floor_usd_hour")) in (int, float):
-                line += f" | Spot mínimo {offer['spot_floor_usd_hour']:.4f}/h"
-            lines.append(line)
-    lines.append("Kryptex pool: " + (
-        "datos recientes; NO atribuibles a una GPU" if report["pool_recent"] else
-        "dato reciente no disponible"))
-    lines.append("Rentabilidad neta: NO verificada (faltan PRL/GPU, precio de venta fresco y costos totales).")
-    lines.append("Precios orientativos por servidor; Spot mínimo NO es puja ganadora.")
+            lines.append("<i>Sin resultados válidos en esta consulta.</i>")
+            continue
+        for index, offer in enumerate(matches, 1):
+            name = _display_model(offer["gpu_name"])
+            count = offer["gpu_count"]
+            prefix = f"{count}× " if count != 1 else ""
+            variant = variant_tags[offer["gpu_variant"]]
+            ident = offer["offer_id"]
+            hourly = offer["on_demand_usd_hour"]
+            lines.append(
+                f"<b>{index}. {prefix}{name}</b> · {variant} · <code>#{ident}</code>"
+            )
+            lines.append(f"   OD: <b>US${hourly:.4f}/h</b> · US${hourly*24:.2f}/24h")
+            spot = offer.get("spot_floor_usd_hour")
+            if provider == "clore" and type(spot) in (int, float) and 0 < spot <= 100:
+                lines.append(f"   Spot desde: US${spot:.4f}/h")
+
+    lines.extend((
+        "",
+        "<b>VERIFICACIÓN</b>",
+        "Kryptex: " + ("pool reciente, sin PRL por GPU" if report["pool_recent"]
+                     else "datos recientes no disponibles"),
+        "<b>Neto: sin verificar.</b> Faltan producción por GPU, "
+        "precio de venta y todos los cargos.",
+        "<i>OD = On-Demand · Spot = mínimo, no puja ganadora.</i>",
+        "<i>Escritorio*/Laptop* = etiqueta del proveedor; "
+        "s/d = variante desconocida.</i>",
+        "<b>Solo observación · Sin rentas ni pujas.</b>",
+    ))
     return "\n".join(lines)[:3500]
 
 
@@ -206,6 +258,7 @@ def send_report(api, chat_id, report, state, now):
         return "unchanged"
     answer = api.call("sendMessage", {
         "chat_id": chat_id, "text": render(report, reason),
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     })
     if type(answer) is not dict or type(answer.get("message_id")) is not int:
