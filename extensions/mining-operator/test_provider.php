@@ -24,6 +24,42 @@ foreach ([
        throw new RuntimeException('Invalid universal Vast GPU variant projection: '.$name);
 }
 
+// Regression: the CLI helper must allow exactly the broker's new read action.
+if(!in_array('vast.marketplace',op_readonly_actions(),true))
+    throw new RuntimeException('vast.marketplace absent from provider CLI read allowlist');
+if(in_array('vast.rent',op_readonly_actions(),true)||
+   in_array('vast.start',op_readonly_actions(),true))
+    throw new RuntimeException('Provider read allowlist inadvertently enables spending');
+
+// Marketplace read-only. Multiple models, variants, performance/reliability
+// controls, de-duplication, and no secret fields in the serialized projection.
+$mk=static function(int $id,string $name,float $price,float $reliability=0.97):array{
+    return ['id'=>$id,'gpu_name'=>$name,'num_gpus'=>1,
+        'machine_id'=>$id+100,'host_id'=>$id+1000,
+        'gpu_ram'=>16384,'dph_total'=>$price,'reliability2'=>$reliability,
+        'ssh_private_key'=>'NEVER_LEAK_GPU_SECRET'];
+};
+$inventory=op_vast_marketplace_projection([
+    $mk(501,'RTX 5090 Laptop GPU',0.52),
+    $mk(502,'RTX 5090',0.63),
+    $mk(503,'RTX 5090 Laptop GPU',0.57),
+    $mk(504,'RTX 4070 Ti SUPER',0.31),
+    $mk(505,'RTX 4070 Ti SUPER',0.12,0.49),
+    $mk(506,'RTX 5090',0.47,0.81),
+    $mk(507,'NVIDIA Tesla V100',0.17),
+    $mk(508,'NVIDIA CMP 90HX',0.13),
+]);
+if($inventory['rental_authorized']!==false||
+   $inventory['model_variants_total']!==5||
+   count($inventory['offers'])!==5||
+   array_column($inventory['offers'],'id')!==[508,507,504,501,502] )
+    throw new RuntimeException('Vast marketplace diversity filtering incorrect');
+if(str_contains(json_encode($inventory,JSON_THROW_ON_ERROR),'NEVER_LEAK_GPU_SECRET')||
+   array_values(array_filter($inventory['offers'],static fn(array $o):bool=>
+       $o['gpu_variant']==='laptop'))[0]['id']!==501)
+    throw new RuntimeException('Untrusted GPU variant or secret exposed');
+if(strlen((string)$inventory['snapshot_utc'])!==20)
+    throw new RuntimeException('Malformed Vast marketplace timestamp');
 $scenario=op_profit_scenarios(['id'=>123,'dph_total'=>0.10],2.0);
 if($scenario['estimated_daily_cost_usd']!==2.4||
    $scenario['scenarios'][0]['daily_net_usd']!==0.148||

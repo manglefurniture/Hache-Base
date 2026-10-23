@@ -1,0 +1,27 @@
+[Unit]
+Description=Hache Mining Agent readonly Vast and Clore quote scout
+After=network-online.target hache-mining-operator.socket mariadb.service
+Wants=network-online.target
+OnSuccess=hache-mining-market-notifier.service
+
+[Service]
+Type=oneshot
+User=gpt-agent
+Group=hache-telegram
+SupplementaryGroups=gpt-agent
+WorkingDirectory=/opt/hache-mining-operator/current
+ExecStart=/usr/bin/python3 /opt/hache-mining-operator/current/mining_market_scout.py
+StateDirectory=hache-mining-market
+StateDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hache-mining-market
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+TimeoutStartSec=120
+MemoryMax=180M
+CPUQuota=75%

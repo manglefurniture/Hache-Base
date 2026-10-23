@@ -1,0 +1,27 @@
+[Unit]
+Description=Hache Mining Agent private Telegram market report notifier
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hache-telegram
+Group=hache-telegram
+WorkingDirectory=/opt/hache-mining-agent/current
+ExecStart=/usr/bin/python3 /opt/hache-mining-agent/current/mining_market_notifier.py
+LoadCredential=telegram_token:/etc/hache-mining-agent/telegram_token
+EnvironmentFile=/etc/hache-mining-agent/telegram-recipient.env
+StateDirectory=hache-mining-telegram
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/hache-mining-market
+ReadWritePaths=/var/lib/hache-mining-telegram
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+TimeoutStartSec=75
+MemoryMax=170M
+CPUQuota=65%

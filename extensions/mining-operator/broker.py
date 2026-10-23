@@ -18,7 +18,7 @@ import time
 
 from vast_start_guard import arm as arm_financial_lease, install_tables as install_lease_tables
 
-READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.analyze', 'vast.rent.quote', 'vast.rent.reconcile', 'salad.targets',
+READS = {'vast.list', 'vast.status', 'vast.inspect', 'vast.search', 'vast.marketplace', 'vast.analyze', 'vast.rent.quote', 'vast.rent.reconcile', 'salad.targets',
          'salad.groups', 'salad.instances', 'salad.instance', 'telemetry', 'clore.marketplace'}
 WRITES = {'vast.stop', 'vast.start', 'vast.register', 'vast.provision', 'salad.stop', 'salad.reallocate'}
 # Rental stays fail-closed until the provider can enforce and expose a hard all-in cap.
@@ -26,6 +26,7 @@ RENTAL_ENABLED = False
 FIELDS = {
     'vast.list': set(), 'vast.status': {'instance_id'}, 'vast.inspect': {'instance_id'},
     'vast.search': {'gpu_name', 'gpu_count', 'max_hourly_usd'},
+    'vast.marketplace': set(),
     'vast.analyze': {'gpu_name', 'gpu_count', 'max_hourly_usd', 'assumed_prl_per_day'},
     'vast.rent.quote': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
     'vast.rent': {'offer_id', 'machine_id', 'host_id', 'gpu_name', 'gpu_count', 'max_hourly_usd', 'max_total_usd', 'max_minutes'},
