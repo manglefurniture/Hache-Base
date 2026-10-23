@@ -69,14 +69,14 @@ def db_open(path):
 def verify_billing_order(order, *, order_id, server_id, daily_bid_usd, creation_fee_usd, created_at):
     """Fail closed unless a fresh authenticated provider order is in USD.
 
-    Clore's currently documented billing currencies are CLORE and bitcoin.
-    Never mix crypto-denominated daily price, creation fee or spend with USD.
-    Future native-currency support needs independently verified FX accounting.
+    Clore represents the unified USDT/USDC deposit and rental balance as
+    'USD-Blockchain' in the API, NOT 'usd' or the deposit token name.
+    Never mix CLORE/bitcoin-denominated values into the USD budget.
     """
     if type(order) is not dict or order.get("id") != order_id:
         raise GuardError("provider_order_not_verified")
-    if order.get("currency") != "usd":
-        raise GuardError("native_currency_usd_budget_unverified")
+    if order.get("currency") != "USD-Blockchain":
+        raise GuardError("usd_blockchain_billing_not_verified")
     if order.get("spot") is not True or order.get("expired") is not False:
         raise GuardError("not_a_live_spot_order")
     if type(order.get("si")) is not int or order["si"] != server_id:
@@ -254,7 +254,7 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
             if match.get("expired") is False:
                 # All monetary fields MUST be in USD; native BTC/CLORE prices
                 # cannot be compared numerically with a USD spending cap.
-                if match.get("currency") != "usd" or match.get("spot") is not True:
+                if match.get("currency") != "USD-Blockchain" or match.get("spot") is not True:
                     due = True
                     record(db, oid, now, "currency_or_spot_identity_mismatch")
                 try:
