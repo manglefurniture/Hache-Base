@@ -58,13 +58,15 @@ function op_clore_spot_floor_hourly_usd(array $server): ?float {
     if(!is_array($price))return null;
     // Native USD-Blockchain price is the only unambiguous currency-backed price.
     $native=$price['spot']['USD-Blockchain']??null;
-    if(is_numeric($native)&&is_finite((float)$native)&&(float)$native>0)
-        return (float)$native/24;
-    // Provider-supplied USD equivalent is usable only when present and positive.
     $equivalent=$price['usd']['spot']??null;
+    $values=[];
+    if(is_numeric($native)&&is_finite((float)$native)&&(float)$native>0)
+        $values[]=(float)$native;
+    // Provider publishes spot USD-equivalent across eligible currencies. A
+    // cheaper positive value must not be ignored in the preliminary ranking.
     if(is_numeric($equivalent)&&is_finite((float)$equivalent)&&(float)$equivalent>0)
-        return (float)$equivalent/24;
-    return null; // Never reinterpret BTC or CLORE tokens as dollars.
+        $values[]=(float)$equivalent;
+    return $values?min($values)/24:null; // Never treat BTC/CLORE units as dollars.
 }
 /** Require a matching, whole-rig GPU count in both public hardware descriptions. */
 function op_clore_verified_gpu_count(array $server): ?int {
