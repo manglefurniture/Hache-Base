@@ -108,6 +108,7 @@ class RecoveryTests(unittest.TestCase):
         self.check("unrelated_new_order")
 
     def test_wrong_image_currency_and_cost_not_bound(self):
+        self.prepare()
         cases=[(dict(image="other/image@sha256:"+"b"*64),"identity_mismatch"),
                (dict(currency="bitcoin"),"identity_mismatch"),
                (dict(price=99),"price_or_fee_mismatch"),
@@ -116,8 +117,6 @@ class RecoveryTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.db.execute("DELETE FROM clore_pending_recovery")
                 self.api.records=[order(88,**changes)]
-                if not self.db.execute("SELECT 1 FROM clore_preorders").fetchone():
-                    self.prepare()
                 self.check(status)
         self.assertEqual(self.api.cancels,[])
 
