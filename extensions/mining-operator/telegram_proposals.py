@@ -86,6 +86,8 @@ class ProposalStore:
           CREATE TABLE IF NOT EXISTS telegram_cursor(
             singleton INTEGER PRIMARY KEY CHECK(singleton=1), update_id INTEGER NOT NULL);
           INSERT OR IGNORE INTO telegram_cursor VALUES(1,-1);
+          CREATE TABLE IF NOT EXISTS menu_outbox(
+            update_id INTEGER PRIMARY KEY, action TEXT NOT NULL, created_at INTEGER NOT NULL);
         """)
 
     def close(self):
@@ -200,12 +202,24 @@ class ProposalStore:
                     command = message.get("text")
                     if type(command) is str and command in commands:
                         answer.update(state="menu", action=commands[command])
+            if answer["state"] == "menu":
+                # Queue and cursor commit atomically. On Telegram failure the
+                # response survives restarts and is retried, never lost.
+                self.db.execute("""INSERT OR IGNORE INTO menu_outbox(update_id,action,created_at)
+                     VALUES(?,?,?)""", (update_id, answer["action"], tick))
             self.db.execute("UPDATE telegram_cursor SET update_id=? WHERE singleton=1", (update_id,))
             self.db.commit()
             return answer
         except Exception:
             self.db.rollback()
             raise
+
+    def pending_menu(self):
+        return self.db.execute("""SELECT update_id,action FROM menu_outbox
+                 ORDER BY update_id LIMIT 10""").fetchall()
+
+    def mark_menu_sent(self, update_id):
+        self.db.execute("DELETE FROM menu_outbox WHERE update_id=?", (update_id,))
 
     def status(self, nonce):
         if type(nonce) is not str or not re.fullmatch("[0-9a-f]{32}", nonce):
@@ -294,7 +308,25 @@ class TelegramChannel:
             sent += int(self.store.mark_notified(nonce, answer["message_id"], now))
         return sent
 
+    def flush_menu_pending(self):
+        delivered = 0
+        for update_id, action in self.store.pending_menu():
+            result = self.api.call("sendMessage", {
+                "chat_id": self.chat_id,
+                "text": menu_reply(action),
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": menu_markup(),
+            })
+            if type(result) is not dict or type(result.get("message_id")) is not int or result["message_id"] <= 0:
+                raise ProposalError("invalid_menu_delivery_receipt")
+            self.store.mark_menu_sent(update_id)
+            delivered += 1
+        return delivered
+
     def poll_once(self, now=None):
+        # A failed send must not erase an authenticated owner command.
+        self.flush_menu_pending()
         last = self.store.db.execute(
             "SELECT update_id FROM telegram_cursor WHERE singleton=1").fetchone()[0]
         updates = self.api.call("getUpdates", {
@@ -306,15 +338,9 @@ class TelegramChannel:
         for update in updates:
             result = self.store.process_update(update, self.chat_id, self.user_id, now)
             if result["state"] == "menu":
-                # The menu has no broker socket or provider keys. A missing or
-                # stale hourly spool produces a safe "unavailable" response.
-                self.api.call("sendMessage", {
-                    "chat_id": self.chat_id,
-                    "text": menu_reply(result["action"]),
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                    "reply_markup": menu_markup(),
-                })
+                # The read-only response is already queued in SQLite; after a
+                # network error the next polling cycle retries the same request.
+                self.flush_menu_pending()
             callback = update.get("callback_query") if type(update) is dict else None
             if type(callback) is dict and type(callback.get("id")) is str:
                 self.api.call("answerCallbackQuery", {
