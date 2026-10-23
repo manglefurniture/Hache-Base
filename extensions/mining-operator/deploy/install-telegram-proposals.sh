@@ -47,7 +47,8 @@ else
 fi
 
 systemctl daemon-reload
-systemctl enable --now hache-mining-agent-telegram.service
+systemctl enable hache-mining-agent-telegram.service
+systemctl restart hache-mining-agent-telegram.service
 sleep 3
 if ! systemctl is-active --quiet hache-mining-agent-telegram.service; then
   systemctl disable --now hache-mining-agent-telegram.service || true
