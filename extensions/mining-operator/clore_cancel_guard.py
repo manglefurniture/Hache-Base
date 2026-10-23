@@ -384,9 +384,23 @@ def main():
             elif args.action == "tick":
                 output = tick(db, CloreAPI(credential()))
             else:
+                # Status is local read-only state. Include unresolved financial
+                # risk explicitly without disclosing API keys, grants, or terms.
+                from clore_pending_recovery import pending
+                outstanding = pending(db)
+                exists = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                    "AND name='clore_pending_recovery'").fetchone()
+                evidence = []
+                if exists:
+                    evidence = [dict(row) for row in db.execute(
+                        "SELECT reservation_id,checked_at,status,candidate_order_id "
+                        "FROM clore_pending_recovery ORDER BY checked_at DESC LIMIT 5")]
                 output = {"leases": [dict(row) for row in db.execute(
                     "SELECT order_id,server_id,cutoff_at,phase,last_attempt,last_outcome,confirmed_at "
-                    "FROM clore_cancel_leases ORDER BY cutoff_at DESC LIMIT 10")]}
+                    "FROM clore_cancel_leases ORDER BY cutoff_at DESC LIMIT 10")],
+                    "unresolved_preorders": len(outstanding),
+                    "pending_recovery": evidence,
+                    "rental_permitted": False}
         finally:
             db.close()
         print(json.dumps(output, sort_keys=True))
