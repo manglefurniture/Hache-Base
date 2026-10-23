@@ -4,8 +4,8 @@
 set -Eeuo pipefail
 umask 077
 export PYTHONDONTWRITEBYTECODE=1
-SHA="\${1:-}"
-KEY="\${2:-}"
+SHA="${1:-}"
+KEY="${2:-}"
 ROOT=/opt/hache-mining-operator
 SRC="$ROOT/releases/$SHA/extensions/mining-operator"
 UNIT=/etc/systemd/system/hache-mining-operator-clore-cancel.service
@@ -16,7 +16,7 @@ fail() { printf 'CLORE_GUARD_INSTALL_ABORTED=%s\n' "$1" >&2; exit 1; }
 [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || fail invalid_release_sha
 [[ "$KEY" =~ ^/etc/[A-Za-z0-9_./-]+$ && "$KEY" != *..* ]] ||
     fail invalid_root_credential_location
-[[ -f "$KEY" && ! -L "$KEY" ]] || fail root_credential_missing
+[[ -f "$KEY" && ! -L "$KEY" && "$(realpath -e "$KEY")" == "$KEY" ]] || fail root_credential_missing
 [[ "$(stat -c %u "$KEY")" == 0 && "$(stat -c %a "$KEY")" == 600 ]] ||
     fail root_credential_must_be_root_0600
 [[ -L "$ROOT/current" && "$(readlink "$ROOT/current")" == "$SRC" ]] ||
@@ -27,6 +27,10 @@ fail() { printf 'CLORE_GUARD_INSTALL_ABORTED=%s\n' "$1" >&2; exit 1; }
     fail modified_release
 [[ -f "$SRC/clore_cancel_guard.py" ]] || fail missing_clore_guard
 [[ ! -e "$UNIT" && ! -e "$TIMER" ]] || fail existing_clore_service_must_be_reconciled
+# Do not take over an existing financial obligation behind an unknown DB schema.
+if [[ -f /var/lib/hache-mining-operator/clore-cancel.sqlite3 ]]; then
+    fail existing_guard_state_must_be_reconciled
+fi
 for u in hache-mining-operator.service hache-mining-operator-vast-lease.timer \
          hache-miner-vast-watchdog.timer hache-mining-agent-telegram.service; do
     systemctl is-active --quiet "$u" || fail "prerequisite_inactive_$u"
