@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -95,6 +96,17 @@ class OnboardTests(unittest.TestCase):
         token_file.chmod(0o600)
         with self.assertRaisesRegex(onboard.ProposalError, "invalid_bot_token"):
             onboard.read_token(token_file, self.own_uid)
+
+    def test_install_script_syntax_and_scope(self):
+        installer = Path(__file__).parent / "deploy" / "install-telegram-proposals.sh"
+        result = subprocess.run(["bash", "-n", str(installer)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        contents = installer.read_text()
+        self.assertIn("TELEGRAM_TEST_MESSAGE_SENT", contents)
+        self.assertIn("systemctl enable --now hache-mining-agent-telegram.service", contents)
+        self.assertNotIn("systemctl restart hache-mining-operator", contents)
+        self.assertNotIn("sudoers", contents)
 
     def test_service_template_separates_credential_and_state(self):
         unit = (Path(__file__).parent / "deploy" /
