@@ -38,9 +38,17 @@ class CloreWatchTests(unittest.TestCase):
                       max_minutes=60, created_at=1000, now=1000,
                       timer_check=lambda:True)
         inputs.update(opts)
+        if "provider_order" not in inputs:
+            inputs["provider_order"] = self.order(
+                oid=inputs["order_id"], si=inputs["server_id"],
+                created_at=inputs["created_at"], price=inputs["daily_bid_usd"],
+                creation_fee=inputs["creation_fee_usd"])
         return arm(self.db, **inputs)
-    def order(self, expired=False, si=121322):
-        return {"id":456, "si":si, "expired":expired}
+    def order(self, expired=False, si=121322, oid=456, created_at=1000,
+              price="10", creation_fee="0", currency="usd", spot=True, spent="0", fee=5):
+        return {"id":oid, "si":si, "expired":expired, "ct":created_at,
+                "currency":currency, "spot":spot, "price":price,
+                "creation_fee":creation_fee, "fee":fee, "spend":spent}
     def run_tick(self, api, now):
         return tick(self.db, api, now=now, delay=lambda _:None)
     def phase(self):
@@ -104,6 +112,40 @@ class CloreWatchTests(unittest.TestCase):
                 self.assertEqual(self.run_tick(p, 1100)["status"],"cancel_submitted_unverified")
                 self.assertEqual(p.cancels, [456])
                 self.assertEqual(self.phase()[0],"armed")
+    def test_refuse_crypto_native_orders_under_usd_budget(self):
+        for currency in ("bitcoin", "clore", "usd-blockchain", None):
+            with self.subTest(currency=currency), self.assertRaisesRegex(
+                    GuardError, "native_currency_usd_budget_unverified"):
+                self.arm(provider_order=self.order(currency=currency))
+        self.assertIsNone(self.phase())
+
+    def test_refuse_unverified_order_identity_and_fees(self):
+        bad = [
+            (self.order(si=99), "provider_server_mismatch"),
+            (self.order(spot=False), "not_a_live_spot_order"),
+            (self.order(expired=True), "not_a_live_spot_order"),
+            (self.order(fee=10), "provider_order_price_or_fee_unverified"),
+            (self.order(price="12"), "provider_order_price_or_fee_unverified"),
+            (self.order(creation_fee="0.1"), "provider_order_price_or_fee_unverified"),
+            (self.order(created_at=999), "provider_creation_time_mismatch"),
+        ]
+        for row, reason in bad:
+            with self.subTest(reason=reason), self.assertRaisesRegex(GuardError, reason):
+                self.arm(provider_order=row)
+
+    def test_currency_mismatch_on_active_lease_forces_cancellation(self):
+        self.arm()
+        for change in ({"currency": "bitcoin"}, {"currency": "clore"},
+                       {"spot": False}, {"spend": "0.85"},
+                       {"fee": 10}, {"creation_fee": "0.02"}):
+            with self.subTest(change=change):
+                provider = FakeClore([{**self.order(), **change}])
+                self.assertEqual(
+                    self.run_tick(provider, 1100)["status"],
+                    "cancel_submitted_unverified")
+                self.assertEqual(provider.cancels, [456])
+                self.assertEqual(self.phase()[0], "armed")
+
     def test_missing_history_is_not_proof_of_cancel(self):
         r=self.arm()
         p=FakeClore([])
