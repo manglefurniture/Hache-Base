@@ -147,6 +147,11 @@ def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
     try:
         if db.execute("SELECT 1 FROM clore_cancel_leases WHERE phase='armed' LIMIT 1").fetchone():
             raise GuardError("existing_armed_order")
+        # A pending pre-create reservation also represents one possible rental.
+        # Do not register a second, independently approved obligation over it.
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clore_preorders'").fetchone():
+            if db.execute("SELECT 1 FROM clore_preorders WHERE phase IN ('reserved','uncertain') LIMIT 1").fetchone():
+                raise GuardError("existing_preorder_obligation")
         db.execute(
             "INSERT INTO clore_cancel_leases "
             "(order_id,server_id,daily_bid_usd,budget_usd,creation_fee_usd,max_minutes,created_at,cutoff_at,phase) "
@@ -192,6 +197,27 @@ class CloreAPI:
         if not isinstance(result, dict) or result.get("code") != 0:
             raise GuardError("provider_rejected")
         return result
+
+    def inventory(self):
+        """Authenticated complete-format inventory metadata for pre-rent risk checks.
+
+        The API's limit is an active-order cap, not proof of history pagination.
+        Read-only and unchanged authorization/credential path.
+        """
+        result = self._request("my_orders?return_completed=true")
+        limit = result.get("limit")
+        if type(limit) is not int or not 1 <= limit <= 10000:
+            raise GuardError("unverifiable_inventory_limit")
+        rows = result.get("orders")
+        if type(rows) is not list or len(rows) > 10000:
+            raise GuardError("invalid_orders_list")
+        ids = set()
+        for row in rows:
+            if (type(row) is not dict or type(row.get("id")) is not int or
+                    not 0 < row["id"] < 10**15 or row["id"] in ids):
+                raise GuardError("invalid_orders_list")
+            ids.add(row["id"])
+        return {"limit": limit, "orders": rows}
 
     def orders(self):
         result = self._request("my_orders?return_completed=true")
