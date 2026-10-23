@@ -66,8 +66,42 @@ def db_open(path):
     connection.executescript(SCHEMA)
     return connection
 
+def verify_billing_order(order, *, order_id, server_id, daily_bid_usd, creation_fee_usd, created_at):
+    """Fail closed unless a fresh authenticated provider order is in USD.
+
+    Clore's currently documented billing currencies are CLORE and bitcoin.
+    Never mix crypto-denominated daily price, creation fee or spend with USD.
+    Future native-currency support needs independently verified FX accounting.
+    """
+    if type(order) is not dict or order.get("id") != order_id:
+        raise GuardError("provider_order_not_verified")
+    if order.get("currency") != "usd":
+        raise GuardError("native_currency_usd_budget_unverified")
+    if order.get("spot") is not True or order.get("expired") is not False:
+        raise GuardError("not_a_live_spot_order")
+    if type(order.get("si")) is not int or order["si"] != server_id:
+        raise GuardError("provider_server_mismatch")
+    if type(order.get("ct")) is not int or order["ct"] != created_at:
+        raise GuardError("provider_creation_time_mismatch")
+    try:
+        price = Decimal(str(order.get("price")))
+        fee = Decimal(str(order.get("fee")))
+        creation = Decimal(str(order.get("creation_fee")))
+        spent = Decimal(str(order.get("spend")))
+        bid = decimal_amount(daily_bid_usd, "daily_bid")
+        expected_creation = Decimal(str(creation_fee_usd))
+    except (InvalidOperation, ValueError, TypeError):
+        raise GuardError("invalid_provider_order_money") from None
+    if (not all(x.is_finite() for x in (price, fee, creation, spent, expected_creation)) or
+            not 0 < price <= bid or not 0 <= fee <= 5 or
+            not 0 <= spent or not 0 <= creation or creation != expected_creation):
+        raise GuardError("provider_order_price_or_fee_unverified")
+    return True
+
+
 def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
-        creation_fee_usd, max_minutes, created_at, now=None, timer_check=None):
+        creation_fee_usd, max_minutes, created_at, provider_order=None,
+        now=None, timer_check=None):
     """Register only a *known order ID*, never issue a rental or a bid."""
     now = int(time.time()) if now is None else int(now)
     if timer_check is None:
@@ -92,6 +126,9 @@ def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
         raise GuardError("unverified_creation_time")
     bid = decimal_amount(daily_bid_usd, "daily_bid")
     budget = decimal_amount(budget_usd, "budget")
+    verify_billing_order(provider_order, order_id=order_id, server_id=server_id,
+                         daily_bid_usd=daily_bid_usd, creation_fee_usd=creation_fee_usd,
+                         created_at=created_at)
     try:
         creation_fee = Decimal(str(creation_fee_usd))
     except (InvalidOperation, ValueError, TypeError):
@@ -215,18 +252,28 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
                 record(db, oid, now, "provider_confirmed_expired", closed=True)
                 return {"active": 0, "status": "verified_closed"}
             if match.get("expired") is False:
-                # my_orders publishes price and optional overclock surcharge per
-                # day in the rental currency. This lease permits USD-Blockchain
-                # only; an unexpected higher price triggers immediate cutoff.
+                # All monetary fields MUST be in USD; native BTC/CLORE prices
+                # cannot be compared numerically with a USD spending cap.
+                if match.get("currency") != "usd" or match.get("spot") is not True:
+                    due = True
+                    record(db, oid, now, "currency_or_spot_identity_mismatch")
                 try:
-                    if "price" in match:
-                        actual = Decimal(str(match["price"]))
-                        if not actual.is_finite() or actual <= 0 or actual > Decimal(row["daily_bid_usd"]):
-                            due = True
-                    if "oc_price" in match:
-                        oc = Decimal(str(match["oc_price"]))
-                        if not oc.is_finite() or oc < 0 or oc > 0:
-                            due = True
+                    actual = Decimal(str(match.get("price")))
+                    fees = Decimal(str(match.get("fee")))
+                    spent = Decimal(str(match.get("spend")))
+                    created = Decimal(str(match.get("creation_fee")))
+                    if (not all(x.is_finite() for x in (actual, fees, spent, created)) or
+                            actual <= 0 or actual > Decimal(row["daily_bid_usd"]) or
+                            fees < 0 or fees > 5 or spent < 0 or created < 0 or
+                            created != Decimal(row["creation_fee_usd"]) or
+                            spent + created >= Decimal(row["budget_usd"]) * SAFETY_RATIO):
+                        due = True
+                except (InvalidOperation, ValueError, TypeError):
+                    due = True
+                try:
+                    oc = Decimal(str(match.get("oc_price", 0)))
+                    if not oc.is_finite() or oc != 0:
+                        due = True
                 except (InvalidOperation, ValueError, TypeError):
                     due = True
             if match.get("expired") is not False:
@@ -292,7 +339,14 @@ def main():
         db = db_open(args.db)
         try:
             if args.action == "arm":
+                # Authenticated provider identity/currency is a required
+                # enrollment gate, never trust a manually asserted USD quote.
+                provider_orders = CloreAPI(credential()).orders()
+                matches = [o for o in provider_orders if o["id"] == args.order_id]
+                if len(matches) != 1:
+                    raise GuardError("provider_order_not_verified")
                 output = arm(db, order_id=args.order_id, server_id=args.server_id,
+                             provider_order=matches[0],
                              daily_bid_usd=args.daily_bid_usd, budget_usd=args.budget_usd,
                              creation_fee_usd=args.creation_fee_usd,
                              max_minutes=args.max_minutes, created_at=args.created_unix)
