@@ -46,15 +46,20 @@ def gpu_key(value, variant):
     if not isinstance(value, str) or len(value) > 100:
         fail('invalid_gpu_name')
     name = ' '.join(value.upper().replace('-', ' ').split())
-    match = re.search(r'\b(?:RTX\s*[2-9]\d{3}|GTX\s*\d{3,4}|RX\s*\d{4}|ARC\s*[AB]\d{3})\b', name)
+    match = re.search(r'\b(?:RTX\s*[2-9]\d{3}M?|GTX\s*\d{3,4}M?|RX\s*\d{4}M?|ARC\s*[AB]\d{3})\b', name)
     if not match:
         fail('unsupported_gpu')
     laptop_label = bool(re.search(r'\b(LAPTOP|MOBILE|NOTEBOOK|MAX[ -]?Q)\b', name))
+    laptop_label = laptop_label or bool(re.search(r'\b(?:RTX|GTX|RX)\s*\d{3,4}M\b', name))
     desktop_label = bool(re.search(r'\bDESKTOP\b', name))
     if (laptop_label and desktop_label) or (laptop_label and variant == 'desktop') or (desktop_label and variant == 'laptop'):
         fail('gpu_variant_conflict')
     # Keep exact family and TI/SUPER suffix to avoid cross-GPU leakage.
     model = match.group(0).replace(' ', '')
+    # Provider shorthand 4090M refers to a mobile variant; normalize the M
+    # under the laptop model while refusing to map it to any desktop sample.
+    if model.endswith('M') and match.group(0).upper().startswith(('RTX','GTX','RX')):
+        model = model[:-1]
     tail = name[match.end():]
     qualifiers = []
     for word in ('TI', 'SUPER', 'XTX', 'XT'):
