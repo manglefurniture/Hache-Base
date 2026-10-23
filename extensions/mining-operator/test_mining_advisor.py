@@ -242,6 +242,7 @@ class MiningAdvisorTests(unittest.TestCase):
             ('RTX 3070 Desktop','desktop','RTX3070:desktop'),
             ('RTX 4070 Ti SUPER Laptop','laptop','RTX4070TISUPER:laptop'),
             ('RTX 6090 Laptop','laptop','RTX6090:laptop'),
+            ('RTX 4090M','laptop','RTX4090:laptop'),
             ('GTX 1080 Ti Desktop','desktop','GTX1080TI:desktop'),
             ('Radeon RX 7900 XTX Laptop','laptop','RX7900XTX:laptop'),
             ('Intel ARC A770 Desktop','desktop','ARCA770:desktop'),
