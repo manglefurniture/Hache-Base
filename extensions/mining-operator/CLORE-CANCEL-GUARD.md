@@ -1,3 +1,37 @@
+## Reserva previa sin contratación (fase segura)
+
+Se añadió `clore_preorder.py` como **libro de exposición local** para preparar
+la futura contratación autónoma. No está conectado a Telegram ni al broker
+comercial y **no tiene ninguna ruta de API que cree, puje o cancele órdenes**.
+
+Una reserva acepta solamente términos explícitos para **un servidor físico**:
+moneda API `USD-Blockchain`, descriptor GPU con variante verificada,
+imagen Docker fijada por digest, tarifa diaria, creación, límite total,
+duración y cotización con antigüedad máxima de 120 segundos.
+Requiere timer Clore activo y heartbeat reciente, una captura autenticada
+de inventario completo de `my_orders` con IDs no repetidos, y cálculo de
+presupuesto conservador. Persiste atómicamente términos, SHA256 y baseline
+de órdenes en SQLite **antes de un eventual create**. Una segunda reserva
+o una orden financiera armada bloquean la creación de otra obligación.
+
+La función de conciliación compara nuevas órdenes con el baseline y devuelve
+solamente `not_found`, `ambiguous`, `identity_mismatch`,
+`price_or_fee_mismatch` o `candidate_unbound`. No enlaza automáticamente
+ese candidato a una obligación financiera y no autoriza contratos.
+Una reserva caducada sigue bloqueando nuevos planes hasta que el operador
+financiero haya conciliado la respuesta desconocida: **el paso del tiempo
+no prueba que Clore no creó una orden**. El despliegue por SHA también se
+bloquea mientras existan reservas en estado `reserved` o `uncertain`.
+
+**Pendiente imprescindible:** aprobación Telegram ligada criptográficamente
+al plan exacto, bloqueo exclusivo de toda creación de órdenes de la cuenta,
+un único intento seguro de `create_order`, obtención confiable del nuevo
+`order_id` incluso ante timeout, integración con el supervisor de corte,
+seguimiento de costes postcancelación y prueba simulada end-to-end.
+No se autoriza gastar ni usar este módulo como límite USD garantizado.
+
+Prueba: `python3 -m unittest discover -s extensions/mining-operator -p test_clore_preorder.py -v`
+
 ## Contabilidad del saldo USDT/USDC (octubre 2026)
 
 Clore admite pagos de alquiler con USDT y USDC, acreditados en un **saldo
