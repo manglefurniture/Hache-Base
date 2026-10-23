@@ -142,7 +142,9 @@ class MarketNotificationTests(unittest.TestCase):
         improved=scout.make_report(vast(price=0.25),clore(),NOW)
         self.assertEqual(notify.send_report(self.api,123,improved,self.state,
                                             NOW+timedelta(hours=7)),"improved_advertised_quote")
-        self.assertEqual(self.state.current()[2],2)
+        expected_count = (2 if NOW.astimezone(notify.LOCAL_TZ).date() ==
+                          (NOW+timedelta(hours=7)).astimezone(notify.LOCAL_TZ).date() else 1)
+        self.assertEqual(self.state.current()[2],expected_count)
         self.assertEqual(notify.send_report(self.api,123,improved,self.state,
                                             NOW+timedelta(hours=23)),"unchanged")
         self.assertEqual(len(self.api.sent),2)
