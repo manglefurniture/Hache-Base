@@ -118,7 +118,8 @@ class OnboardTests(unittest.TestCase):
         contents = installer.read_text()
         self.assertIn("TELEGRAM_TEST_MESSAGE_SENT", contents)
         self.assertIn("--pair-code", contents)
-        self.assertIn("systemctl enable --now hache-mining-agent-telegram.service", contents)
+        self.assertIn("systemctl enable hache-mining-agent-telegram.service", contents)
+        self.assertIn("systemctl restart hache-mining-agent-telegram.service", contents)
         self.assertNotIn("systemctl restart hache-mining-operator", contents)
         self.assertNotIn("sudoers", contents)
 
