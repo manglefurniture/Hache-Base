@@ -35,3 +35,34 @@ Cubren destinatario incorrecto, grupos, replay, expiración, duplicados, precio 
 7. Vincular en fases posteriores datos frescos del asesor y de Kryptex, el bridge de grants root, watchdog financiero y supervisor externo ante pérdida del VPS.
 
 Nunca ejecutar un alquiler solo por recibir acknowledged desde Telegram.
+
+
+## Menú de acciones de solo lectura (incremento posterior)
+
+El bot existente acepta en el chat privado autenticado \`/start\`, \`/menu\`,
+\`/ofertas\`, \`/estado\`, \`/ayuda\`. Los mensajes del radar horario incluyen
+un teclado inline con **Vast.ai, Clore.ai, estado, rentabilidad, watchdogs y ayuda**.
+El mismo proceso receptor de Telegram atiende los callbacks; **no montar otro
+\`getUpdates\` sobre el token existente**.
+
+Solo utiliza \`/var/lib/hache-mining-market/report.json\`, compartido por
+el scout mediante grupo \`hache-telegram\`, con validación de propietario,
+permisos, sin symlinks, antigüedad máxima de 90 minutos, origen dual e
+indicadores \`rental_permitted=false\` y \`net_profit_verified=false\`.
+Una lectura ausente o antigua se indica como **no disponible**. Se escapan
+los nombres proporcionados por hosts antes de enviar HTML a Telegram.
+El botón no provoca un escaneo nuevo: presenta el último escaneo horario.
+
+**Límites explícitos:** los botones no rentan, pujan, cancelan, reinician ni
+cambian presupuestos. El estado del watchdog operativo tampoco se afirma
+sin un canal de telemetría auténtico. Para habilitar acciones comerciales
+se necesitan grants por oferta y guardias financieros independientes de
+Vast y Clore, de acuerdo con issues #84 y #109.
+
+Prueba sin red ni gasto:
+\`python3 -m unittest discover -s extensions/mining-operator -p test_telegram_menu.py -v\`
+
+Despliegue: usar exclusivamente el SHA revisado y fusionado con
+\`deploy/deploy-gpu-variants.sh\`, que ahora incluye estas regresiones,
+y conservar credenciales, usuario \`hache-telegram\` y watchdogs existentes.
+No modificar scripts activos manualmente en VPS.

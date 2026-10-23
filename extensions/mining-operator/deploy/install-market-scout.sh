@@ -43,6 +43,8 @@ runuser -u hache-telegram -- test -r "$BOT_SRC/mining_market_notifier.py" ||
 
 python3 -m unittest discover -s "$SRC" -p test_mining_market_scout.py -q ||
     fail 'market_scout_regression_failed'
+python3 -m unittest discover -s "$BOT_SRC" -p test_telegram_menu.py -q ||
+    fail 'telegram_menu_regression_failed'
 python3 -m unittest discover -s "$SRC" -p test_broker.py -q ||
     fail 'broker_regression_failed'
 php "$SRC/test_provider.php" || fail 'vast_projection_regression_failed'
