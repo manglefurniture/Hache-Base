@@ -18,6 +18,7 @@ set -Eeuo pipefail
 SHA=REVIEWED_SHA
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
 DEST="/opt/hache-mining-agent/releases/$SHA"
+install -d -o root -g root -m 0755 /opt/hache-mining-agent /opt/hache-mining-agent/releases
 git clone --depth 1 --branch main https://github.com/manglefurniture/Hache-Base.git "$DEST"
 test "$(git -C "$DEST" rev-parse HEAD)" = "$SHA"
 python3 -m unittest discover -s "$DEST/extensions/mining-operator" -p 'test_telegram_*.py'
