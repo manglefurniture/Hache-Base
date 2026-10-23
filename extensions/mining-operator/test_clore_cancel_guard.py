@@ -45,7 +45,7 @@ class CloreWatchTests(unittest.TestCase):
                 creation_fee=inputs["creation_fee_usd"])
         return arm(self.db, **inputs)
     def order(self, expired=False, si=121322, oid=456, created_at=1000,
-              price="10", creation_fee="0", currency="usd", spot=True, spent="0", fee=5):
+              price="10", creation_fee="0", currency="USD-Blockchain", spot=True, spent="0", fee=5):
         return {"id":oid, "si":si, "expired":expired, "ct":created_at,
                 "currency":currency, "spot":spot, "price":price,
                 "creation_fee":creation_fee, "fee":fee, "spend":spent}
@@ -113,11 +113,20 @@ class CloreWatchTests(unittest.TestCase):
                 self.assertEqual(p.cancels, [456])
                 self.assertEqual(self.phase()[0],"armed")
     def test_refuse_crypto_native_orders_under_usd_budget(self):
-        for currency in ("bitcoin", "clore", "usd-blockchain", None):
+        for currency in ("bitcoin", "CLORE-Blockchain", "usd", "usdt", "usd-blockchain", None):
             with self.subTest(currency=currency), self.assertRaisesRegex(
-                    GuardError, "native_currency_usd_budget_unverified"):
+                    GuardError, "usd_blockchain_billing_not_verified"):
                 self.arm(provider_order=self.order(currency=currency))
         self.assertIsNone(self.phase())
+
+    def test_usdt_unified_usd_balance_allows_authenticated_usd_blockchain(self):
+        # The API uses USD-Blockchain for the unified USDT/USDC balance.
+        receipt = self.arm(provider_order=self.order(currency="USD-Blockchain"))
+        self.assertEqual(receipt["state"], "armed")
+        p = FakeClore([self.order(currency="USD-Blockchain")])
+        self.assertEqual(self.run_tick(p, 1100)["status"], "watching")
+        self.assertFalse(p.cancels)
+        self.assertEqual(self.phase()[0], "armed")
 
     def test_refuse_unverified_order_identity_and_fees(self):
         bad = [
@@ -135,7 +144,8 @@ class CloreWatchTests(unittest.TestCase):
 
     def test_currency_mismatch_on_active_lease_forces_cancellation(self):
         self.arm()
-        for change in ({"currency": "bitcoin"}, {"currency": "clore"},
+        for change in ({"currency": "bitcoin"}, {"currency": "CLORE-Blockchain"},
+                       {"currency": "usd"}, {"currency": "usdt"},
                        {"spot": False}, {"spend": "0.85"},
                        {"fee": 10}, {"creation_fee": "0.02"}):
             with self.subTest(change=change):
