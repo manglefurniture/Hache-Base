@@ -505,7 +505,7 @@ if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
         $request=json_decode($raw,true,16,JSON_THROW_ON_ERROR);
         $mode=$request['mode']??'';$operation=$request['operation']??null;
         if(!is_array($operation)||!isset($operation['action']))op_fail('invalid_request');
-        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry','clore.marketplace'];
+        $reads=['vast.list','vast.status','vast.inspect','vast.search','vast.marketplace','vast.analyze','vast.rent.quote','vast.rent.reconcile','salad.targets','salad.groups','salad.instances','salad.instance','telemetry','clore.marketplace'];
         $writes=['vast.stop','vast.start','vast.register','salad.stop','salad.reallocate'];
         if($mode==='query'&&in_array($operation['action'],$reads,true))$result=op_query($operation);
         elseif($mode==='prepare'&&in_array($operation['action'],$writes,true))$result=op_prepare($operation);
