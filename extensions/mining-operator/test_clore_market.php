@@ -6,8 +6,10 @@ function testClore(bool $condition,string $message):void {
 }
 $base=[
     'price'=>['on_demand'=>['USD-Blockchain'=>2.4],
-              'usd'=>['on_demand_btc'=>2.2,'on_demand_usd'=>2.4]],
+              'usd'=>['on_demand_btc'=>2.2,'on_demand_usd'=>2.4,'spot'=>0],
+              'spot'=>['USD-Blockchain'=>0.72]],
     'rented'=>false,
+    'gpu_array'=>[['name'=>'RTX 5060 Ti']],
     'specs'=>['cpu'=>'AMD Ryzen 9 9950X 16-Core Processor','cpus'=>'14/28','ram'=>16,
               'gpu'=>'1x NVIDIA GeForce RTX 5060 Ti','gpuram'=>16,
               'net'=>['cc'=>'US']],
@@ -45,4 +47,26 @@ foreach ([['code'=>5,'servers'=>[]],['code'=>0,'servers'=>'bad'],['code'=>0,'ser
         testClore($e->getMessage()==='provider_unavailable','Unexpected error mapping');
     }
 }
+testClore($out['prl_gpu'][0]['gpu_count_verified']===1,'Count must match array and specs');
+testClore($out['prl_gpu'][0]['gpu_variant_verified']===false,'Never infer desktop from RTX name');
+testClore($out['prl_gpu'][0]['spot_floor_usd_hour']===0.03,'Spot USD day to hour');
+testClore($out['prl_gpu_spot_floor'][0]['id']===20,'Spot floor ranking');
+testClore(!array_key_exists('background_job',$out['prl_gpu'][0]),'Never expose provider secrets');
+testClore(op_clore_spot_floor_hourly_usd(['price'=>['spot'=>['bitcoin'=>0.00001]]])===null,
+    'No BTC to USD conversion');
+testClore(op_clore_spot_floor_hourly_usd(['price'=>['spot'=>['USD-Blockchain'=>0],'usd'=>['spot'=>0]]])===null,
+    'Spot zero is unavailable');
+testClore(op_clore_spot_floor_hourly_usd(['price'=>['usd'=>['spot'=>1.20]]])===0.05,
+    'Provider USD equivalent permitted');
+$multi=$base;$multi['id']=500;$multi['specs']['gpu']='2x NVIDIA GeForce RTX 5090';
+$multi['gpu_array']=[['index'=>0],['index'=>1]];
+$multi['price']['spot']['USD-Blockchain']=2.4;
+$mismatch=$multi;$mismatch['id']=501;$mismatch['gpu_array']=[['index'=>0]];
+$multiProjection=op_clore_marketplace_projection(['code'=>0,'servers'=>[$multi,$mismatch]]);
+testClore($multiProjection['prl_gpu_5090'][0]['id']===500,'Dedicated 5090 slice');
+testClore($multiProjection['prl_gpu_5090'][0]['gpu_count_verified']===2,'Multi GPU match');
+testClore($multiProjection['prl_gpu_5090'][1]['gpu_count_verified']===null,
+    'Mismatched GPU inventory must not pass');
+testClore($multiProjection['prl_gpu_spot_floor'][0]['spot_floor_usd_hour']===0.1,
+    'Spot quote remains preliminary floor');
 echo "CLORE_MARKETPLACE_READONLY_TESTS_OK\n";
