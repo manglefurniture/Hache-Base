@@ -7,8 +7,11 @@ aumento de límites, instalación de mineros ni gasto.
 
 Leer exclusivamente el broker local y operaciones read-only `vast.search`.
 Son ofertas On-Demand, con precio que puede depender de almacenamiento (la
-búsqueda original cotiza 5 GiB). Verificar nombre, cantidad y variante real de
-GPU desktop/laptop; tampoco estimar PRL desde TH/s. Sin historial reciente,
+búsqueda original cotiza 5 GiB). La proyección `vast.search`, `vast.analyze` y
+`vast.rent.quote` expone `gpu_variant` (`laptop`, `desktop` o `unverified`)
+para **cualquier nombre de GPU**, de acuerdo con etiquetas explícitas del
+proveedor. `gpu_variant_verified=false` hasta validar hardware real; la
+ausencia de "Laptop" nunca equivale a desktop. No estimar PRL desde TH/s. Sin historial reciente,
 precio PRL fresco o confiabilidad suficiente, nunca marcar rentable.
 
 ## Clore.ai
@@ -18,11 +21,25 @@ Clore, sin entregar su token privado a `gpt-agent`. El parser ahora devuelve:
 
 - `prl_gpu`: los 10 anuncios On-Demand más baratos, **por servidor entero**.
 - `prl_gpu_spot_floor`: los 10 anuncios con el **mínimo Spot** en USD/h más bajo.
-- `prl_gpu_5090`: anuncios RTX 5090 que no indiquen expresamente Laptop/Mobile;
-  **siguen sin verificarse** como desktop; la variante debe probarse con datos de hardware.
+- `prl_gpu_5090`: anuncios RTX 5090, **incluidas las Laptop**; el nombre 5090 es
+  solo una categoría auxiliar, nunca el único modelo que se busca.
+- `prl_gpu_models`: oferta más barata por **familia de GPU y variante** en la
+  consulta completa. Incluye otras RTX, GTX, CMP, Tesla, Radeon y Arc con al
+  menos 8 GB de VRAM anunciados, aun cuando su compatibilidad real con
+  PearlHash deba comprobarse. El límite de salida es 80 familias/variantes;
+  `prl_gpu_models_total` y `prl_gpu_models_partial` explicitan si hubo truncado.
+  La API pública sin truncar se usa para elegir los representantes.
+- `gpu_variant`: `laptop`, `desktop` o `unverified` mediante indicadores
+  explícitos como "Laptop", "Mobile", "Max-Q" o "Desktop" para **todos**
+  los modelos; etiqueta de proveedor, no inspección física. Los nombres sin
+  marcador, como "RTX 5090 D v2", continúan siendo `unverified`.
+- `gpu_variant_evidence`: `provider_label`, `missing_provider_label`
+  o `conflicting_provider_labels`; nunca se supone que una GPU es de
+  escritorio por omisión. Los anuncios desconocidos permanecen visibles.
 - `gpu_count_verified`: cantidad solo si el prefijo exacto de `specs.gpu`
   concuerda con longitud de `gpu_array` (si no, `null`).
-- `gpu_variant_verified=false`: jamás inferir desktop por ausencia de "Laptop".
+- `gpu_variant_verified=false`: una etiqueta anunciada no acredita el
+  hardware. Tampoco acredita soporte para minería PearlHash.
 - `spot_floor_usd_hour`: precio **mínimo** por hora, no una orden cotizable
   ni la puja ganadora; el USD se acepta solo si lo publica Clore como
   USD-Blockchain o equivalencia USD oficial. Nunca convertir bitcoin/Clore a
@@ -52,7 +69,10 @@ python3 extensions/mining-operator/mining_advisor.py \
   --market /ruta/privada/prl-mercado.json
 ~~~
 
-La salida conserva proveedor por oferta y `renting_enabled=false`. Una
+La salida conserva proveedor por oferta, familia y pista de variante,
+incluyendo categorías Laptop / desktop-etiquetada / desconocida, y
+`renting_enabled=false`. La rentabilidad observada de una RTX 4070 Laptop
+nunca se reutiliza para una RTX 4070 de escritorio, ni al revés. Una
 cotización de Clore lleva `needs_verification` y motivos detallados;
 no incluye beneficio neto hasta cerrar todas las verificaciones anteriores,
 aunque existan antiguas muestras de PRL. Los precios Clore se ocultan cuando
