@@ -5,8 +5,9 @@ umask 077
 fail() { printf 'TELEGRAM_SETUP_FAILED=%s\n' "$1" >&2; exit 1; }
 
 [[ "$EUID" -eq 0 ]] || fail root_required
-[[ "$#" -eq 1 && "$1" =~ ^[a-f0-9]{40}$ ]] || fail expected_full_commit_sha_required
+[[ "$#" -eq 2 && "$1" =~ ^[a-f0-9]{40}$ && "$2" =~ ^[a-f0-9]{16}$ ]] || fail expected_sha_and_pair_code_required
 SHA="$1"
+PAIR_CODE="$2"
 ROOT="/opt/hache-mining-agent"
 REPO="$ROOT/releases/$SHA"
 SRC="$REPO/extensions/mining-operator"
@@ -23,9 +24,9 @@ TOKEN="/etc/hache-mining-agent/telegram_token"
 [[ "$(stat -c '%u:%a' "$(dirname "$TOKEN")")" == "0:700" ]] || fail token_directory_permissions_invalid
 [[ ! -L "$UNIT" ]] || fail unit_symlink_denied
 
-# Discover recipient only from a Telegram PRIVATE /start update; no token in CLI.
+# Discover recipient only after the owner sends a fresh /pair CODE in the private bot chat.
 if [[ ! -e "$RECIPIENT" ]]; then
-  /usr/bin/python3 "$SRC/telegram_onboard.py" --write-config || fail onboarding_not_ready
+  /usr/bin/python3 "$SRC/telegram_onboard.py" --write-config --pair-code "$PAIR_CODE" || fail onboarding_not_ready
 else
   [[ ! -L "$RECIPIENT" && "$(stat -c '%u:%a' "$RECIPIENT")" == "0:600" ]] \
     || fail recipient_permissions_invalid
