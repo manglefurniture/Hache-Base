@@ -203,10 +203,18 @@ def evaluate(snapshot, memory, *, market, now=None):
         seen.add(identifier)
         if provider == 'clore':
             verdict['rental_mode_prices'] = {}
+            fresh = False
+            try:
+                stamp = utc(offer.get('snapshot_utc'))
+                fresh = timedelta(0) <= now - stamp <= timedelta(minutes=5)
+            except ValueError:
+                pass
+            if not fresh:
+                verdict['reasons'].append('clore_market_snapshot_stale_or_undated')
             for mode, field in (('on_demand', 'on_demand_usd_hour'),
                                 ('spot_minimum_floor', 'spot_floor_usd_hour')):
                 quoted = offer.get(field)
-                if type(quoted) in (int, float) and math.isfinite(quoted) and 0 < quoted <= 100:
+                if fresh and type(quoted) in (int, float) and math.isfinite(quoted) and 0 < quoted <= 100:
                     verdict['rental_mode_prices'][mode] = round(float(quoted), 6)
             count = offer.get('gpu_count')
             if type(count) is int and 1 <= count <= 16:
