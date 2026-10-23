@@ -52,17 +52,45 @@ function op_clore_hourly_usd(array $server): ?float {
     if(!$days)return null;
     return min($days)/24;
 }
+/** Spot is only the host's minimum USD/day bid, NEVER the winning bid or final price. */
+function op_clore_spot_floor_hourly_usd(array $server): ?float {
+    $price=$server['price']??null;
+    if(!is_array($price))return null;
+    // Native USD-Blockchain price is the only unambiguous currency-backed price.
+    $native=$price['spot']['USD-Blockchain']??null;
+    $equivalent=$price['usd']['spot']??null;
+    $values=[];
+    if(is_numeric($native)&&is_finite((float)$native)&&(float)$native>0)
+        $values[]=(float)$native;
+    // Provider publishes spot USD-equivalent across eligible currencies. A
+    // cheaper positive value must not be ignored in the preliminary ranking.
+    if(is_numeric($equivalent)&&is_finite((float)$equivalent)&&(float)$equivalent>0)
+        $values[]=(float)$equivalent;
+    return $values?min($values)/24:null; // Never treat BTC/CLORE units as dollars.
+}
+/** Require a matching, whole-rig GPU count in both public hardware descriptions. */
+function op_clore_verified_gpu_count(array $server): ?int {
+    $name=$server['specs']['gpu']??null;
+    $gpuArray=$server['gpu_array']??null;
+    if(!is_string($name)||!preg_match('/^([1-9][0-9]?)x\s+/i',$name,$match))
+        return null;
+    $count=(int)$match[1];
+    if($count>16||!is_array($gpuArray)||!array_is_list($gpuArray)||
+        count($gpuArray)!==$count)return null;
+    return $count;
+}
 function op_clore_marketplace_projection(array $data): array {
     if(($data['code']??null)!==0)op_fail('provider_unavailable');
     $servers=$data['servers']??null;
     if(!is_array($servers)||!array_is_list($servers)||count($servers)>10000)op_fail('provider_unavailable');
-    $xmr=[];$prl=[];$combo=[];$eligible=0;
+    $xmr=[];$prl=[];$combo=[];$prlSpot=[];$prl5090=[];$eligible=0;
     foreach($servers as $server){
         if(!is_array($server)||($server['rented']??false)!==false)continue;
         $specs=$server['specs']??null;
         if(!is_array($specs)||!is_int($server['id']??null)||$server['id']<=0)continue;
         $ram=$specs['ram']??null;
         $hourly=op_clore_hourly_usd($server);
+        $spotHourly=op_clore_spot_floor_hourly_usd($server);
         if(!is_numeric($ram)||(float)$ram<8||$hourly===null)continue;
         $cpu=(string)($specs['cpu']??'');
         $gpu=(string)($specs['gpu']??'');
@@ -82,9 +110,18 @@ function op_clore_marketplace_projection(array $data): array {
             'country'=>is_array($net)?substr((string)($net['cc']??''),0,35):'',
             'on_demand_usd_hour'=>round($hourly,5),
             'on_demand_usd_day'=>round($hourly*24,4),
+            'gpu_count_verified'=>op_clore_verified_gpu_count($server),
+            'gpu_variant_verified'=>false, // Laptop/desktop never inferred by absence of 'Laptop'.
+            'spot_floor_usd_hour'=>$spotHourly===null?null:round($spotHourly,5),
+            'spot_floor_usd_day'=>$spotHourly===null?null:round($spotHourly*24,4),
         ];
         if($isCpu)$xmr[]=$safe;
-        if($isGpu)$prl[]=$safe;
+        if($isGpu){
+            $prl[]=$safe;
+            if($spotHourly!==null)$prlSpot[]=$safe;
+            if(preg_match('/\\bRTX\\s*5090\\b/i',$gpu) &&
+                !preg_match('/\\b(Laptop|Mobile)\\b/i',$gpu))$prl5090[]=$safe;
+        }
         if($isCpu&&$isGpu)$combo[]=$safe;
     }
     $sort=static function(array &$offers):void {
@@ -92,7 +129,14 @@ function op_clore_marketplace_projection(array $data): array {
             ($a['on_demand_usd_hour']<=>$b['on_demand_usd_hour'])?:($a['id']<=>$b['id']));
         $offers=array_slice($offers,0,10);
     };
+    $spotSort=static function(array &$offers):void {
+        usort($offers,static fn(array $a,array $b):int=>
+            ($a['spot_floor_usd_hour']<=>$b['spot_floor_usd_hour'])?:($a['id']<=>$b['id']));
+        $offers=array_slice($offers,0,10);
+    };
     $sort($xmr);$sort($prl);$sort($combo);
+    $spotSort($prlSpot);
+    $sort($prl5090);
     return [
         'source'=>'clore_public_marketplace',
         'snapshot_utc'=>gmdate('Y-m-d\TH:i:s\Z'),
@@ -100,9 +144,11 @@ function op_clore_marketplace_projection(array $data): array {
         'eligible_servers'=>$eligible,
         'xmr_cpu'=>$xmr,
         'prl_gpu'=>$prl,
+        'prl_gpu_spot_floor'=>$prlSpot,
+        'prl_gpu_5090'=>$prl5090,
         'xmr_prl_combined'=>$combo,
         'rental_authorized'=>false,
-        'warning'=>'Read-only preliminary price ranking. Whole-server on-demand quote in provider-reported USD equivalents; not verified RandomX/PearlHash or net profit. Hardware, pricing, rental availability, fees and CPU allocation require validation. No rentals or mining performed.',
+        'warning'=>'READ ONLY. On-demand prices and Spot MINIMUM floors are whole-server USD/hour, not current winning bids or executable quotes. GPU count requires matching specs and gpu_array; desktop/laptop and PRL yield unverified. Spot competition, storage, fees, taxes, post-stop costs and net profitability must be checked. No rentals or mining performed.',
     ];
 }
 function op_clore_marketplace(): array {
