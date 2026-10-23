@@ -3,6 +3,7 @@
 # No provider mutating API calls. Existing finance/watchdog timers remain on.
 set -Eeuo pipefail
 umask 022
+export PYTHONDONTWRITEBYTECODE=1
 SHA="${1:-}"
 OP=/opt/hache-mining-operator
 BOT=/opt/hache-mining-agent
@@ -45,12 +46,20 @@ stage() {
  local root="$1" dst="$root/releases/$SHA"
  install -d -o root -g root -m 0755 "$root/releases"
  if [[ ! -e "$dst" ]]; then
-   git clone --quiet --depth 1 --single-branch --branch main "$REPO" "$dst" || error 'clone_failed'
+   git init --quiet "$dst" || error 'git_init_failed'
+   git -C "$dst" remote add origin "$REPO" || error 'git_remote_failed'
+   git -C "$dst" fetch --quiet --no-tags --depth 1 origin "$SHA" || error 'exact_commit_fetch_failed'
+   git -C "$dst" -c advice.detachedHead=false checkout --quiet --detach "$SHA" ||
+       error 'exact_commit_checkout_failed'
  fi
  [[ -d "$dst/.git" && "$(git -C "$dst" rev-parse HEAD)" == "$SHA" ]] || error 'git_sha_mismatch'
- [[ "$(stat -c %u "$dst")" == 0 ]] || error 'nonroot_release_owner'
+ [[ -z "$(git -C "$dst" status --porcelain=v1 --untracked-files=all)" ]] ||
+     error 'modified_or_extra_release_files'
+ [[ -z "$(find "$dst" ! -user root -print -quit)" ]] ||
+     error 'release_contains_untrusted_owner'
  [[ -f "$dst/extensions/mining-operator/gpu_variant.php" ]] || error 'gpu_module_missing'
- # Reviewed source has no secrets; both unprivileged systemd users must read it.
+ # Root-owned, Git-clean versioned source with no secrets, readable by two
+ # different unprivileged service accounts. No modification to code content.
  find "$dst" -type d -exec chmod go+rx,go-w {} +
  find "$dst" -type f -exec chmod go+r,go-w {} +
 }
