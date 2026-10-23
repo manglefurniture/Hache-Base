@@ -193,6 +193,27 @@ class CloreAPI:
             raise GuardError("provider_rejected")
         return result
 
+    def inventory(self):
+        """Authenticated complete-format inventory metadata for pre-rent risk checks.
+
+        The API's limit is an active-order cap, not proof of history pagination.
+        Read-only and unchanged authorization/credential path.
+        """
+        result = self._request("my_orders?return_completed=true")
+        limit = result.get("limit")
+        if type(limit) is not int or not 1 <= limit <= 10000:
+            raise GuardError("unverifiable_inventory_limit")
+        rows = result.get("orders")
+        if type(rows) is not list or len(rows) > 10000:
+            raise GuardError("invalid_orders_list")
+        ids = set()
+        for row in rows:
+            if (type(row) is not dict or type(row.get("id")) is not int or
+                    not 0 < row["id"] < 10**15 or row["id"] in ids):
+                raise GuardError("invalid_orders_list")
+            ids.add(row["id"])
+        return {"limit": limit, "orders": rows}
+
     def orders(self):
         result = self._request("my_orders?return_completed=true")
         orders = result.get("orders")
