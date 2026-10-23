@@ -43,10 +43,9 @@ $inventory=op_vast_marketplace_projection([
     $mk(508,'NVIDIA CMP 90HX',0.13),
 ]);
 if($inventory['rental_authorized']!==false||
-   $inventory['model_variants_total']!==4||
-   count($inventory['offers'])!==4||
-   array_column($inventory['offers'],'id')!==[508,507,504,501]&&
-   array_column($inventory['offers'],'id')!==[508,507,504,501] )
+   $inventory['model_variants_total']!==5||
+   count($inventory['offers'])!==5||
+   array_column($inventory['offers'],'id')!==[508,507,504,501,502] )
     throw new RuntimeException('Vast marketplace diversity filtering incorrect');
 if(str_contains(json_encode($inventory,JSON_THROW_ON_ERROR),'NEVER_LEAK_GPU_SECRET')||
    array_values(array_filter($inventory['offers'],static fn(array $o):bool=>
