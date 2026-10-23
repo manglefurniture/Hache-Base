@@ -177,7 +177,8 @@ def render(report, reason):
     for provider, heading in (("vast", "VAST.AI · ON-DEMAND"),
                               ("clore", "CLORE.AI · ON-DEMAND / SPOT")):
         matches = [x for x in report["offers"] if x["provider"] == provider]
-        lines.extend(("", f"<b>{heading} · {len(matches)} ofertas</b>"))
+        unit = "oferta" if len(matches) == 1 else "ofertas"
+        lines.extend(("", f"<b>{heading} · {len(matches)} {unit}</b>"))
         if not matches:
             lines.append("<i>Sin resultados válidos en esta consulta.</i>")
             continue
