@@ -18,6 +18,7 @@ import sys
 from zoneinfo import ZoneInfo
 
 from telegram_proposals import TelegramAPI, load_token, ProposalError
+from telegram_menu import markup as menu_markup
 
 REPORT = Path("/var/lib/hache-mining-market/report.json")
 DATABASE = Path("/var/lib/hache-mining-telegram/market-notify.sqlite")
@@ -266,6 +267,7 @@ def send_report(api, chat_id, report, state, now):
         "chat_id": chat_id, "text": render(report, reason),
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
+        "reply_markup": menu_markup(),
     })
     if type(answer) is not dict or type(answer.get("message_id")) is not int:
         raise NotifyError("telegram_receipt_missing")
