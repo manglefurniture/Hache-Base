@@ -109,8 +109,14 @@ def select_offers(vast, clore, now):
             hint = row.get("gpu_variant")
             if hint not in ("desktop", "laptop", "unverified"):
                 hint = "unverified"
+            model_key = row.get("gpu_model_key")
+            if type(model_key) is not str or not 1 <= len(model_key) <= 85:
+                # Still display the candidate; without a normalized family
+                # identity it cannot support a same-model price-drop alert.
+                model_key = ""
             item = {
                 "provider": provider, "offer_id": ident, "gpu_name": text_label(name),
+                "gpu_model_key": text_label(model_key, 85).upper() if model_key else "",
                 "gpu_count": count, "gpu_variant": hint,
                 "gpu_variant_verified": False,
                 "on_demand_usd_hour": round(float(cost), 6),
