@@ -18,7 +18,8 @@ Clore, sin entregar su token privado a `gpt-agent`. El parser ahora devuelve:
 
 - `prl_gpu`: los 10 anuncios On-Demand más baratos, **por servidor entero**.
 - `prl_gpu_spot_floor`: los 10 anuncios con el **mínimo Spot** en USD/h más bajo.
-- `prl_gpu_5090`: anuncios con RTX 5090 para revisión específica.
+- `prl_gpu_5090`: anuncios RTX 5090 que no indiquen expresamente Laptop/Mobile;
+  **siguen sin verificarse** como desktop; la variante debe probarse con datos de hardware.
 - `gpu_count_verified`: cantidad solo si el prefijo exacto de `specs.gpu`
   concuerda con longitud de `gpu_array` (si no, `null`).
 - `gpu_variant_verified=false`: jamás inferir desktop por ausencia de "Laptop".
