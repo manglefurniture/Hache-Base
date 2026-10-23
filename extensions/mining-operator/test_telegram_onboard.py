@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import subprocess
+import time
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,10 +24,14 @@ class FakeAPI:
         return self.updates
 
 
-def start(chat=222, user=222, text="/start", kind="private", update_id=4):
+CODE = "a"*16
+NOW = int(time.time())
+
+
+def start(chat=222, user=222, text="/pair " + CODE, kind="private", update_id=4, date=NOW):
     return {"update_id": update_id, "message": {
         "chat": {"id": chat, "type": kind},
-        "from": {"id": user, "is_bot": False}, "text": text}}
+        "from": {"id": user, "is_bot": False}, "text": text, "date": date}}
 
 
 class OnboardTests(unittest.TestCase):
@@ -39,25 +44,33 @@ class OnboardTests(unittest.TestCase):
     def tearDown(self):
         self.folder.cleanup()
 
-    def test_unique_private_start(self):
+    def test_unique_private_pair(self):
         api = FakeAPI([start(), start(update_id=5), start(kind="group", update_id=6)])
-        self.assertEqual(onboard.discover_private_start(api), (222, 222))
+        self.assertEqual(onboard.discover_private_pair(api, CODE, now=NOW), (222, 222))
         self.assertEqual(api.called[0][0], "getUpdates")
         self.assertEqual(api.called[0][1]["allowed_updates"], ["message"])
 
-    def test_group_or_non_start_ignored(self):
+    def test_group_or_non_pair_ignored(self):
         api = FakeAPI([start(kind="supergroup"), start(text="hello")])
-        with self.assertRaisesRegex(onboard.ProposalError, "no_private_start"):
-            onboard.discover_private_start(api)
+        with self.assertRaisesRegex(onboard.ProposalError, "pair_code_not_received"):
+            onboard.discover_private_pair(api, CODE, now=NOW)
 
     def test_multiple_private_owners_rejected(self):
         api = FakeAPI([start(), start(chat=333, user=333)])
-        with self.assertRaisesRegex(onboard.ProposalError, "ambiguous_private_starts"):
-            onboard.discover_private_start(api)
+        with self.assertRaisesRegex(onboard.ProposalError, "ambiguous_private_pairings"):
+            onboard.discover_private_pair(api, CODE, now=NOW)
 
     def test_sender_and_chat_not_assumed_same_identity(self):
         api = FakeAPI([start(chat=123, user=456)])
-        self.assertEqual(onboard.discover_private_start(api), (123, 456))
+        self.assertEqual(onboard.discover_private_pair(api, CODE, now=NOW), (123, 456))
+
+    def test_wrong_pair_code_and_expired_message_rejected(self):
+        api = FakeAPI([start(text="/pair " + "b"*16)])
+        with self.assertRaisesRegex(onboard.ProposalError, "pair_code_not_received"):
+            onboard.discover_private_pair(api, CODE, now=NOW)
+        api = FakeAPI([start(date=NOW-301)])
+        with self.assertRaisesRegex(onboard.ProposalError, "pair_code_not_received"):
+            onboard.discover_private_pair(api, CODE, now=NOW)
 
     def test_write_recipient_is_private_and_no_overwrite(self):
         path = self.base / "telegram-recipient.env"
@@ -104,6 +117,7 @@ class OnboardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         contents = installer.read_text()
         self.assertIn("TELEGRAM_TEST_MESSAGE_SENT", contents)
+        self.assertIn("--pair-code", contents)
         self.assertIn("systemctl enable --now hache-mining-agent-telegram.service", contents)
         self.assertNotIn("systemctl restart hache-mining-operator", contents)
         self.assertNotIn("sudoers", contents)
