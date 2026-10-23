@@ -147,6 +147,11 @@ def arm(db, *, order_id, server_id, daily_bid_usd, budget_usd,
     try:
         if db.execute("SELECT 1 FROM clore_cancel_leases WHERE phase='armed' LIMIT 1").fetchone():
             raise GuardError("existing_armed_order")
+        # A pending pre-create reservation also represents one possible rental.
+        # Do not register a second, independently approved obligation over it.
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='clore_preorders'").fetchone():
+            if db.execute("SELECT 1 FROM clore_preorders WHERE phase IN ('reserved','uncertain') LIMIT 1").fetchone():
+                raise GuardError("existing_preorder_obligation")
         db.execute(
             "INSERT INTO clore_cancel_leases "
             "(order_id,server_id,daily_bid_usd,budget_usd,creation_fee_usd,max_minutes,created_at,cutoff_at,phase) "
