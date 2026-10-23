@@ -50,7 +50,7 @@ foreach ([['code'=>5,'servers'=>[]],['code'=>0,'servers'=>'bad'],['code'=>0,'ser
 testClore($out['prl_gpu'][0]['gpu_count_verified']===1,'Count must match array and specs');
 testClore($out['prl_gpu'][0]['gpu_variant_verified']===false,'Never infer desktop from RTX name');
 testClore($out['prl_gpu'][0]['spot_floor_usd_hour']===0.03,'Spot USD day to hour');
-testClore($out['prl_gpu_spot_floor'][0]['id']===20,'Spot floor ranking');
+testClore(array_column($out['prl_gpu_spot_floor'],'id')===[15,20],'Spot floor ranking with stable id tie-break');
 testClore(!array_key_exists('background_job',$out['prl_gpu'][0]),'Never expose provider secrets');
 testClore(op_clore_spot_floor_hourly_usd(['price'=>['spot'=>['bitcoin'=>0.00001]]])===null,
     'No BTC to USD conversion');
