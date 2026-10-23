@@ -88,7 +88,14 @@ def prices(report):
             type(count) is not int or variant not in ("desktop", "laptop", "unverified") or
             type(rate) not in (int, float) or not 0 < rate <= 100):
             raise NotifyError("invalid_offer")
-        key = json.dumps([offer["provider"], name, variant, count], separators=(",", ":"))
+        family = offer.get("gpu_model_key")
+        # Family identity is supplied by the broker's normalized model
+        # classifier, not the host's free-form display name. Quotes lacking
+        # a usable model key can appear in daily summaries but cannot
+        # trigger apparent same-model improvement alerts.
+        if type(family) is not str or not 1 <= len(family) <= 85:
+            continue
+        key = json.dumps([offer["provider"], family, variant, count], separators=(",", ":"))
         result[key] = round(float(rate), 6)
     return result
 
