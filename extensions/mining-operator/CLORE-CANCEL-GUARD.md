@@ -1,3 +1,28 @@
+## Aprobación de propuesta exacta en Telegram (sin gasto)
+
+El bot **privado** existente puede recibir un contrato de propuesta Clore
+validado con `--prepare-clore-file /ruta/al/contrato.json`.
+La validación reutiliza `clore_preorder.validate_terms`: servidor exacto,
+GPU y variante verificadas, imagen Docker fijada por digest SHA256,
+moneda `USD-Blockchain`, puja diaria, comisión de creación,
+duración, presupuesto completo y cotización con máximo 120 s de antigüedad.
+
+El bot envía una propuesta con todos los términos y su huella SHA256.
+Los botones **Registrar aprobación (SIN alquilar)** y **Rechazar**
+comprueban usuario, chat privado, identificador exacto del mensaje,
+nonce irreversible, integridad SHA256, caducidad y replay del cursor.
+La decisión se conserva en SQLite incluso si Telegram pierde la
+confirmación del callback. No abre otro poller ni expone la API key.
+
+**Este consentimiento NO es un grant financiero ni concede acceso al
+`create_order`**. No configura nuevas GPUs ni genera claves comerciales.
+El almacenamiento de Telegram está separado del supervisor financiero:
+se requiere un protocolo autorizado, autenticado y de un solo uso
+para enlazarlos en una fase posterior. El bot no inicia rentas.
+
+Pruebas:
+`python3 -m unittest discover -s extensions/mining-operator -p test_clore_telegram_proposals.py -v`
+
 ## Recuperación independiente de órdenes inciertas (fase de seguridad)
 
 El watchdog ahora inspecciona en cada ciclo los prealquileres de SQLite con
