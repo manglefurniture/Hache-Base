@@ -50,6 +50,10 @@ def create(db, terms, tick):
     digest = hashlib.sha256(raw.encode()).hexdigest()
     db.execute("BEGIN IMMEDIATE")
     try:
+        # Expired offers cannot approve spending; release the UI slot only
+        # after their exact expiry, even across process restarts.
+        db.execute("""UPDATE clore_telegram_offers SET state='expired'
+           WHERE state IN ('pending','notified') AND expires_at<=?""",(tick,))
         if db.execute("""SELECT 1 FROM clore_telegram_offers
              WHERE state IN ('pending','notified') LIMIT 1""").fetchone():
             raise ValueError("existing_clore_offer")
