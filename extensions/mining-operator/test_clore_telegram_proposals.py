@@ -180,6 +180,17 @@ class CloreTelegramTests(unittest.TestCase):
             self.store.prepare_clore(terms(quote_observed_at=(
                 NOW+timedelta(seconds=10)).isoformat()),now=NOW)
 
+    def test_expired_proposal_slot_can_be_reused_without_reviving_previous(self):
+        old = self.store.prepare_clore(terms(),now=NOW)
+        fresh_now = NOW + timedelta(seconds=130)
+        fresh = terms(quote_observed_at=(fresh_now-timedelta(seconds=5)).isoformat())
+        new = self.store.prepare_clore(fresh,now=fresh_now)
+        self.assertNotEqual(old["proposal_id"],new["proposal_id"])
+        self.assertEqual(self.store.clore_status(old["proposal_id"])["state"],"expired")
+        self.assertEqual(self.store.clore_status(new["proposal_id"])["state"],"pending")
+        self.assertEqual(self.store.process_update(
+            callback(old["proposal_id"]),CHAT,USER,int(fresh_now.timestamp()))["state"],"ignored")
+
     def test_no_text_rent_command(self):
         self.ready()
         update={"update_id":1,"message":{"text":"/rent 456",
