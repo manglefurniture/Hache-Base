@@ -98,6 +98,7 @@ python3 -m unittest discover -s "$OS" -p test_clore_cancel_guard.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_preorder.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_pending_recovery.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_proposals.py -q
+python3 -m unittest discover -s "$BS" -p test_clore_telegram_proposals.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_menu.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
 runuser -u hache-miner -- test -r "$OS/broker.py" || error 'broker_release_inaccessible'
