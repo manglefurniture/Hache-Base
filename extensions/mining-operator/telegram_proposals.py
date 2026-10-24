@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 
 from telegram_menu import CALLBACKS as MENU_CALLBACKS, markup as menu_markup, reply as menu_reply
+import clore_telegram_proposals as clore_decisions
 
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
@@ -89,6 +90,7 @@ class ProposalStore:
           CREATE TABLE IF NOT EXISTS menu_outbox(
             update_id INTEGER PRIMARY KEY, action TEXT NOT NULL, created_at INTEGER NOT NULL);
         """)
+        clore_decisions.init(self.db)
 
     def close(self):
         self.db.close()
@@ -118,6 +120,23 @@ class ProposalStore:
             raise
         return {"proposal_id": nonce, "digest": digest(offer),
                 "expires_at": tick+300, "rental_permitted": False}
+
+    def prepare_clore(self, terms, now=None):
+        tick = int((now or datetime.now(timezone.utc)).timestamp())
+        try:
+            return clore_decisions.create(self.db, terms, tick)
+        except ValueError as exc:
+            raise ProposalError(str(exc)) from exc
+
+    def pending_clore(self, now=None):
+        return clore_decisions.pending(self.db, int(time.time() if now is None else now))
+
+    def mark_clore_notified(self, nonce, message_id, now=None):
+        return clore_decisions.mark_notified(
+            self.db, nonce, message_id, int(time.time() if now is None else now))
+
+    def clore_status(self, nonce):
+        return clore_decisions.status(self.db, nonce)
 
     def pending(self, now=None):
         tick = int(time.time() if now is None else now)
@@ -185,6 +204,15 @@ class ProposalStore:
                             # The owner might retry the button after Telegram dropped
                             # the first callback acknowledgement. Do not imply failure.
                             answer.update(state="already_" + row[3], proposal_id=nonce)
+                    elif re.fullmatch(r"clore-(accept|reject):([0-9a-f]{32})", data):
+                        exact = re.fullmatch(r"clore-(accept|reject):([0-9a-f]{32})", data)
+                        answer = clore_decisions.decide(
+                            self.db, exact.group(1), exact.group(2),
+                            msg.get("message_id"), tick)
+                        if answer["state"].startswith("clore_"):
+                            self.db.execute(
+                                "INSERT INTO audit(nonce,event,at) VALUES(?,?,?)",
+                                (exact.group(2), answer["state"], tick))
                     elif data in MENU_CALLBACKS:
                         # Private owner-only, static read-only actions. No free-form
                         # commands, commercial operations or cross-chat callbacks.
@@ -308,6 +336,23 @@ class TelegramChannel:
             sent += int(self.store.mark_notified(nonce, answer["message_id"], now))
         return sent
 
+    def send_clore_pending(self, now=None):
+        tick = int(time.time() if now is None else now)
+        sent = 0
+        for nonce, raw, expires, digest in self.store.pending_clore(tick):
+            remaining = expires - tick
+            if remaining < 60:
+                continue
+            receipt = self.api.call("sendMessage", {
+                "chat_id": self.chat_id,
+                "text": clore_decisions.message(json.loads(raw), digest, remaining),
+                "reply_markup": clore_decisions.keyboard(nonce),
+            })
+            if type(receipt) is not dict or type(receipt.get("message_id")) is not int or receipt["message_id"] <= 0:
+                raise ProposalError("invalid_clore_delivery_receipt")
+            sent += int(self.store.mark_clore_notified(nonce, receipt["message_id"], tick))
+        return sent
+
     def flush_menu_pending(self):
         delivered = 0
         for update_id, action in self.store.pending_menu():
@@ -350,6 +395,11 @@ class TelegramChannel:
                              else "Aceptacion ya registrada" if result["state"] == "already_acknowledged"
                              else "Rechazo ya registrado" if result["state"] == "already_rejected"
                              else "Consulta enviada" if result["state"] == "menu"
+                             else "Decisión Clore registrada (SIN alquilar)" if result["state"] == "clore_acknowledged"
+                             else "Propuesta Clore rechazada" if result["state"] == "clore_rejected"
+                             else "Decisión Clore ya registrada" if result["state"] == "already_clore_acknowledged"
+                             else "Rechazo Clore ya registrado" if result["state"] == "already_clore_rejected"
+                             else "Propuesta Clore inválida o caducada" if result["state"] in ("clore_expired","clore_invalid")
                              else "No autorizado o vencido")})
             results.append(result)
         return results
@@ -367,7 +417,9 @@ def main(argv=None):
     parser.add_argument("--database", required=True)
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--prepare-file")
+    modes.add_argument("--prepare-clore-file")
     modes.add_argument("--status")
+    modes.add_argument("--clore-status")
     modes.add_argument("--poll-once", action="store_true")
     modes.add_argument("--poll", action="store_true")
     parser.add_argument("--chat-id", type=int)
@@ -380,6 +432,13 @@ def main(argv=None):
             if path.stat().st_size > 8192:
                 raise ProposalError("oversized_input")
             answer = store.prepare(json.loads(path.read_text()))
+        elif args.prepare_clore_file:
+            path = Path(args.prepare_clore_file)
+            if path.stat().st_size > 8192:
+                raise ProposalError("oversized_input")
+            answer = store.prepare_clore(json.loads(path.read_text()))
+        elif args.clore_status:
+            answer = store.clore_status(args.clore_status)
         elif args.status:
             answer = store.status(args.status)
         else:
@@ -387,12 +446,13 @@ def main(argv=None):
                 raise ProposalError("recipient_required")
             channel = TelegramChannel(store, TelegramAPI(load_token()), args.chat_id, args.user_id)
             if args.poll_once:
-                answer = {"sent": channel.send_pending(), "callbacks": channel.poll_once(),
-                          "rental_permitted": False}
+                answer = {"sent": channel.send_pending() + channel.send_clore_pending(),
+                          "callbacks": channel.poll_once(), "rental_permitted": False}
             else:
                 while True:
                     try:
                         channel.send_pending()
+                        channel.send_clore_pending()
                         channel.poll_once()
                     except ProposalError:
                         time.sleep(5)
