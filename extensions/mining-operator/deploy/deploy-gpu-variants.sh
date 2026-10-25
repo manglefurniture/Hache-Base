@@ -97,6 +97,7 @@ python3 -m unittest discover -s "$OS" -p test_mining_advisor.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_cancel_guard.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_preorder.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_pending_recovery.py -q
+python3 -m unittest discover -s "$OS" -p test_clore_create_journal.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_proposals.py -q
 python3 -m unittest discover -s "$BS" -p test_clore_telegram_proposals.py -q
 python3 -m unittest discover -s "$BS" -p test_clore_consent_attestation.py -q
