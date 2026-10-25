@@ -1,3 +1,29 @@
+## Registro de intento único con consentimiento firmado — simulación
+
+Los módulos `clore_create_journal.py` y `clore_offline_simulation.py`
+permiten ensayar la secuencia completa sobre SQLite temporales y un
+proveedor falso **sin API comercial**. Antes de marcar una posible creación
+el journal exige una reserva viva, el watchdog sano y un consentimiento
+Ed25519 `verified_only` asociado exactamente al SHA256 del contrato.
+La transición `reserved -> uncertain` y el registro del intento ocurren
+en una única transacción; reintentos y procesos reiniciados no pueden
+repetir esa transición. Una respuesta perdida sigue siendo obligación
+incierta, incluso si el proveedor simulado no creó ninguna orden.
+
+El simulador genera claves efímeras solo durante pruebas; emite un
+comprobante desde la base de Telegram de prueba y lo verifica con
+clave pública en la base financiera separada. Ejercita respuestas
+normales, timeout antes de crear y timeout después de crear.
+Una orden que coincide queda `candidate_unbound`, no vinculada ni cancelada.
+
+**No hay grant financiero de gasto ni alquiler real.** La evidencia
+criptográfica demuestra consentimiento pero no garantiza exclusividad
+global de cuenta ni origen inequívoco del `order_id`. El simulador
+rechaza proveedores reales, no expone claves productivas ni modifica
+servicios. No se han instalado claves en el VPS.
+
+Regresión: `python3 -m unittest discover -s extensions/mining-operator -p test_clore_create_journal.py -v`
+
 ## Consentimiento Ed25519 entre usuarios aislados (solo pruebas)
 
 Se incorpora `clore_consent_attestation.py` para emitir y verificar un
