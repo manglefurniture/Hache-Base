@@ -69,8 +69,8 @@ class JournalTests(unittest.TestCase):
     def test_prepost_journal_atomic_and_single_use_after_restart(self):
         rid,digest=self.staged()
         self.assertEqual(status(self.db,rid)["status"],"create_submitted_once")
-        self.assertEqual(self.db.execute(
-            "SELECT phase,outcome FROM clore_preorders").fetchone(),
+        self.assertEqual(tuple(self.db.execute(
+            "SELECT phase,outcome FROM clore_preorders").fetchone()),
             ("uncertain","create_submitted_once"))
         reopened=sqlite3.connect(self.file,isolation_level=None)
         with self.assertRaisesRegex(GuardError,"create_already_staged_or_reservation_invalid"):
@@ -88,6 +88,7 @@ class JournalTests(unittest.TestCase):
                        now=NOW,timer_check=True)
         self.assertEqual(status(self.db,rid)["status"],"not_staged")
         digest=self.db.execute("SELECT terms_sha256 FROM clore_preorders").fetchone()[0]
+        self.db.execute("UPDATE clore_cancel_heartbeat SET completed_at=?",(NOW+121,))
         with self.assertRaisesRegex(GuardError,"reservation_window_closed"):
             stage_once(self.db,reservation_id=rid,expected_digest=digest,
                        now=NOW+121,timer_check=True)
@@ -109,8 +110,8 @@ class JournalTests(unittest.TestCase):
         record_unknown(self.db,reservation_id=rid,now=NOW+1)
         record_unknown(self.db,reservation_id=rid,now=NOW+2)
         self.assertEqual(status(self.db,rid)["status"],"create_response_unknown")
-        self.assertEqual(self.db.execute(
-            "SELECT phase,outcome FROM clore_preorders").fetchone(),
+        self.assertEqual(tuple(self.db.execute(
+            "SELECT phase,outcome FROM clore_preorders").fetchone()),
             ("uncertain","create_response_unknown"))
         with self.assertRaisesRegex(GuardError,"possible_unprotected_clore_order"):
             tick(self.db,self.fake,now=NOW+3,delay=lambda _:None)
@@ -126,8 +127,8 @@ class JournalTests(unittest.TestCase):
         self.assertEqual(self.fake.create_count,1)
         self.assertEqual(self.db.execute(
             "SELECT COUNT(*) FROM clore_cancel_leases").fetchone()[0],0)
-        self.assertEqual(self.db.execute(
-            "SELECT phase,outcome FROM clore_preorders").fetchone(),
+        self.assertEqual(tuple(self.db.execute(
+            "SELECT phase,outcome FROM clore_preorders").fetchone()),
             ("uncertain","create_response_unknown"))
         with self.assertRaisesRegex(GuardError,"existing_preorder_obligation"):
             simulate_once(telegram_db=self.telegram.db,guard_db=self.db,
