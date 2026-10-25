@@ -1,3 +1,23 @@
+## Consentimiento Ed25519 entre usuarios aislados (solo pruebas)
+
+Se incorpora `clore_consent_attestation.py` para emitir y verificar un
+comprobante firmado de aceptación. La clave privada corresponde
+exclusivamente al servicio Telegram; el sistema financiero debe recibir
+solo una clave pública previamente validada. No se han creado, instalado
+ni compartido claves en el VPS. Los tests generan claves efímeras.
+
+El comprobante incluye propuesta, SHA256 de términos, mensaje original,
+caducidad, audiencia y firma. El receptor verifica autenticidad, vigencia,
+coincidencia con la reserva financiera viva y heartbeat del watchdog.
+Su nonce se registra una sola vez en SQLite y los replays son rechazados.
+
+**No es una autorización de gasto.** El registro conserva
+`state=verified_only`, `rental_permitted=false` y nunca llama a Clore.
+Falta protocolo de entrega confiable, custodia/rotación de claves y una
+política de riesgo independiente antes de emitir grants financieros.
+
+Pruebas: `python3 -m unittest discover -s extensions/mining-operator -p test_clore_consent_attestation.py -v`
+
 ## Aprobación de propuesta exacta en Telegram (sin gasto)
 
 El bot **privado** existente puede recibir un contrato de propuesta Clore
