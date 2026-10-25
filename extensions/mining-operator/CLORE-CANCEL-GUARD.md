@@ -1,3 +1,37 @@
+## Registro duradero ANTES de cualquier intento de alquiler — simulación
+
+La fase nueva agrega `clore_create_journal.py` y `clore_offline_simulation.py`.
+
+El registro de riesgo opera sobre la SQLite del watchdog, pero **no contiene
+la API comercial, token, socket de broker, permiso para gastar ni un comando de
+alquiler**. Su función `stage_once` exige la misma reserva y huella SHA256,
+el heartbeat reciente y el temporizador financiero activo. Dentro de **una
+sola transacción SQLite**, registra un intento único y convierte
+`reserved/create_not_enabled` en
+`uncertain/create_submitted_once`, antes de que cualquier ejecutor futuro
+pudiera realizar un POST. No permite reintentar aunque se reinicie el proceso.
+Una respuesta perdida queda como `create_response_unknown` y no desbloquea
+la exposición financiera ni desactiva la detección del watchdog.
+
+El simulador prueba todo el recorrido, desde una decisión privada de Telegram
+hasta el registro previo, respuesta sintética (éxito, timeout antes de crear
+o timeout después de crear), conciliación y alarma del watchdog. Usa una
+**clase de proveedor que solo modifica memoria local** y rechaza cualquier
+otro tipo de proveedor. Incluso cuando reconoce una orden sintética exacta,
+esta permanece `candidate_unbound`: nunca crea un lease financiero ni
+envía una cancelación, porque un ID observado no demuestra por sí solo
+la autoría de la orden. Las bases del test son temporales.
+
+**Faltan controles para producción:** exportación autenticada y verificable
+del consentimiento entre usuarios aislados, grant financiero limitado de uso
+único, exclusividad de cuenta/proveedor, evidencia inequívoca de la respuesta
+`create_order`, vinculación atómica de `order_id` al watchdog y alerta
+independiente si el proceso falla. Este cambio no habilita operaciones
+comerciales ni amplía permisos. `rental_permitted=false` siempre.
+
+Prueba:
+`python3 -m unittest discover -s extensions/mining-operator -p test_clore_create_journal.py -v`
+
 ## Aprobación de propuesta exacta en Telegram (sin gasto)
 
 El bot **privado** existente puede recibir un contrato de propuesta Clore
