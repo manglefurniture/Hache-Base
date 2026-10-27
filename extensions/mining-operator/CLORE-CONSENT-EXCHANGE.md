@@ -11,8 +11,9 @@ No crea un grant financiero, no habilita rental_permitted, no llama a Clore para
 
 1. Autorizar de manera independiente la creación y custodia de una identidad Ed25519 de Telegram. Este PR no instala llaves en producción.
 2. Crear las rutas de claves privadas/públicas con propietario, permisos y auditoría adecuados sin compartir bases de datos ni claves privadas.
-3. Confirmar que el watchdog Clore independiente tiene timer activo y heartbeat reciente; crear previamente una reserva Clore exacta en la cuenta financiera con inventario autenticado completo.
-4. Mientras nonce, cotización, reserva y firma sigan vigentes, ejecutar ambas partes mediante pipe administrado, sin escribir el recibo ni la clave en logs. Solo el UID efectivo hache-telegram puede exportar; solo hache-miner puede importar. La clave pública debe pertenecer a root.
+3. Con el usuario hache-miner ejecutar una sola vez la migración idempotente del ledger de consentimiento: python3 /opt/hache-mining-operator/current/clore_consent_exchange.py init-ledger --db /var/lib/hache-mining-operator/clore-cancel.sqlite3. Esta operación solo crea la tabla local, no implica gasto.
+4. Confirmar que el watchdog Clore independiente tiene timer activo y heartbeat reciente; crear previamente una reserva Clore exacta en la cuenta financiera con inventario autenticado completo.
+5. Mientras nonce, cotización, reserva y firma sigan vigentes, ejecutar ambas partes mediante pipe administrado, sin escribir el recibo ni la clave en logs. Solo el UID efectivo hache-telegram puede exportar; solo hache-miner puede importar. La clave pública debe pertenecer a root.
 
 Ejemplo conceptual, NO ejecutar sin instalación/autorización administrativa:
 
