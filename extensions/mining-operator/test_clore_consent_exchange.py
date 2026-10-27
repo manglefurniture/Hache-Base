@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.serialization import (
 from clore_cancel_guard import db_open
 from clore_consent_attestation import init_ledger_schema
 from clore_consent_exchange import (
-    ExchangeError, _checked_regular, _read_key, export_json, import_json
+    ExchangeError, _checked_regular, _read_key, export_json, import_json, migrate_ledger
 )
 from clore_preorder import reserve
 from telegram_proposals import ProposalStore
@@ -93,6 +93,18 @@ class ExchangeTests(unittest.TestCase):
             "SELECT COUNT(*) FROM clore_cancel_leases").fetchone()[0], 0)
         self.assertEqual(self.finance.execute(
             "SELECT phase FROM clore_preorders").fetchone()[0], "reserved")
+
+    def test_explicit_finance_migration_is_required_and_idempotent(self):
+        self.accept()
+        wire = self.export()
+        self.finance.execute("DROP TABLE clore_consent_receipts")
+        with self.assertRaisesRegex(Exception, "consent_ledger_schema_missing"):
+            self.imported(wire)
+        self.assertEqual(migrate_ledger(self.finance),
+                         {"schema_ready": True, "rental_permitted": False})
+        self.assertEqual(migrate_ledger(self.finance),
+                         {"schema_ready": True, "rental_permitted": False})
+        self.assertTrue(self.imported(wire)["consent_recorded"])
 
     def test_unapproved_proposal_cannot_be_exported(self):
         with self.assertRaises(Exception):
