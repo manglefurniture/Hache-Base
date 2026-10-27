@@ -6,6 +6,7 @@ Only an administrator may opt an exact armed order into this monitor. No rental,
 bidding, arbitrary command execution, or provider cancellation occurs here.
 """
 import json
+from http.client import HTTPException
 import re
 import sqlite3
 import time
@@ -79,7 +80,7 @@ class KryptexAPI:
                 if getattr(response, "status", 200) != 200:
                     raise PoolError("pool_unavailable")
                 payload = response.read(262145)
-        except (HTTPError, URLError, OSError, TimeoutError):
+        except (HTTPError, URLError, OSError, TimeoutError, HTTPException):
             raise PoolError("pool_unavailable") from None
         if len(payload) > 262144:
             raise PoolError("pool_oversize")
