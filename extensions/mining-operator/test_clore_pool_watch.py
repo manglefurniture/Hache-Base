@@ -1,6 +1,7 @@
 """Offline Clore worker liveness + financial cancellation integration tests."""
 import io
 import json
+from http.client import IncompleteRead
 from pathlib import Path
 import tempfile
 import unittest
@@ -123,6 +124,19 @@ class IndependentPoolTests(unittest.TestCase):
         self.db.execute("UPDATE clore_pool_monitors SET server_id=9 WHERE order_id=777")
         self.assertEqual(check(self.db,self.lease,now=1005,pool=FakePool(1004)),
                          "pool_monitor_identity_mismatch")
+
+    def test_truncated_pool_read_does_not_prevent_financial_cutoff(self):
+        self.enable()
+        class TruncatedResponse:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): return None
+            def read(self, n): raise IncompleteRead(b'{', 10)
+        pool = KryptexAPI(transport=lambda *a, **kw: TruncatedResponse())
+        provider, result = self.tick(pool, now=5000)
+        self.assertEqual(result['status'], 'cancel_submitted_unverified')
+        self.assertEqual(provider.cancels, [777])
+        self.assertEqual(self.db.execute('SELECT phase FROM clore_cancel_leases').fetchone()[0], 'armed')
 
     def test_untrusted_pool_clock_never_extends_recovery(self):
         self.enable()
