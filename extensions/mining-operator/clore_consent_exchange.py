@@ -18,7 +18,7 @@ import subprocess
 import sys
 from urllib.parse import quote
 
-from clore_consent_attestation import issue_receipt, record_verified_consent
+from clore_consent_attestation import issue_receipt, record_verified_consent, init_ledger_schema
 from clore_cancel_guard import GuardError
 
 MAX_RECEIPT_BYTES = 4096
@@ -54,6 +54,12 @@ def import_json(finance_db, *, wire, trusted_public_key_raw, reservation_id,
         raise ExchangeError("unexpected_financial_permission")
     return {"consent_recorded": True, "rental_permitted": False,
             "provider_mutation": False}
+
+
+def migrate_ledger(finance_db):
+    """Explicit idempotent finance-only schema migration; no provider calls."""
+    init_ledger_schema(finance_db)
+    return {"schema_ready": True, "rental_permitted": False}
 
 
 def _account(name):
@@ -112,6 +118,8 @@ def main(argv=None):
     exp.add_argument("--db", required=True)
     exp.add_argument("--nonce", required=True)
     exp.add_argument("--private-key", required=True)
+    mig = subs.add_parser("init-ledger", help="Run once as hache-miner before import")
+    mig.add_argument("--db", required=True)
     imp = subs.add_parser("import", help="Run as hache-miner; JSON receipt on stdin")
     imp.add_argument("--db", required=True)
     imp.add_argument("--reservation-id", required=True)
@@ -124,6 +132,11 @@ def main(argv=None):
             with closing(_open_db(args.db, uid=os.geteuid(), readonly=True)) as db:
                 result = export_json(db, nonce=args.nonce, private_key_raw=key)
             print(result)
+        elif args.action == "init-ledger":
+            _account("hache-miner")
+            with closing(_open_db(args.db, uid=os.geteuid(), readonly=False)) as db:
+                result = migrate_ledger(db)
+            print(json.dumps(result, sort_keys=True))
         else:
             _account("hache-miner")
             if not re.fullmatch(r"[0-9a-f]{32}", args.reservation_id):
