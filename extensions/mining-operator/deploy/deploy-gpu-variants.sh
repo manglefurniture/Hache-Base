@@ -95,6 +95,7 @@ php "$OS/test_clore_market.php"
 php "$OS/test_provider.php"
 python3 -m unittest discover -s "$OS" -p test_mining_advisor.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_cancel_guard.py -q
+python3 -m unittest discover -s "$OS" -p test_clore_pool_watch.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_preorder.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_pending_recovery.py -q
 python3 -m unittest discover -s "$OS" -p test_clore_create_journal.py -q

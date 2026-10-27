@@ -273,3 +273,51 @@ timer/heartbeat. Todas usan objetos simulados, no API real.
 `armed`. Mantener supervisor y credencial protegidos hasta confirmación
 `expired: true`. Si no hay leases activos, desactivar el timer y restaurar
 release anterior desde GitHub.
+
+## Corte independiente por shares de Kryptex (implementación opt-in)
+
+La API pública documentada de Kryptex `GET /prl/api/v3/miner/workers/{address}`
+expone `worker` y `last_share` (segundos Unix). El supervisor del VPS consulta
+por HTTPS el worker exacto `CLORE-<order_id>`, sin depender del contenedor.
+No se confía en `TH/s` publicitado ni en un contador inmóvil como prueba de
+producción. Se comprobó empíricamente la presencia de los campos para la
+billetera oficial el 27/10/2026; la latencia de publicación del pool NO está
+garantizada.
+
+- Para una orden financiera **ya armada y autorizada**, un administrador root
+  puede registrar voluntariamente la observación mediante:
+  `python3 /opt/hache-mining-operator/current/clore_cancel_guard.py pool-enroll --order-id ID --wallet-file /etc/hache-miner/secrets/prl_clore_wallet`.
+  El archivo debe ser regular, root:root 0600, no symlink, y contener solo la
+  billetera pública correcta; no poner la billetera en argumentos ni logs.
+- La inscripción es única, vinculada a `order_id` y `server_id` del ledger
+  financiero, antes de cumplir cinco minutos de facturación. Solo se vigila
+  un lease previamente protegido. Órdenes antiguas sin inscripción conservan
+  su watchdog financiero original, sin cancelaciones por suposición.
+- La gracia inicial se mide desde `created_at` real de Clore, **no** desde
+  la inscripción. Sin un share reconocido al segundo 300, el timer marca
+  la renta para cancelar. Tras una share válida, a los 300 segundos sin
+  otra el timer intenta cancelar la misma orden. Con intervalo de timer
+  de 30 segundos, el retraso real puede superar el umbral por jitter/API.
+- Errores HTTP, 429, datos inconsistentes, datos futuros o respuestas
+  incompletas **nunca renuevan** la última share conocida. El supervisor
+  continúa conciliando el estado real de Clore y conserva la obligación
+  hasta `expired=true`. El único POST es `cancel_order` para el ID
+  financiero exacto (nunca para un candidato ambiguo).
+- La piscina puede tardar en publicar shares o presentar periodos de baja
+  frecuencia: este modo es conservador y puede cancelar una orden aún activa.
+  Ajustes futuros requieren pruebas de latencia y aprobación. No es un
+  límite monetario impuesto por Clore ni garantiza que la API responda.
+- `status` muestra solo el ID, worker, época de última share, comprobación
+  y resultado; nunca la dirección de la billetera.
+
+**Condiciones antes de habilitar nuevas rentas:** el flujo `create_order`
+sigue deshabilitado; falta resolver el pre-arm exacto y la cuenta exclusiva,
+integrar inscripción automática y aprovisionamiento ligado a la misma orden,
+confirmar la imagen/worker, y cerrar alertas Telegram externas, reconciliación,
+presupuesto total/post-stop y una validación supervisada sin gasto antes de
+la prueba real expresamente autorizada. No usar el timer verde en reposo
+como prueba de cancelación real. No activar la modalidad `pool-enroll`
+sobre una renta ajena o sin autorización financiera explícita.
+
+Pruebas sin red ni compras:
+`python3 -m unittest discover -s extensions/mining-operator -p test_clore_pool_watch.py -v`.
