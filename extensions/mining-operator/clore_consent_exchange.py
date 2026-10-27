@@ -6,6 +6,7 @@ owns the trusted public key and its separate financial ledger. Neither side
 can read the other's database or key. A verified receipt is NOT a grant.
 """
 import argparse
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ import sys
 from urllib.parse import quote
 
 from clore_consent_attestation import issue_receipt, record_verified_consent
+from clore_cancel_guard import GuardError
 
 MAX_RECEIPT_BYTES = 4096
 FINANCE_TIMER = "hache-mining-operator-clore-cancel.timer"
@@ -94,7 +96,7 @@ def _read_key(path, *, owner_uid, private):
 
 def _open_db(path, *, uid, readonly):
     path = Path(path)
-    fd = _checked_regular(path, owner_uid=uid)
+    fd = _checked_regular(path, owner_uid=uid, private=True)
     os.close(fd)
     mode = "ro" if readonly else "rw"
     uri = "file:" + quote(str(path.resolve()), safe="/") + "?mode=" + mode
@@ -119,7 +121,7 @@ def main(argv=None):
         if args.action == "export":
             _account("hache-telegram")
             key = _read_key(args.private_key, owner_uid=os.geteuid(), private=True)
-            with _open_db(args.db, uid=os.geteuid(), readonly=True) as db:
+            with closing(_open_db(args.db, uid=os.geteuid(), readonly=True)) as db:
                 result = export_json(db, nonce=args.nonce, private_key_raw=key)
             print(result)
         else:
@@ -131,12 +133,12 @@ def main(argv=None):
             timer_ok = subprocess.run(
                 ["systemctl", "is-active", "--quiet", FINANCE_TIMER],
                 capture_output=True, check=False, timeout=5).returncode == 0
-            with _open_db(args.db, uid=os.geteuid(), readonly=False) as db:
+            with closing(_open_db(args.db, uid=os.geteuid(), readonly=False)) as db:
                 result = import_json(
                     db, wire=wire, trusted_public_key_raw=key,
                     reservation_id=args.reservation_id, timer_check=timer_ok)
             print(json.dumps(result, sort_keys=True))
-    except (OSError, ValueError, sqlite3.Error, subprocess.TimeoutExpired) as exc:
+    except (OSError, ValueError, GuardError, sqlite3.Error, subprocess.TimeoutExpired) as exc:
         # Return error classes, never key contents, tokens or signed payloads.
         print("CLORE_CONSENT_EXCHANGE_DENIED=" + type(exc).__name__, file=sys.stderr)
         return 1
