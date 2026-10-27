@@ -64,6 +64,8 @@ def db_open(path):
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=5000")
     connection.executescript(SCHEMA)
+    from clore_pool_watch import SCHEMA as POOL_SCHEMA
+    connection.executescript(POOL_SCHEMA)
     return connection
 
 def verify_billing_order(order, *, order_id, server_id, daily_bid_usd, creation_fee_usd, created_at):
@@ -246,7 +248,7 @@ def record(db, order_id, now, outcome, *, closed=False, attempted=False):
         "confirmed_at=CASE WHEN ? THEN ? ELSE confirmed_at END WHERE order_id=?",
         (outcome, int(attempted), now, int(closed), int(closed), now, order_id))
 
-def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
+def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds), pool=None):
     """A successful POST never closes a lease; only provider confirmed expired does."""
     now = int(time.time()) if now is None else int(now)
     leases = db.execute("SELECT * FROM clore_cancel_leases WHERE phase='armed' ORDER BY cutoff_at").fetchall()
@@ -265,6 +267,11 @@ def tick(db, api, *, now=None, delay=lambda seconds: time.sleep(seconds)):
     row = leases[0]
     oid = row["order_id"]
     due = now >= row["cutoff_at"]
+    from clore_pool_watch import check as pool_check
+    pool_fault = pool_check(db, row, now=now, pool=pool)
+    if pool_fault:
+        due = True
+        record(db, oid, now, pool_fault)
     try:
         orders = api.orders()
         heartbeat(db, now)
@@ -354,6 +361,9 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     sub.add_parser("tick")
     sub.add_parser("status")
+    watch = sub.add_parser("pool-enroll")
+    watch.add_argument("--order-id", type=int, required=True)
+    watch.add_argument("--wallet-file", required=True)
     ar = sub.add_parser("arm")
     ar.add_argument("--approved", action="store_true", help="Owner has approved exact spending and order")
     ar.add_argument("--order-id", type=int, required=True)
@@ -367,9 +377,25 @@ def main():
     try:
         if args.action == "arm" and (os.geteuid() != 0 or not args.approved):
             raise GuardError("root_and_exact_owner_approval_required")
+        if args.action == "pool-enroll" and os.geteuid() != 0:
+            raise GuardError("root_required_for_pool_enrollment")
         db = db_open(args.db)
         try:
-            if args.action == "arm":
+            if args.action == "pool-enroll":
+                from clore_pool_watch import enroll, valid_wallet, PoolError
+                path = Path(args.wallet_file)
+                if not str(path).startswith("/etc/hache-miner/") or ".." in path.parts:
+                    raise GuardError("untrusted_wallet_file_path")
+                try:
+                    stat = path.lstat()
+                    if (not path.is_file() or path.is_symlink() or stat.st_uid != 0 or
+                            (stat.st_mode & 0o777) != 0o600):
+                        raise GuardError("wallet_file_not_root_0600")
+                    wallet = valid_wallet(path.read_text().strip())
+                    output = enroll(db, order_id=args.order_id, wallet=wallet)
+                except (OSError, PoolError) as exc:
+                    raise GuardError("pool_enrollment_failed") from None
+            elif args.action == "arm":
                 # Authenticated provider identity/currency is a required
                 # enrollment gate, never trust a manually asserted USD quote.
                 provider_orders = CloreAPI(credential()).orders()
@@ -400,6 +426,9 @@ def main():
                     "FROM clore_cancel_leases ORDER BY cutoff_at DESC LIMIT 10")],
                     "unresolved_preorders": len(outstanding),
                     "pending_recovery": evidence,
+                    "pool_monitors": [dict(x) for x in db.execute(
+                        "SELECT order_id,worker,last_share_at,last_checked_at,last_outcome "
+                        "FROM clore_pool_monitors ORDER BY order_id DESC LIMIT 10")],
                     "rental_permitted": False}
         finally:
             db.close()
