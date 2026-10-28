@@ -1,0 +1,32 @@
+[Unit]
+Description=Read-only authenticated Clore Spot quote server
+After=network-online.target
+Wants=network-online.target
+Requires=hache-mining-operator-clore-spot-quote.socket
+
+[Service]
+Type=simple
+User=hache-miner
+Group=hache-miner
+Sockets=hache-mining-operator-clore-spot-quote.socket
+WorkingDirectory=/opt/hache-mining-operator/current
+LoadCredential=clore_key:/etc/hache-miner/clore-api-key
+ExecStart=/usr/bin/python3 /opt/hache-mining-operator/current/clore_spot_quote_service.py
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryMax=96M
+TasksMax=16
+LimitCORE=0
+Restart=on-failure
+RestartSec=5

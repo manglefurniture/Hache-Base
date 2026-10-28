@@ -184,6 +184,10 @@ CREATE TABLE IF NOT EXISTS gpu_search_pages(
  PRIMARY KEY(nonce,page,message_id),
  FOREIGN KEY(nonce) REFERENCES gpu_search_snapshots(nonce)
 );
+CREATE TABLE IF NOT EXISTS gpu_selection_messages(
+ nonce TEXT PRIMARY KEY, selected_id INTEGER NOT NULL, message_id INTEGER NOT NULL,
+ FOREIGN KEY(nonce) REFERENCES gpu_search_snapshots(nonce)
+);
 """
 
 def init(db):
@@ -281,3 +285,28 @@ def selected_reply(db, nonce, tick):
             "Se registró tu selección, sin puja ni alquiler.\n"
             "<b>Falta:</b> confirmar precio ejecutable, rentabilidad neta, "
             "presupuesto máximo, consentimiento financiero y watchdog antes de ofertar.")
+
+
+def record_selection_message(db, nonce, message_id, tick):
+    snap = get(db, nonce, tick)
+    if type(message_id) is not int or not 0 < message_id < 10**15:
+        raise SearchError("invalid_selection_receipt")
+    selected_id = snap["selected_id"]
+    if type(selected_id) is not int:
+        raise SearchError("selection_missing")
+    # First successful Telegram delivery binds the action; retries cannot move it.
+    db.execute("INSERT OR IGNORE INTO gpu_selection_messages VALUES(?,?,?)",
+               (nonce, selected_id, message_id))
+
+def verify_quote_callback(db, nonce, server_id, message_id, tick):
+    snap = get(db, nonce, tick)
+    if type(server_id) is not int or server_id != snap["selected_id"]:
+        raise SearchError("mismatched_quote_server")
+    if type(message_id) is not int:
+        raise SearchError("invalid_quote_message")
+    row = db.execute(
+        "SELECT selected_id FROM gpu_selection_messages "
+        "WHERE nonce=? AND message_id=?", (nonce, message_id)).fetchone()
+    if row is None or row[0] != server_id:
+        raise SearchError("quote_not_bound_to_message")
+    return server_id
