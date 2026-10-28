@@ -18,6 +18,7 @@ import urllib.request
 
 from telegram_menu import CALLBACKS as MENU_CALLBACKS, markup as menu_markup, reply as menu_reply
 import clore_telegram_proposals as clore_decisions
+import telegram_clore_search as gpu_search
 
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
@@ -91,6 +92,7 @@ class ProposalStore:
             update_id INTEGER PRIMARY KEY, action TEXT NOT NULL, created_at INTEGER NOT NULL);
         """)
         clore_decisions.init(self.db)
+        gpu_search.init(self.db)
 
     def close(self):
         self.db.close()
@@ -214,9 +216,31 @@ class ProposalStore:
                                 "INSERT INTO audit(nonce,event,at) VALUES(?,?,?)",
                                 (exact.group(2), answer["state"], tick))
                     elif data in MENU_CALLBACKS:
-                        # Private owner-only, static read-only actions. No free-form
-                        # commands, commercial operations or cross-chat callbacks.
+                        # Existing static menu callbacks remain read-only.
                         answer.update(state="menu", action=data.split(":", 1)[1])
+                    elif re.fullmatch(r"gpu-page:[a-f0-9]{16}:[0-9]{1,3}", data):
+                        _, nonce, page_no = data.split(":")
+                        page_message = msg.get("message_id")
+                        try:
+                            gpu_search.page(self.db, nonce, int(page_no), tick)
+                            bound = self.db.execute(
+                                "SELECT 1 FROM gpu_search_pages WHERE nonce=? AND message_id=?",
+                                (nonce, page_message)).fetchone()
+                            if not bound:
+                                raise gpu_search.SearchError("unbound_page_message")
+                            answer.update(state="menu", action=data)
+                        except gpu_search.SearchError:
+                            answer.update(state="gpu_invalid")
+                    elif re.fullmatch(r"gpu-pick:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
+                        _, nonce, offer_id = data.split(":")
+                        try:
+                            if gpu_search.select(self.db, nonce, int(offer_id),
+                                                 msg.get("message_id"), tick):
+                                answer.update(state="gpu_selected", nonce=nonce)
+                            else:
+                                answer.update(state="gpu_already_selected")
+                        except gpu_search.SearchError:
+                            answer.update(state="gpu_invalid")
             message = update.get("message")
             if type(message) is dict:
                 origin, chat = message.get("from"), message.get("chat")
@@ -230,11 +254,16 @@ class ProposalStore:
                     command = message.get("text")
                     if type(command) is str and command in commands:
                         answer.update(state="menu", action=commands[command])
-            if answer["state"] == "menu":
-                # Queue and cursor commit atomically. On Telegram failure the
-                # response survives restarts and is retried, never lost.
+                    elif type(command) is str and (command == "/gpu" or command.startswith("/gpu ")):
+                        requested = gpu_search.parse_command(command)
+                        if requested is not None:
+                            answer.update(state="menu", action=gpu_search.search_action(requested))
+            if answer["state"] in ("menu", "gpu_selected"):
+                # Cursor and response outbox commit atomically.
+                action = (answer["action"] if answer["state"] == "menu"
+                          else "gpu-selected:" + answer["nonce"])
                 self.db.execute("""INSERT OR IGNORE INTO menu_outbox(update_id,action,created_at)
-                     VALUES(?,?,?)""", (update_id, answer["action"], tick))
+                     VALUES(?,?,?)""", (update_id, action, tick))
             self.db.execute("UPDATE telegram_cursor SET update_id=? WHERE singleton=1", (update_id,))
             self.db.commit()
             return answer
@@ -356,15 +385,57 @@ class TelegramChannel:
     def flush_menu_pending(self):
         delivered = 0
         for update_id, action in self.store.pending_menu():
+            now = int(time.time())
+            payload = None
+            receipt_binding = None
+            if action == "gpu-help":
+                payload = {"text": ("Buscar GPUs Spot: /gpu 5090, /gpu 5090 laptop, "
+                                    "/gpu 4070 ti super escritorio x2. "
+                                    "Solo consulta y selección; no ejecuta pujas."),
+                           "parse_mode": "HTML"}
+            elif action.startswith("gpu-search:"):
+                try:
+                    q = gpu_search.parse_action(action)
+                    candidates = gpu_search.fetch()
+                    matches, total = gpu_search.offers(candidates, q)
+                    if not matches:
+                        payload = {"text": "No se encontraron ofertas Spot de esa GPU y cantidad. "
+                                           "Prueba otro filtro. No se realizó ninguna puja.",
+                                   "parse_mode": "HTML"}
+                    else:
+                        nonce = gpu_search.create(self.store.db, q, matches, total, now)
+                        payload = gpu_search.page_reply(self.store.db, nonce, 0, now)
+                        receipt_binding = (nonce, 0)
+                except gpu_search.SearchError:
+                    payload = {"text": "Clore no ofrece una respuesta válida ahora. "
+                                       "Vuelve a consultar /gpu más tarde. No se gastó nada.",
+                               "parse_mode": "HTML"}
+            elif action.startswith("gpu-page:"):
+                try:
+                    _, nonce, n = action.split(":")
+                    page_no = int(n)
+                    payload = gpu_search.page_reply(self.store.db, nonce, page_no, now)
+                    receipt_binding = (nonce, page_no)
+                except (gpu_search.SearchError, ValueError):
+                    payload = {"text": "La consulta Spot caducó. Repite /gpu para obtener precios nuevos.",
+                               "parse_mode": "HTML"}
+            elif action.startswith("gpu-selected:"):
+                try:
+                    payload = {"text": gpu_search.selected_reply(self.store.db, action.split(":")[1], now),
+                               "parse_mode": "HTML"}
+                except gpu_search.SearchError:
+                    payload = {"text": "Selección caducada; repite /gpu. No se realizó ninguna puja.",
+                               "parse_mode": "HTML"}
+            else:
+                payload = {"text": menu_reply(action), "parse_mode": "HTML",
+                           "reply_markup": menu_markup()}
             result = self.api.call("sendMessage", {
-                "chat_id": self.chat_id,
-                "text": menu_reply(action),
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-                "reply_markup": menu_markup(),
+                "chat_id": self.chat_id, "disable_web_page_preview": True, **payload,
             })
             if type(result) is not dict or type(result.get("message_id")) is not int or result["message_id"] <= 0:
                 raise ProposalError("invalid_menu_delivery_receipt")
+            if receipt_binding:
+                gpu_search.record_page(self.store.db, *receipt_binding, result["message_id"], now)
             self.store.mark_menu_sent(update_id)
             delivered += 1
         return delivered
@@ -382,9 +453,8 @@ class TelegramChannel:
         results = []
         for update in updates:
             result = self.store.process_update(update, self.chat_id, self.user_id, now)
-            if result["state"] == "menu":
-                # The read-only response is already queued in SQLite; after a
-                # network error the next polling cycle retries the same request.
+            if result["state"] in ("menu", "gpu_selected"):
+                # The read-only response survives restarts and send failures.
                 self.flush_menu_pending()
             callback = update.get("callback_query") if type(update) is dict else None
             if type(callback) is dict and type(callback.get("id")) is str:
@@ -395,6 +465,9 @@ class TelegramChannel:
                              else "Aceptacion ya registrada" if result["state"] == "already_acknowledged"
                              else "Rechazo ya registrado" if result["state"] == "already_rejected"
                              else "Consulta enviada" if result["state"] == "menu"
+                             else "Oferta seleccionada, SIN pujar" if result["state"] == "gpu_selected"
+                             else "Ya hay una selección" if result["state"] == "gpu_already_selected"
+                             else "Oferta vencida o no vinculada" if result["state"] == "gpu_invalid"
                              else "Decisión Clore registrada (SIN alquilar)" if result["state"] == "clore_acknowledged"
                              else "Propuesta Clore rechazada" if result["state"] == "clore_rejected"
                              else "Decisión Clore ya registrada" if result["state"] == "already_clore_acknowledged"

@@ -104,9 +104,11 @@ python3 -m unittest discover -s "$BS" -p test_clore_telegram_proposals.py -q
 python3 -m unittest discover -s "$BS" -p test_clore_consent_attestation.py -q
 python3 -m unittest discover -s "$BS" -p test_clore_consent_exchange.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_menu.py -q
+python3 -m unittest discover -s "$BS" -p test_telegram_clore_search.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
 runuser -u hache-miner -- test -r "$OS/broker.py" || error 'broker_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_proposals.py" || error 'bot_release_inaccessible'
+runuser -u hache-telegram -- test -r "$BS/telegram_clore_search.py" || error 'gpu_search_release_inaccessible'
 
 STARTED=0
 rollback() {
