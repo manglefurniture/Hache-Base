@@ -16,7 +16,7 @@ def rig(oid, model="RTX 5090", variant="", count=1, day=5.5, rented=False):
     return {"id":oid,"rented":rented,"specs":{
                 "gpu":f"{count}x {g}","gpuram":24 if variant=="laptop" else 32,
                 "ram":32,"net":{"cc":"US"}},
-            "gpu_array":[{"name":g} for _ in range(count)],
+            "gpu_array":[g for _ in range(count)],
             "price":{"spot":{"USD-Blockchain":day},
                      "on_demand":{"USD-Blockchain":day+1}}}
 
@@ -99,6 +99,13 @@ class CloreSearchTests(unittest.TestCase):
             with self.subTest(command=command):
                 result,_=s.offers(rows,s.parse_command(command))
                 self.assertEqual([x["id"] for x in result], expected)
+
+    def test_mixed_gpu_array_does_not_fake_requested_rig(self):
+        mixed = rig(1400, model="RTX 5090", count=2)
+        mixed["gpu_array"][1] = "RTX 4090"
+        matches, total = s.offers([mixed], s.parse_command("/gpu 5090 x2"))
+        self.assertEqual(total, 0)
+        self.assertEqual(matches, [])
 
     def test_malformed_network_metadata_never_breaks_search(self):
         bad = rig(1300)
