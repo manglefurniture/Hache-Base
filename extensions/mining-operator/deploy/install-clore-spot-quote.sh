@@ -14,8 +14,8 @@ abort(){ echo "SPOT_QUOTE_INSTALL_ABORTED=$1" >&2; exit 1; }
    -f "$OP/clore_spot_quote_service.py" ]] || abort "release_not_deployed"
 id hache-miner >/dev/null 2>&1 || abort "miner_account_missing"
 getent group hache-telegram >/dev/null || abort "telegram_group_missing"
-[[ -f /etc/hache-miner/clore-api-key &&
-   ! -L /etc/hache-miner/clore-api-key ]] || abort "root_clore_api_key_missing"
+[[ -f /etc/hache-miner/secrets/clore_api_key &&
+   ! -L /etc/hache-miner/secrets/clore_api_key ]] || abort "root_clore_api_key_missing"
 systemctl is-active --quiet hache-mining-operator-clore-cancel.timer ||
   abort "clore_financial_timer_inactive"
 
