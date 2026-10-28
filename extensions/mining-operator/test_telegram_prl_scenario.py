@@ -41,6 +41,71 @@ class ROI(unittest.TestCase):
         with self.assertRaises(roi.ProfitError):
             roi.parse_pool_html(wrong)
 
+    def test_pearltrack_24h_visible_kryptex_card_and_implied_price(self):
+        track=(
+            "<html><body>Network hashrate 75 EH/s Largest pool 50.0% Kryptex "
+            "Nakamoto coeff 2 "
+            "Kryptex ↗ uv0gqv Fee 1% · 7m ago Consistent Proven 37 EH/s "
+            "24H blocks 216 Profit / PH·day 12.5 PEARL $23.12 · net of 1% "
+            "Wallet balance 123,456 PEARL "
+            "PearlHash ↗ 50ltku Fee 1% Profit / PH·day 12.2 PEARL $22.65 · net of 1% "
+            + " filler " * 700 + "</body></html>"
+        )
+        p=roi.parse_track_html(track)
+        self.assertEqual(p["prl_per_ph_day"],"12.5")
+        self.assertEqual(p["otc_usd_per_prl"],"1.849600")
+        self.assertEqual(p["source"],roi.TRACK_SOURCE)
+        self.assertFalse(p["market_sale_verified"])
+        self.assertEqual(p["price_reference_type"],"implied_from_rounded_24h_display")
+        r=roi.compute(offer(),p)
+        self.assertIn("implícita, aproximada",roi.format_scenario(r))
+
+    def test_pearltrack_rejects_wrong_source_card_and_bad_precision(self):
+        t=(
+            "<html><body>Kryptex Nakamoto coeff 2 "
+            "Kryptex ↗ uv0gqv Fee 1% Profit / PH·day 12.5 PEARL $23.12 · net of 1% "
+            "PearlHash ↗ abc Fee 1% "
+            + " filler " * 700 + "</body></html>"
+        )
+        for altered in (
+            t.replace("12.5 PEARL","12.51234567 PEARL"),
+            t.replace("$23.12","$23.123456789"),
+            t.replace("Kryptex ↗","Kryptex (not a card)"),
+            t.replace("PearlHash ↗",""),
+        ):
+            with self.subTest(altered=altered[:160]):
+                with self.assertRaises(roi.ProfitError):
+                    roi.parse_track_html(altered)
+
+    def test_two_source_fallback_prefers_track_and_recovers_to_sonar(self):
+        track=(
+            "<html><body>Kryptex ↗ uv Fee 1% Profit / PH·day 12.5 PEARL "
+            "$23.12 · net of 1% Wallet 123 PearlHash ↗ abc "
+            + " filler " * 700 + "</body></html>"
+        )
+        class Response:
+            status=200
+            def __init__(self,raw):self.raw=raw
+            def __enter__(self):return self
+            def __exit__(self,*a):return None
+            def read(self,n):return self.raw.encode()
+        seen=[]
+        def primary(req,timeout):
+            seen.append((req.full_url,req.get_method(),timeout))
+            return Response(track)
+        p=roi.get_pool_snapshot(transport=primary)
+        self.assertEqual(p["source"],roi.TRACK_SOURCE)
+        self.assertEqual(seen,[(roi.TRACK_SOURCE,"GET",6)])
+        seen.clear()
+        def fallback(req,timeout):
+            seen.append((req.full_url,req.get_method(),timeout))
+            if req.full_url==roi.TRACK_SOURCE:
+                raise TimeoutError("simulated")
+            return Response(fixture())
+        p=roi.get_pool_snapshot(transport=fallback)
+        self.assertEqual(p["source"],roi.SOURCE)
+        self.assertEqual(seen,[(roi.TRACK_SOURCE,"GET",6),(roi.SOURCE,"GET",7)])
+
     def test_5090_laptop_break_even_and_stress(self):
         out=roi.compute(offer(),self.pool)
         self.assertEqual(out["assumed_total_ths"],330)
@@ -91,10 +156,10 @@ class ROI(unittest.TestCase):
             return Response()
         p=roi.get_pool_snapshot(transport=transport)
         self.assertEqual(p["source"],roi.SOURCE)
-        self.assertEqual(seen[0][0],roi.SOURCE)
-        self.assertEqual(seen[0][1],"GET")
-        self.assertEqual(seen[0][2],12)
-        self.assertFalse(any("Auth" in key for key in seen[0][3]))
+        self.assertEqual([x[0] for x in seen],[roi.TRACK_SOURCE,roi.SOURCE])
+        self.assertTrue(all(x[1]=="GET" for x in seen))
+        self.assertEqual([x[2] for x in seen],[6,7])
+        self.assertTrue(all(not any("Auth" in key for key in x[3]) for x in seen))
 
 
 class TelegramScenarioFlow(unittest.TestCase):

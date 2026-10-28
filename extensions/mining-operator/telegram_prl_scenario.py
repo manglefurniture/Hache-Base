@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 SOURCE = "https://www.pearlsonar.com/pools"
+TRACK_SOURCE = "https://pearltrack.io/pools"
 # Historical observations from the user's GPU trials, not verified per-host.
 # Never extrapolate without exact family, variant, count, and a real share audit.
 CALIBRATIONS = {
@@ -81,22 +82,79 @@ def parse_pool_html(page):
             "source":SOURCE, "market_sale_verified":False,
             "yield_historical_24h":True}
 
+def parse_track_html(page):
+    """Kryptex card on independent PearlTrack; USD/PRL inferred from rounded display."""
+    if not isinstance(page,(str,bytes)):
+        raise ProfitError("invalid_pool_page")
+    if isinstance(page,bytes):
+        try:
+            page=page.decode("utf-8")
+        except UnicodeError:
+            raise ProfitError("invalid_pool_page") from None
+    if not 3000<=len(page)<=400000:
+        raise ProfitError("pool_page_size_untrusted")
+    parsed=Parser()
+    try:
+        parsed.feed(page)
+    except Exception:
+        raise ProfitError("invalid_pool_page") from None
+    text=" ".join(" ".join(parsed.parts).split())
+    # Anchor to the FIRST Kryptex pool card, not the descriptive introduction.
+    found=re.search(r"\bKryptex\s*↗",text)
+    if not found:
+        raise ProfitError("kryptex_pool_card_missing")
+    end=re.search(r"\b(?:PearlHash|Pearl Fortune|LuckyPool)\s*↗",text[found.end():])
+    if not end:
+        raise ProfitError("kryptex_pool_card_missing")
+    card=text[found.start():found.end()+end.start()]
+    result=re.search(
+        r"\bProfit\s*/\s*PH·day\s+(\d{1,2}(?:\.\d{1,6})?)(?![.\d])"
+        r"\s+PEARL\s+\$\s*(\d{1,3}(?:\.\d{1,6})?)(?![.\d])"
+        r"\s+·\s+net of",card)
+    if not result:
+        raise ProfitError("track_profit_card_missing")
+    prl=amount(result[1],1,45)
+    usd=amount(result[2],1,1000)
+    # Dollar amount is already an approximate 24-hour yield shown by PearlTrack.
+    implied=usd/prl
+    if not Decimal("0.1") < implied < Decimal("20"):
+        raise ProfitError("implied_price_untrusted")
+    return {
+        "prl_per_ph_day":str(prl),
+        "otc_usd_per_prl":str(implied.quantize(Decimal("0.000001"))),
+        "source":TRACK_SOURCE,
+        "price_reference_type":"implied_from_rounded_24h_display",
+        "market_sale_verified":False,
+        "yield_historical_24h":True,
+    }
+
 def get_pool_snapshot(*,transport=None):
+    """Try two independent public sources; no stale synthetic fallback values."""
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,req,fp,code,msg,headers,url):return None
     opener=urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl.create_default_context()),NoRedirect())
     transport=transport or opener.open
-    request=urllib.request.Request(SOURCE,method="GET",
-         headers={"Accept":"text/html","User-Agent":"Hache-PRL-Scenario/1"})
-    try:
-        with transport(request,timeout=12) as response:
-            if getattr(response,"status",200)!=200:
-                raise ProfitError("pool_unavailable")
-            html=response.read(400001)
-    except (OSError,urllib.error.URLError,TimeoutError,HTTPException):
-        raise ProfitError("pool_unavailable") from None
-    return parse_pool_html(html)
+    for url,parser,timeout in (
+        (TRACK_SOURCE,parse_track_html,6),
+        (SOURCE,parse_pool_html,7),
+    ):
+        req=urllib.request.Request(url,method="GET",
+             headers={"Accept":"text/html","User-Agent":"Hache-PRL-Scenario/1"})
+        try:
+            with transport(req,timeout=timeout) as response:
+                if getattr(response,"status",200)!=200:
+                    continue
+                page=response.read(400001)
+            if len(page)>400000:
+                continue
+            snapshot=parser(page)
+            snapshot["price_reference_type"] = snapshot.get(
+                "price_reference_type","otc_reference_not_executable")
+            return snapshot
+        except (OSError,urllib.error.URLError,TimeoutError,HTTPException,ProfitError):
+            continue
+    raise ProfitError("pool_sources_unavailable")
 
 def normalized_model(gpu):
     if type(gpu) is not str or len(gpu)>125:
@@ -151,7 +209,8 @@ def compute(offer, market):
         "hashrate_verified_on_selected_host":False,
         "executed_bid_verified":False, "sale_price_verified":False,
         "net_profit_verified":False, "rental_permitted":False,
-        "source":market.get("source")
+        "source":market.get("source"),
+        "price_reference_type":market.get("price_reference_type","otc_reference_not_executable")
     }
 
 def format_scenario(result):
@@ -162,7 +221,7 @@ def format_scenario(result):
         f"TH/s históricos supuestos: {r['assumed_total_ths']:.0f}\n"
         f"Referencia histórica: {r['gpu_reference']}\n"
         f"Yield Kryptex (24 h): {r['prl_yield_per_ph_day']:.2f} PRL/PH/día\n"
-        f"Precio OTC indicativo: US$ {r['otc_reference_usd_prl']:.4f}/PRL\n"
+        f"Referencia PRL ({'implícita, aproximada' if r.get('price_reference_type') == 'implied_from_rounded_24h_display' else 'OTC, no ejecutable'}): US$ {r['otc_reference_usd_prl']:.4f}/PRL\n"
         f"Piso Spot anunciado: US$ {r['spot_floor_usd_hour']:.4f}/hora\n"
         f"Producción ilustrativa: {r['prl_per_day_scenario']:.3f} PRL/día\n"
         f"Ingreso tras reserva de venta: US$ {r['estimated_usd_day_after_sale_reserve']:.2f}/día\n"

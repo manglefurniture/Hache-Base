@@ -181,3 +181,23 @@ Las pujas competirán por su precio ejecutable, no el piso publicado.
 
 Pruebas:
 python3 -m unittest discover -s extensions/mining-operator -p test_telegram_prl_scenario.py -v
+
+## Corrección 28/10: fuente del ROI y clave privada Spot
+
+Spot utiliza la ruta root existente del guard financiero:
+/etc/hache-miner/secrets/clore_api_key. La clave solo se entrega al
+servicio de consulta hache-miner mediante systemd LoadCredential.
+No se copia a Telegram ni se introduce en argumentos.
+
+PearlSonar puede agotar tiempo de espera desde el VPS. Para evitar una
+pantalla vacía de forma recurrente, la rentabilidad PRL consulta primero
+https://pearltrack.io/pools y, si falla, intenta
+https://www.pearlsonar.com/pools. El valor USD/PRL de PearlTrack es
+IMPLICITO: se divide el beneficio en USD/PH/dia por el yield en
+PRL/PH/dia, cifras redondeadas que no constituyen un precio de venta
+ni orden ejecutable. Los resultados identifican esa aproximacion.
+
+Ambas conexiones son GET publico HTTPS; si ambas fallan el escenario
+se muestra no disponible. Nunca se inventan cifras ni se habilitan
+pujas o create_order. Despues de desplegar por commit exacto, activar
+el socket de consulta separado desde root y comprobar el estado.
