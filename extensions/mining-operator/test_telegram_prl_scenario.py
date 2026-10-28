@@ -85,5 +85,71 @@ class ROI(unittest.TestCase):
         self.assertEqual(seen[0][2],12)
         self.assertFalse(any("Auth" in key for key in seen[0][3]))
 
+
+class TelegramScenarioFlow(unittest.TestCase):
+    def setUp(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        import telegram_proposals as tp
+        from test_telegram_clore_competition import FakeTelegram
+        self.temp=TemporaryDirectory()
+        self.store=tp.ProposalStore(str(Path(self.temp.name)/"bot.sqlite"))
+        self.api=FakeTelegram()
+        self.chat=tp.TelegramChannel(self.store,tp.TelegramAPI(
+             "1234567:"+("a"*35),transport=self.api),8125,8125)
+        self.now=int(__import__("time").time())
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def make_selection(self):
+        from unittest.mock import patch
+        from test_telegram_clore_competition import message,cb,listing
+        import telegram_clore_search as search
+        self.api.updates=[message("/gpu 5090 laptop",1)]
+        with patch.object(search,"fetch",return_value=[listing()]):
+            self.chat.poll_once(self.now)
+        pick=[x for m,x in self.api.calls if m=="sendMessage"][-1][
+              "reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+        self.api.updates=[cb(pick,2,201)]
+        self.chat.poll_once(self.now)
+        selection=[x for m,x in self.api.calls if m=="sendMessage"][-1]
+        return selection["reply_markup"]["inline_keyboard"][1][0]["callback_data"]
+
+    def test_owner_can_request_scenario_without_rental(self):
+        from unittest.mock import patch
+        from test_telegram_clore_competition import cb
+        button=self.make_selection()
+        self.assertTrue(button.startswith("gpu-roi:"))
+        self.api.updates=[cb(button,3,202)]
+        with patch.object(roi,"get_pool_snapshot",return_value=roi.parse_pool_html(fixture())):
+            self.chat.poll_once(self.now)
+        payload=[x for m,x in self.api.calls if m=="sendMessage"][-1]
+        self.assertIn("Escenario PRL",payload["text"])
+        self.assertIn("No es rentabilidad verificada",payload["text"])
+        self.assertFalse(self.store.db.execute(
+            "SELECT COUNT(*) FROM clore_telegram_offers").fetchone()[0])
+        self.assertEqual(set(m for m,_ in self.api.calls),
+            {"getUpdates","sendMessage","answerCallbackQuery"})
+
+    def test_forged_callback_cannot_fetch_pool(self):
+        from unittest.mock import patch
+        from test_telegram_clore_competition import cb
+        button=self.make_selection()
+        for update in (cb(button,3,201),cb(button,4,202,user=7777)):
+            self.api.updates=[update]
+            with patch.object(roi,"get_pool_snapshot",side_effect=AssertionError("network forbidden")):
+                self.chat.poll_once(self.now)
+
+    def test_upstream_missing_rate_does_not_fake_profit(self):
+        from unittest.mock import patch
+        from test_telegram_clore_competition import cb
+        button=self.make_selection()
+        self.api.updates=[cb(button,3,202)]
+        with patch.object(roi,"get_pool_snapshot",side_effect=roi.ProfitError("pool_unavailable")):
+            self.chat.poll_once(self.now)
+        payload=[x for m,x in self.api.calls if m=="sendMessage"][-1]
+        self.assertIn("No puedo verificar",payload["text"])
+
 if __name__=="__main__":
     unittest.main()
