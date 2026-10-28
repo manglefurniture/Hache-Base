@@ -19,6 +19,7 @@ import urllib.request
 from telegram_menu import CALLBACKS as MENU_CALLBACKS, markup as menu_markup, reply as menu_reply
 import clore_telegram_proposals as clore_decisions
 import telegram_clore_search as gpu_search
+import telegram_clore_competition as spot_quote
 
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
@@ -231,6 +232,14 @@ class ProposalStore:
                             answer.update(state="menu", action=data)
                         except gpu_search.SearchError:
                             answer.update(state="gpu_invalid")
+                    elif re.fullmatch(r"gpu-quote:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
+                        _, nonce, server_id = data.split(":")
+                        try:
+                            gpu_search.verify_quote_callback(self.db, nonce, int(server_id),
+                                                             msg.get("message_id"), tick)
+                            answer.update(state="menu", action=data)
+                        except gpu_search.SearchError:
+                            answer.update(state="gpu_invalid")
                     elif re.fullmatch(r"gpu-pick:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
                         _, nonce, offer_id = data.split(":")
                         try:
@@ -388,6 +397,7 @@ class TelegramChannel:
             now = int(time.time())
             payload = None
             receipt_binding = None
+            selection_binding = None
             if action == "gpu-help":
                 payload = {"text": ("Buscar GPUs Spot: /gpu 5090, /gpu 5090 laptop, "
                                     "/gpu 4070 ti super escritorio x2. "
@@ -421,10 +431,30 @@ class TelegramChannel:
                                "parse_mode": "HTML"}
             elif action.startswith("gpu-selected:"):
                 try:
-                    payload = {"text": gpu_search.selected_reply(self.store.db, action.split(":")[1], now),
-                               "parse_mode": "HTML"}
+                    nonce = action.split(":")[1]
+                    snap = gpu_search.get(self.store.db, nonce, now)
+                    server_id = snap["selected_id"]
+                    payload = {"text": gpu_search.selected_reply(self.store.db, nonce, now),
+                               "parse_mode": "HTML",
+                               "reply_markup": {"inline_keyboard": [[
+                                   {"text": "Consultar competencia Spot",
+                                    "callback_data": f"gpu-quote:{nonce}:{server_id}"}
+                               ]]}}
+                    selection_binding = nonce
                 except gpu_search.SearchError:
                     payload = {"text": "Selección caducada; repite /gpu. No se realizó ninguna puja.",
+                               "parse_mode": "HTML"}
+            elif action.startswith("gpu-quote:"):
+                try:
+                    _, nonce, ident = action.split(":")
+                    server_id = int(ident)
+                    gpu_search.get(self.store.db, nonce, now)
+                    projection = spot_quote.get_quote(server_id)
+                    payload = {"text": spot_quote.format_quote(projection),
+                               "parse_mode": "HTML"}
+                except (gpu_search.SearchError, spot_quote.QuoteUnavailable, ValueError):
+                    payload = {"text": "Competencia Spot no disponible o consulta caducada. "
+                                       "Repite /gpu para actualizar. No hay puja ni gasto.",
                                "parse_mode": "HTML"}
             else:
                 payload = {"text": menu_reply(action), "parse_mode": "HTML",
@@ -436,6 +466,9 @@ class TelegramChannel:
                 raise ProposalError("invalid_menu_delivery_receipt")
             if receipt_binding:
                 gpu_search.record_page(self.store.db, *receipt_binding, result["message_id"], now)
+            if selection_binding:
+                gpu_search.record_selection_message(self.store.db, selection_binding,
+                                                    result["message_id"], now)
             self.store.mark_menu_sent(update_id)
             delivered += 1
         return delivered
