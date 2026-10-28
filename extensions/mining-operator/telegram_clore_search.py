@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Owner-requested Clore Spot discovery for Telegram. Public GET only; never bid."""
-from datetime import datetime, timezone
+from http.client import HTTPException
 import html
 import json
 import math
@@ -71,7 +71,7 @@ def fetch(*, transport=None):
             if getattr(response, "status", 200) != 200:
                 raise SearchError("clore_not_available")
             body = response.read(MAX_RESPONSE + 1)
-    except (OSError, urllib.error.URLError, TimeoutError) as exc:
+    except (OSError, urllib.error.URLError, TimeoutError, HTTPException) as exc:
         raise SearchError("clore_not_available") from exc
     if len(body) > MAX_RESPONSE:
         raise SearchError("clore_response_too_large")
