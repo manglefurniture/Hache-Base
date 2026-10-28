@@ -93,6 +93,18 @@ def money(value):
         return None
     return round(num / 24, 6) if math.isfinite(num) and 0 < num < 2400 else None
 
+
+def model_name(value):
+    """Keep the complete GPU model and suffixes, removing only vendor labels."""
+    if type(value) is not str:
+        return ""
+    name = re.sub(r"\s+", " ", value.upper().replace("-", " ")).strip()
+    name = re.sub(r"^(?:(?:NVIDIA|GEFORCE|AMD|RADEON|INTEL)\s+)+", "", name)
+    name = re.sub(r"\s+(?:LAPTOP|MOBILE)(?:\s+GPU)?$", "", name)
+    name = re.sub(r"\s+GPU$", "", name)
+    return name
+
+
 def choose(server, query):
     """Require whole-rig exact GPU count; rank by floor, NOT invented profit."""
     if type(server) is not dict or server.get("rented") is not False:
@@ -113,9 +125,13 @@ def choose(server, query):
         return None
     # All model words must occur in order (e.g. 4070 TI SUPER).
     family = re.sub(r"\s+", " ", count_match[2].upper())
-    words = query["model"].split()
-    phrase = r"\b" + r"\s+".join(map(re.escape, words)) + r"\b"
-    if not re.search(phrase, family):
+    # Compare the complete model instead of a prefix: 4070, 4070 TI and
+    # 4070 TI SUPER are three different GPU products (likewise 5090 D).
+    actual = model_name(family)
+    requested = model_name(query["model"])
+    if not requested or not any(c.isdigit() for c in requested):
+        return None
+    if actual != requested and not actual.endswith(" " + requested):
         return None
     variant = "laptop" if re.search(r"\b(?:LAPTOP|MOBILE)\b", family) else "desktop_label"
     if query["variant"] == "laptop" and variant != "laptop":
@@ -132,7 +148,8 @@ def choose(server, query):
     regular = money(ondemand.get("USD-Blockchain"))
     if floor is None or regular is None:
         return None
-    country = (specs.get("net") or {}).get("cc", "")
+    net = specs.get("net")
+    country = net.get("cc", "") if type(net) is dict else ""
     if type(country) is not str or not re.fullmatch(r"[A-Z]{2}", country):
         country = "??"
     ram = specs.get("gpuram")
