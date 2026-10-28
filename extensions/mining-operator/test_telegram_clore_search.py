@@ -102,7 +102,7 @@ class CloreSearchTests(unittest.TestCase):
         self.assertIn("sin puja ni alquiler",msgs[0]["text"])
         self.assertEqual(self.store.db.execute(
             "SELECT selected_id FROM gpu_search_snapshots").fetchone()[0],503)
-        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM clore_proposals").fetchone()[0],0)
+        self.assertEqual(self.store.db.execute("SELECT COUNT(*) FROM clore_telegram_offers").fetchone()[0],0)
 
     def test_wrong_chat_user_or_message_does_not_select(self):
         self.api.updates=[text_command("/gpu 5090",1,user=100)]
