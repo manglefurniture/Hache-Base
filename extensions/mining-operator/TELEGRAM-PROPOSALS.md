@@ -66,3 +66,40 @@ Despliegue: usar exclusivamente el SHA revisado y fusionado con
 \`deploy/deploy-gpu-variants.sh\`, que ahora incluye estas regresiones,
 y conservar credenciales, usuario \`hache-telegram\` y watchdogs existentes.
 No modificar scripts activos manualmente en VPS.
+
+## Búsqueda Spot a petición del propietario (solo lectura)
+
+Desde el chat privado, /gpu 5090, /gpu 5090 laptop o
+/gpu 4070 ti super escritorio x2 ejecuta un GET nuevo al marketplace
+público de Clore. No se usan API keys, no se conecta al broker comercial
+ni se conceden permisos adicionales. Los comandos de grupos/otros usuarios
+son ignorados. El filtro busca un servidor completo con el número de GPU
+solicitado, sin suponer alquiler parcial. Muestra coincidencias hasta 100
+y permite navegar en páginas de cinco. Cualquier truncamiento se declara.
+
+Las cotizaciones presentan únicamente el mínimo Spot publicado en
+USD-Blockchain y el precio On-Demand del servidor completo. Son precios
+indicativos, nunca una puja ejecutable o ganadora. Las variantes escritorio
+y Laptop se infieren de etiquetas del host, no de una comprobación
+del hardware. La ordenación es por piso Spot más bajo; NO proclama
+rentabilidad neta. Faltan un historial verificable de PRL por GPU,
+precio neto realizable, cargos finales y dificultad actual.
+
+Seleccionar #ID registra solo la identidad del anuncio mostrado,
+vinculada al ID de mensaje Telegram y a un snapshot que expira
+en 180 segundos. El botón no genera una propuesta financiera ni orden
+de compra/puja. Selecciones repetidas o de mensajes ajenos son rechazadas.
+Ningún input de Telegram puede saltarse el consentimiento exacto
+de una orden, presupuesto y watchdog financiero.
+
+Futura fase comercial (NO activada): reconsultar una oferta elegida
+antes de pujar, comprobar cambios de precio/servidor, aprobación explícita
+de tasa Spot máxima, presupuesto total y deadline, obligación financiera
+duradera antes de create_order, reconciliación ante timeout y asociación
+de minero/wallet/worker con una orden concreta.
+Hasta cerrar estas garantías rental_permitted=false.
+
+El componente telegram_clore_search.py hace solo GET contra
+https://api.clore.ai/v1/marketplace, impone un límite de respuesta y no
+acepta URLs suministradas por el usuario. Pruebas sin gasto:
+python3 -m unittest discover -s extensions/mining-operator -p test_telegram_clore_search.py -v
