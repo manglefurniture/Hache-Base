@@ -20,6 +20,7 @@ from telegram_menu import CALLBACKS as MENU_CALLBACKS, markup as menu_markup, re
 import clore_telegram_proposals as clore_decisions
 import telegram_clore_search as gpu_search
 import telegram_clore_competition as spot_quote
+import telegram_prl_scenario as prl_scenario
 
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
@@ -232,6 +233,14 @@ class ProposalStore:
                             answer.update(state="menu", action=data)
                         except gpu_search.SearchError:
                             answer.update(state="gpu_invalid")
+                    elif re.fullmatch(r"gpu-roi:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
+                        _, nonce, server_id = data.split(":")
+                        try:
+                            gpu_search.verify_quote_callback(self.db, nonce, int(server_id),
+                                                             msg.get("message_id"), tick)
+                            answer.update(state="menu", action=data)
+                        except gpu_search.SearchError:
+                            answer.update(state="gpu_invalid")
                     elif re.fullmatch(r"gpu-quote:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
                         _, nonce, server_id = data.split(":")
                         try:
@@ -438,11 +447,30 @@ class TelegramChannel:
                                "parse_mode": "HTML",
                                "reply_markup": {"inline_keyboard": [[
                                    {"text": "Consultar competencia Spot",
-                                    "callback_data": f"gpu-quote:{nonce}:{server_id}"}
+                                    "callback_data": f"gpu-quote:{nonce}:{server_id}"}],
+                                  [{"text": "Escenario de rentabilidad PRL",
+                                    "callback_data": f"gpu-roi:{nonce}:{server_id}"}
                                ]]}}
                     selection_binding = nonce
                 except gpu_search.SearchError:
                     payload = {"text": "Selección caducada; repite /gpu. No se realizó ninguna puja.",
+                               "parse_mode": "HTML"}
+            elif action.startswith("gpu-roi:"):
+                try:
+                    _, nonce, ident = action.split(":")
+                    server_id = int(ident)
+                    snap = gpu_search.get(self.store.db, nonce, now)
+                    item = next((x for x in snap["offers"]
+                                 if x["id"] == server_id and snap["selected_id"] == server_id), None)
+                    if item is None:
+                        raise gpu_search.SearchError("selection_missing")
+                    scenario = prl_scenario.compute(item, prl_scenario.get_pool_snapshot())
+                    payload = {"text": prl_scenario.format_scenario(scenario),
+                               "parse_mode": "HTML"}
+                except (gpu_search.SearchError, prl_scenario.ProfitError, ValueError):
+                    payload = {"text": "No puedo verificar este escenario PRL ahora: "
+                                       "falta una referencia fiable o la consulta caducó. "
+                                       "No se realizará ninguna puja.",
                                "parse_mode": "HTML"}
             elif action.startswith("gpu-quote:"):
                 try:
