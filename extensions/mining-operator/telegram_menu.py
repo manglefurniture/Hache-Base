@@ -105,16 +105,20 @@ def reply(action, *, path=REPORT, now=None, owner_uid=None, owner_gid=None):
     if action == "home":
         return ("<b>HACHE · AGENTE DE MINERÍA</b>\n"
                 "Elige qué necesitas consultar. El radar analiza Vast.ai y Clore.ai "
-                "cada hora. Los botones son de <b>solo lectura</b>; "
+                "cada hora. Para buscar ofertas Spot nuevas: /gpu 5090 laptop. "
+                "Los botones son de <b>solo lectura</b>; "
                 "no rentan, pujan ni detienen máquinas.")
     if action == "help":
         return ("<b>Comandos del bot</b>\n"
                 "/start o /menu — abrir menú\n"
                 "/ofertas — ver las últimas ofertas Vast.ai\n"
+                "/gpu 5090 — buscar ofertas Spot de RTX 5090\n"
+                "/gpu 5090 laptop — solo Laptop\n"
+                "/gpu 4070 ti super escritorio x2 — 2 GPU por servidor\n"
                 "/estado — último escaneo\n"
                 "/ayuda — mostrar ayuda\n\n"
-                "Las consultas muestran el último reporte disponible. "
-                "No son búsquedas nuevas en tiempo real. "
+                "El menú usa el reporte horario; /gpu consulta ofertas de Clore "
+                "bajo demanda. Elegir una no ejecuta una puja. "
                 "<b>Rentas, cancelaciones y reinicios no están habilitados desde Telegram.</b>")
     if action == "guards":
         return ("<b>Supervisión de máquinas</b>\n"
