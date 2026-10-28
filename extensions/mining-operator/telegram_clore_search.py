@@ -133,6 +133,11 @@ def choose(server, query):
         return None
     if actual != requested and not actual.endswith(" " + requested):
         return None
+    # Clore gpu_array contains per-device model labels. Count alone does not
+    # prove a uniform rig: reject a mixed 4070/5090 listing.
+    if any(type(name) is not str or not 1 <= len(name) <= 120 or
+           model_name(name) != actual for name in gpus):
+        return None
     variant = "laptop" if re.search(r"\b(?:LAPTOP|MOBILE)\b", family) else "desktop_label"
     if query["variant"] == "laptop" and variant != "laptop":
         return None
