@@ -72,8 +72,8 @@ def parse_pool_html(page):
     if not k or not end:
         raise ProfitError("kryptex_pool_card_missing")
     card=text[k.start():k.end()+end.start()]
-    found=re.search(r"\bNet yield\s+(\d{1,2}(?:\.\d{1,3})?)\s+PRL per PH/s",card)
-    price=re.search(r"\bOTC\s+\$\s*(\d{1,2}(?:\.\d{1,5})?)\b",text[:k.start()])
+    found=re.search(r"\bNet yield\s+(\d{1,2}(?:\.\d{1,6})?)(?![.\d])\s+PRL per PH/s",card)
+    price=re.search(r"\bOTC\s+\$\s*(\d{1,2}(?:\.\d{1,8})?)(?![.\d])(?:\s|$)",text[:k.start()])
     if not found or not price:
         raise ProfitError("pool_yield_or_otc_missing")
     return {"prl_per_ph_day":str(amount(found[1],1,45)),
