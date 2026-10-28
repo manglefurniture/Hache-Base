@@ -1,5 +1,6 @@
 """Live Clore GPU search flow: offline fixtures; no provider bids or spend."""
 import json
+from http.client import IncompleteRead
 from pathlib import Path
 import tempfile
 import time
@@ -166,6 +167,25 @@ class CloreSearchTests(unittest.TestCase):
         self.channel.poll_once(self.tick)
         self.assertIsNone(self.store.db.execute(
             "SELECT selected_id FROM gpu_search_snapshots").fetchone()[0])
+
+    def test_truncated_https_response_is_safe_and_does_not_bid(self):
+        class Truncated:
+            status=200
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,n): raise IncompleteRead(b'{', 3)
+        with self.assertRaisesRegex(s.SearchError,"clore_not_available"):
+            s.fetch(transport=lambda request, timeout: Truncated())
+
+    def test_failures_do_not_trigger_commercial_mutation(self):
+        self.api.updates=[text_command("/gpu 5090",1)]
+        with patch.object(s,"fetch",side_effect=s.SearchError("clore_not_available")):
+            self.channel.poll_once(self.tick)
+        sends=[x for method,x in self.api.calls if method=="sendMessage"]
+        self.assertEqual(len(sends),1)
+        self.assertIn("No se gastó nada",sends[0]["text"])
+        self.assertEqual(self.store.db.execute(
+            "SELECT COUNT(*) FROM gpu_search_snapshots").fetchone()[0],0)
 
     def test_api_only_fixed_public_get(self):
         seen=[]
