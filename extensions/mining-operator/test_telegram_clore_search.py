@@ -84,6 +84,31 @@ class CloreSearchTests(unittest.TestCase):
         q=s.parse_command("/gpu 5090 escritorio x2")
         self.assertEqual([x["id"] for x in s.offers(self.rows,q)[0]],[505])
 
+    def test_exact_gpu_model_does_not_include_ti_or_super_variants(self):
+        rows = [rig(1200, model="RTX 4070", day=3),
+                rig(1201, model="RTX 4070 Ti", day=2),
+                rig(1202, model="RTX 4070 Ti SUPER", day=1),
+                rig(1203, model="RTX 5090 D v2", day=1)]
+        for command, expected in [
+            ("/gpu 4070", [1200]),
+            ("/gpu 4070 ti", [1201]),
+            ("/gpu 4070 ti super", [1202]),
+            ("/gpu 5090", []),
+            ("/gpu 5090 d v2", [1203]),
+        ]:
+            with self.subTest(command=command):
+                result,_=s.offers(rows,s.parse_command(command))
+                self.assertEqual([x["id"] for x in result], expected)
+
+    def test_malformed_network_metadata_never_breaks_search(self):
+        bad = rig(1300)
+        bad["specs"]["net"] = ["unexpected", "array"]
+        result, n = s.offers([bad],s.parse_command("/gpu 5090"))
+        self.assertEqual(n, 1)
+        self.assertEqual(result[0]["country"], "??")
+        bad["specs"]["net"] = "bad"
+        self.assertEqual(s.offers([bad],s.parse_command("/gpu 5090"))[0][0]["country"],"??")
+
     def test_owner_query_sends_fresh_results_and_binds_selection(self):
         self.api.updates=[text_command("/gpu 5090 laptop",1)]
         with patch.object(s,"fetch",return_value=self.rows):
