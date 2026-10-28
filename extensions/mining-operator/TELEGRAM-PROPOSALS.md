@@ -145,3 +145,39 @@ observada y cargos completos, límite de puja y presupuesto total,
 aprobación de un solo uso, pre-order financiero duradero, create_order
 idempotente o reconciliable, provisionamiento y worker/ID vinculados,
 alarma de shares y cierre verificado de la renta. Mantener bloqueado.
+
+## Escenario PRL después de seleccionar una GPU (fase 3, SIN gasto)
+
+El mensaje de selección de /gpu incluye el botón "Escenario de rentabilidad PRL",
+vinculado al mensaje y servidor seleccionados, con caducidad de 180 segundos.
+El propietario puede consultarlo sin dar credenciales ni acceder al broker.
+
+La consulta hace un GET fijo a https://www.pearlsonar.com/pools, lee solo
+contenido visible del HTML y exige encontrar una tarjeta Kryptex con
+"Net yield" (PRL/PH/s/día) y la referencia OTC de PRL. Se rechazan
+respuestas ausentes, imprecisas o fuera de rango. La publicación no
+garantiza un precio de ejecución de venta ni mide una GPU específica.
+
+Calibraciones históricas explícitas, NO verificadas para una instancia
+que aún no se ha alquilado: RTX 5090 Laptop 330 TH/s, RTX 5090
+escritorio 380 TH/s, RTX 4070 Ti SUPER escritorio 155 TH/s y
+RTX 4090 escritorio 300 TH/s. Otros modelos/variantes se rechazan.
+No inferir que la etiqueta de Clore demuestra el hardware real.
+
+Escenario base: hashrate histórico por GPU × yield 24 h del pool ×
+85% de disponibilidad × precio OTC × 90% de realización de venta.
+Costo: piso Spot USD/h del host × 24 × factor 1.05 de reserva.
+Se muestra margen base, escenario adverso de dificultad +30% y precio
+PRL -20%, y tarifa de equilibrio adverso. Estas reservas son
+suposiciones configuradas, no tasas garantizadas. No incluir otros
+costos financieros/fiabilidad/creación/competencia de puja como si
+estuvieran verificados. La cifra puede ser errónea incluso con
+un escenario positivo.
+
+No se crea una oferta, no se cambia el precio Spot de una orden,
+no se activa rental_permitted y no se reclama "rentabilidad neta
+verificada". No utilizar este escenario como autorización para pujar.
+Las pujas competirán por su precio ejecutable, no el piso publicado.
+
+Pruebas:
+python3 -m unittest discover -s extensions/mining-operator -p test_telegram_prl_scenario.py -v
