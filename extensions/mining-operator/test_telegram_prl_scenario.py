@@ -30,6 +30,17 @@ class ROI(unittest.TestCase):
         bad=fixture().replace("OTC $ 1.8936","OTC $ 0")
         with self.assertRaises(roi.ProfitError):roi.parse_pool_html(bad)
 
+    def test_otc_price_full_precision_or_reject_no_truncation(self):
+        full=fixture().replace("OTC $ 1.8936","OTC $ 1.893678")
+        self.assertEqual(roi.parse_pool_html(full)["otc_usd_per_prl"],"1.893678")
+        for raw in ("1.893678901", "1.8936.5", "1.8936extra"):
+            modified=fixture().replace("OTC $ 1.8936", "OTC $ "+raw)
+            with self.subTest(raw=raw), self.assertRaises(roi.ProfitError):
+                roi.parse_pool_html(modified)
+        wrong=fixture().replace("Net yield 14.37", "Net yield 14.371234567")
+        with self.assertRaises(roi.ProfitError):
+            roi.parse_pool_html(wrong)
+
     def test_5090_laptop_break_even_and_stress(self):
         out=roi.compute(offer(),self.pool)
         self.assertEqual(out["assumed_total_ths"],330)
