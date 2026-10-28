@@ -103,3 +103,45 @@ El componente telegram_clore_search.py hace solo GET contra
 https://api.clore.ai/v1/marketplace, impone un límite de respuesta y no
 acepta URLs suministradas por el usuario. Pruebas sin gasto:
 python3 -m unittest discover -s extensions/mining-operator -p test_telegram_clore_search.py -v
+
+## Consulta segura de competencia Spot antes de pujar (fase 2, sin gasto)
+
+Una vez elegida una oferta del comando /gpu, el bot muestra el botón
+Consultar competencia Spot. Ese botón está ligado al mensaje privado
+enviado realmente al propietario y al server_id del snapshot (180 s).
+Cualquier otro usuario/chat, ID falseado o resultado caducado se rechaza.
+
+Arquitectura:
+- Telegram (usuario hache-telegram) solo conoce el ID del servidor. Se
+  conecta al socket Unix fijo /run/hache-clore-spot/quote.sock, grupo
+  hache-telegram y permisos 0660. No puede leer la API key ni ejecutar shell.
+- Servicio especializado (usuario hache-miner) comprueba SO_PEERCRED y
+  consulta SOLO GET https://api.clore.ai/v1/spot_marketplace?market=ID,
+  con la clave privada LoadCredential=clore_key del propio systemd.
+- El servidor valida los tipos y devuelve únicamente: ID, hora UTC, piso
+  USD-Blockchain, puja más alta convertida a USD entre TODAS las monedas,
+  recuentos, MRL, ilustración +1 % y advertencias de no ejecución.
+- El cliente vuelve a verificar procedencia, caducidad <=120 s y banderas
+  rental_permitted=false, executable_quote=false, net_profit_verified=false.
+- Respuestas inválidas, sin USD, mercado privado, host desconectado,
+  datos truncados, tipo monetario ambiguo o fallos de API se rechazan.
+
+La oferta orientativa +1 % es una estimación NO ejecutable: Clore puede
+aplicar mínimos, topes, otros incrementos, fees y competencia cambiante.
+Un piso Spot anunciado no asegura que una puja gane. Tampoco equivale
+al neto de minería PRL. No hay POST, create_order ni set_spot_price.
+
+Instalación root separada (solo tras desplegar un release exacto revisado):
+  bash /opt/hache-mining-operator/current/deploy/install-clore-spot-quote.sh
+
+Se crean las unidades hache-mining-operator-clore-spot-quote.socket y
+.service. El token sigue privado en /etc/hache-miner/clore-api-key (systemd
+LoadCredential), nunca pasa a Telegram. El servicio de quote no
+proporciona contratos de gasto, cancelaciones ni pujas. No cambiar el
+canal de Telegram a hache-miner ni incluir la key en un archivo grupal.
+
+Para seguir hacia la contratación real: análisis PRL con producción
+observada y cargos completos, límite de puja y presupuesto total,
+aprobación de un solo uso, pre-order financiero duradero, create_order
+idempotente o reconciliable, provisionamiento y worker/ID vinculados,
+alarma de shares y cierre verificado de la renta. Mantener bloqueado.
