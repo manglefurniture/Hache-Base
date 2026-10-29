@@ -108,6 +108,7 @@ python3 -m unittest discover -s "$BS" -p test_telegram_menu.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_clore_search.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_clore_competition.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_prl_scenario.py -q
+python3 -m unittest discover -s "$BS" -p test_telegram_prl_ranking.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
 runuser -u hache-miner -- test -r "$OS/broker.py" || error 'broker_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_proposals.py" || error 'bot_release_inaccessible'
