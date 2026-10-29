@@ -224,3 +224,48 @@ Salida limitada a ocho filas y snapshot maximo de 100 anuncios, con
 indicacion de cuantas ofertas quedan fuera de la tabla. Si no hay
 fuente publica valida o el snapshot vence, falla cerrado sin cifras.
 Sin permisos de gasto, credenciales Clore, create_order o bids.
+
+## Solicitud de limites de puja Clore desde Telegram, SIN COMPRAS (fase 4)
+
+Tras `/gpu 5090 laptop` y Seleccionar #ID, el propietario puede enviar:
+`/puja ID PRECIO_MAXIMO_USD_DIA PRESUPUESTO_USDT MINUTOS`.
+Ejemplo ficticio de formato: `/puja 119661 5.70 10.00 60`.
+El ID de servidor debe estar seleccionado en el snapshot privado y
+vigente; la cuenta Telegram NO recibe clave financiera ni capacidad POST.
+
+El bot pide una cotizacion autenticada reciente al servicio exclusivo
+de lectura Clore, compara la puja propuesta con piso y competencia,
+confirma la duracion `mrl` y exige presupuesto suficiente para la
+exposicion hipotetica del periodo * 1.20 + US$1 de holgura de
+comision ilustrativa (NO es una tarifa verificada). Tambien
+recalcula el margen PRL adverso para el PRECIO propuesto, no solo
+el piso del host. No se ofrece confirmar limites si ese margen
+es cero o negativo, faltan datos o el snapshot ha caducado.
+La validacion es conservadora, no una promesa de rentabilidad.
+
+El resultado es una propuesta efimera en SQLite de hache-telegram,
+asociada al `update_id`, `message_id` exacto, hash inmutable de
+terminos, id de servidor, limite diario, limite de gasto y minutos.
+Caduca en <= 90 segundos. Los botones
+"Confirmar limites (SIN PUJAR)" y "Cancelar" solo cambian la
+decision local una vez, rechazan replay de otro chat/mensaje,
+hash manipulado y expiracion.
+
+**No es una autorización financiera**: `rental_permitted=false`,
+`financial_grant=false`, `provider_mutation=false`.
+La confirmacion no firma una atestacion reutilizable por el agente de
+alquiler, NO registra ninguna orden, NO envia `create_order` ni
+`set_spot_price`. La politica de ejecucion sigue cerrada.
+
+Para habilitar renta comercial faltan: imagen de minero fijada
+por digest y comprobada en Clore; comprobacion GPU real; consulta
+de comisiones de creacion/moneda y presupuesto ejecutable; asociar
+la solicitud con `clore_preorder`, consentimiento Ed25519 verificado
+por `hache-miner`, write-ahead antes del POST, reconciliacion de
+timeouts y `order_id`, orden con identidad segura y monitor
+de shares + cancelacion verificable, prueba de fallo sin gasto y
+autorizacion expresa de una renta de prueba con presupuesto cerrado.
+Solo ese futuro ejecutor independiente puede solicitar gastos.
+La ausencia de mas pujas no implica beneficio ni disponibilidad.
+
+Prueba: `python3 -m unittest discover -s extensions/mining-operator -p test_telegram_clore_budget.py -v`.

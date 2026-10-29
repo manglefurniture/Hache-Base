@@ -109,12 +109,14 @@ python3 -m unittest discover -s "$BS" -p test_telegram_clore_search.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_clore_competition.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_prl_scenario.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_prl_ranking.py -q
+python3 -m unittest discover -s "$BS" -p test_telegram_clore_budget.py -q
 python3 -m unittest discover -s "$BS" -p test_telegram_onboard.py -q
 runuser -u hache-miner -- test -r "$OS/broker.py" || error 'broker_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_proposals.py" || error 'bot_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_clore_search.py" || error 'gpu_search_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_clore_competition.py" || error 'gpu_competition_release_inaccessible'
 runuser -u hache-telegram -- test -r "$BS/telegram_prl_scenario.py" || error 'gpu_prl_scenario_release_inaccessible'
+runuser -u hache-telegram -- test -r "$BS/telegram_clore_budget.py" || error 'clore_budget_release_inaccessible'
 
 STARTED=0
 rollback() {

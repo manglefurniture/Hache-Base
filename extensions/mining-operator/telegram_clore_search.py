@@ -285,8 +285,11 @@ def selected_reply(db, nonce, tick):
             f"GPU: {html.escape(item['gpu'])}\n"
             f"Piso Spot mostrado: US$ {item['floor_usd_hour']:.4f}/h\n"
             "Se registró tu selección, sin puja ni alquiler.\n"
-            "<b>Falta:</b> confirmar precio ejecutable, rentabilidad neta, "
-            "presupuesto máximo, consentimiento financiero y watchdog antes de ofertar.")
+            "<b>Próximo paso (sin gasto):</b> /puja ID USD_DIA TOPE_USDT MINUTOS. "
+            f"Ejemplo: /puja {item['id']} 1.00 5.00 60. "
+            "El bot solo registra la revisión y rechaza márgenes adversos negativos. "
+            "<b>Falta:</b> cotización ejecutable, GPU e imagen verificadas, "
+            "autorización financiera y watchdog enlazado a la orden.")
 
 
 def record_selection_message(db, nonce, message_id, tick):
