@@ -21,6 +21,7 @@ import clore_telegram_proposals as clore_decisions
 import telegram_clore_search as gpu_search
 import telegram_clore_competition as spot_quote
 import telegram_prl_scenario as prl_scenario
+import telegram_clore_budget as bid_preview
 
 FIELDS = {"provider", "offer_id", "machine_id", "host_id", "gpu_name",
           "gpu_count", "max_hourly_usd", "max_total_usd", "max_minutes",
@@ -95,6 +96,7 @@ class ProposalStore:
         """)
         clore_decisions.init(self.db)
         gpu_search.init(self.db)
+        bid_preview.init(self.db)
 
     def close(self):
         self.db.close()
@@ -220,6 +222,12 @@ class ProposalStore:
                     elif data in MENU_CALLBACKS:
                         # Existing static menu callbacks remain read-only.
                         answer.update(state="menu", action=data.split(":", 1)[1])
+                    elif re.fullmatch(r"bid-(review|reject):[0-9a-f]{32}",data):
+                        option, nonce = data.split(":",1)
+                        state = bid_preview.decide(self.db,nonce,
+                                                 msg.get("message_id"),
+                                                 option.split("-")[1],tick)
+                        answer.update(state=state)
                     elif re.fullmatch(r"gpu-page:[a-f0-9]{16}:[0-9]{1,3}", data):
                         _, nonce, page_no = data.split(":")
                         page_message = msg.get("message_id")
@@ -289,6 +297,10 @@ class ProposalStore:
                         requested = gpu_search.parse_command(command)
                         if requested is not None:
                             answer.update(state="menu", action=gpu_search.search_action(requested))
+                    elif type(command) is str and (command=="/puja" or command.startswith("/puja ")):
+                        requested=bid_preview.parse_command(command)
+                        if requested is not None:
+                            answer.update(state="menu", action=bid_preview.action(requested))
             if answer["state"] in ("menu", "gpu_selected"):
                 # Cursor and response outbox commit atomically.
                 action = (answer["action"] if answer["state"] == "menu"
@@ -420,7 +432,39 @@ class TelegramChannel:
             payload = None
             receipt_binding = None
             selection_binding = None
-            if action == "gpu-help":
+            bid_binding = None
+            if action == "bid-help":
+                payload = {"text": ("Para revisar límites SIN pujar: "
+                        "/puja ID PRECIO_USD_DIA PRESUPUESTO_USDT MINUTOS. "
+                        "Ejemplo: /puja 119661 5.70 10.00 60. "
+                        "Selecciona la GPU antes con /gpu. Sin gasto."),
+                        "parse_mode":"HTML"}
+            elif action.startswith("bid-prepare:"):
+                try:
+                    request = bid_preview.from_action(action)
+                    nonce = bid_preview.create(
+                        self.store.db, update_id=update_id, command=request,
+                        tick=now, quote_reader=spot_quote.get_quote,
+                        pool_reader=prl_scenario.get_pool_snapshot)
+                    payload = bid_preview.render(self.store.db, nonce, now)
+                    bid_binding = nonce
+                except bid_preview.BidPreviewError as exc:
+                    reason=str(exc)
+                    descriptions={
+                      "selected_offer_expired":"La selección venció; repite /gpu.",
+                      "selection_not_delivered":"Selecciona primero una GPU en /gpu.",
+                      "projected_negative_downside_margin":"Bloqueado: el margen adverso estimado no es positivo.",
+                      "bid_below_current_competition":"Puja inferior al piso Spot o competencia actual.",
+                      "total_budget_below_cautious_reserve":"El presupuesto no cubre la renta y reserva ilustrativa.",
+                      "existing_budget_preview":"Hay una revisión previa aún activa.",
+                      "spot_quote_unavailable":"No puedo confirmar la competencia Spot.",
+                      "prl_economic_data_unavailable":"Falta una fuente económica PRL fiable.",
+                      "duration_exceeds_provider_mrl":"Duración mayor que el límite publicado del servidor.",
+                    }
+                    payload={"text":(descriptions.get(reason,"No se pudo validar la preautorización.")
+                            +" No se realizará ninguna puja."),
+                            "parse_mode":"HTML"}
+            elif action == "gpu-help":
                 payload = {"text": ("Buscar GPUs Spot: /gpu 5090, /gpu 5090 laptop, "
                                     "/gpu 4070 ti super escritorio x2. "
                                     "Solo consulta y selección; no ejecuta pujas."),
@@ -525,6 +569,8 @@ class TelegramChannel:
             if selection_binding:
                 gpu_search.record_selection_message(self.store.db, selection_binding,
                                                     result["message_id"], now)
+            if bid_binding:
+                bid_preview.mark_sent(self.store.db,bid_binding,result["message_id"],now)
             self.store.mark_menu_sent(update_id)
             delivered += 1
         return delivered
