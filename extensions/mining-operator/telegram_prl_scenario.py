@@ -213,6 +213,81 @@ def compute(offer, market):
         "price_reference_type":market.get("price_reference_type","otc_reference_not_executable")
     }
 
+def rank_offers(offers, market):
+    """Rank historical PRL scenarios; do not infer a verified positive net."""
+    if type(offers) is not list or len(offers) > 100:
+        raise ProfitError("invalid_rank_input")
+    if not offers:
+        return {"evaluated": 0, "unverified": 0,
+                "positive_stress": 0, "ranked": []}
+    evaluated = []
+    unverified = 0
+    seen = set()
+    for offer in offers:
+        if type(offer) is not dict or type(offer.get("id")) is not int:
+            raise ProfitError("invalid_rank_offer")
+        if offer["id"] in seen:
+            raise ProfitError("duplicate_rank_offer")
+        seen.add(offer["id"])
+        try:
+            evaluated.append(compute(offer, market))
+        except ProfitError as exc:
+            # A model never measured in the past is not comparable to
+            # a known GPU. Do not silently treat a failed calculation as $0.
+            if str(exc) != "gpu_hashrate_unverified":
+                raise
+            unverified += 1
+    evaluated.sort(key=lambda x: (
+        -x["stress_margin_usd_day"], -x["base_margin_usd_day"],
+        x["spot_floor_usd_hour"], x["offer_id"]))
+    return {
+        "evaluated": len(evaluated),
+        "unverified": unverified,
+        "positive_stress": sum(x["stress_margin_usd_day"] > 0 for x in evaluated),
+        "ranked": evaluated,
+    }
+
+
+def format_ranking(ranking, *, limit=8):
+    """Render a bounded compare-only message from the fixed historical model."""
+    if type(ranking) is not dict or type(limit) is not int or not 1 <= limit <= 8:
+        raise ProfitError("invalid_rank_output")
+    ranked = ranking.get("ranked")
+    if type(ranked) is not list or len(ranked) > 100:
+        raise ProfitError("invalid_rank_output")
+    lines = ["<b>Clore · comparación histórica PRL</b>",
+             "Orden: margen adverso estimado, de mayor a menor.",
+             f"Evaluadas: {ranking['evaluated']} · sin referencia GPU: "
+             f"{ranking['unverified']} · margen adverso positivo: "
+             f"{ranking['positive_stress']}."]
+    for i, r in enumerate(ranked[:limit], start=1):
+        decision = ("Positivo bajo supuestos (NO verificado)"
+                    if r["stress_margin_usd_day"] > 0 else
+                    "Descartar: margen adverso no positivo")
+        if r["base_margin_usd_day"] <= 0:
+            decision = "Descartar: pérdida incluso en escenario base"
+        lines.append(
+            f"\n<b>{i}. #{r['offer_id']} · {r['gpu_count']} × {r['gpu_model']}</b>\n"
+            f"Piso US$ {r['spot_floor_usd_hour']:.4f}/h · "
+            f"base {r['base_margin_usd_day']:+.2f}/día · "
+            f"adverso {r['stress_margin_usd_day']:+.2f}/día\n"
+            f"{decision}"
+        )
+    if len(ranked) > limit:
+        lines.append(f"\nSe muestran las primeras {limit} de "
+                     f"{len(ranked)} ofertas evaluadas.")
+    if not ranked:
+        lines.append("\nNo hay GPUs con hashrate histórico comparable.")
+    lines.append(
+        "\n<b>No autoriza pujas ni confirma rentabilidad.</b> "
+        "Se compara al piso Spot, NO al precio de la puja ganadora; "
+        "GPU y precio de venta sin verificar. Reservas: 85% actividad, "
+        "10% venta y 5% renta. Escenario adverso: +30% dificultad, "
+        "−20% precio PRL. La selección comercial permanece bloqueada."
+    )
+    return "\n".join(lines)
+
+
 def format_scenario(result):
     r=result
     return (

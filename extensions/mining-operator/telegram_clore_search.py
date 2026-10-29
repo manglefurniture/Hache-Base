@@ -240,6 +240,8 @@ def page_reply(db, nonce, page_number, tick):
         nav.append({"text": "Anterior", "callback_data": f"gpu-page:{nonce}:{page_number-1}"})
     if page_number < last:
         nav.append({"text": "Siguiente", "callback_data": f"gpu-page:{nonce}:{page_number+1}"})
+    keyboard.append([{"text": "Comparar escenarios PRL",
+                      "callback_data": f"gpu-rank:{nonce}"}])
     if nav:
         keyboard.append(nav)
     lines.append("\n<b>Ranking por precio mínimo publicado, NO por rentabilidad neta.</b>\n"

@@ -233,6 +233,19 @@ class ProposalStore:
                             answer.update(state="menu", action=data)
                         except gpu_search.SearchError:
                             answer.update(state="gpu_invalid")
+                    elif re.fullmatch(r"gpu-rank:[a-f0-9]{16}", data):
+                        nonce = data.split(":")[1]
+                        try:
+                            gpu_search.get(self.db, nonce, tick)
+                            msg_id = msg.get("message_id")
+                            if type(msg_id) is not int or not self.db.execute(
+                                "SELECT 1 FROM gpu_search_pages "
+                                "WHERE nonce=? AND message_id=? LIMIT 1",
+                                (nonce, msg_id)).fetchone():
+                                raise gpu_search.SearchError("unbound_rank_message")
+                            answer.update(state="menu", action=data)
+                        except gpu_search.SearchError:
+                            answer.update(state="gpu_invalid")
                     elif re.fullmatch(r"gpu-roi:[a-f0-9]{16}:[1-9][0-9]{0,14}", data):
                         _, nonce, server_id = data.split(":")
                         try:
@@ -454,6 +467,21 @@ class TelegramChannel:
                     selection_binding = nonce
                 except gpu_search.SearchError:
                     payload = {"text": "Selección caducada; repite /gpu. No se realizó ninguna puja.",
+                               "parse_mode": "HTML"}
+            elif action.startswith("gpu-rank:"):
+                try:
+                    nonce = action.split(":")[1]
+                    snap = gpu_search.get(self.store.db, nonce, now)
+                    market = prl_scenario.get_pool_snapshot()
+                    # A slow upstream must not make an expired query actionable.
+                    gpu_search.get(self.store.db, nonce, int(time.time()))
+                    ranking = prl_scenario.rank_offers(snap["offers"], market)
+                    payload = {"text": prl_scenario.format_ranking(ranking),
+                               "parse_mode": "HTML"}
+                except (gpu_search.SearchError, prl_scenario.ProfitError, ValueError):
+                    payload = {"text": "No se pudo comparar la rentabilidad PRL. "
+                                       "Repite /gpu para consultar precios y datos actuales. "
+                                       "No se realizó ninguna puja.",
                                "parse_mode": "HTML"}
             elif action.startswith("gpu-roi:"):
                 try:
