@@ -603,6 +603,10 @@ class TelegramChannel:
                              else "Oferta seleccionada, SIN pujar" if result["state"] == "gpu_selected"
                              else "Ya hay una selección" if result["state"] == "gpu_already_selected"
                              else "Oferta vencida o no vinculada" if result["state"] == "gpu_invalid"
+                             else "Límites registrados SIN PUJAR" if result["state"] == "budget_limits_recorded_no_spend"
+                             else "Límites rechazados" if result["state"] == "budget_limits_rejected"
+                             else "Revisión ya realizada" if result["state"] == "already_budget_decided"
+                             else "Solicitud vencida o inválida" if result["state"] in ("budget_expired","budget_tampered","invalid_budget_confirmation")
                              else "Decisión Clore registrada (SIN alquilar)" if result["state"] == "clore_acknowledged"
                              else "Propuesta Clore rechazada" if result["state"] == "clore_rejected"
                              else "Decisión Clore ya registrada" if result["state"] == "already_clore_acknowledged"
