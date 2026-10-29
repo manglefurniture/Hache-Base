@@ -184,7 +184,7 @@ def create(db, *, update_id, command, tick, quote_reader=get_quote,
     if db.execute("SELECT 1 FROM clore_bid_previews WHERE state IN ('prepared','notified') LIMIT 1").fetchone():
         raise BidPreviewError("existing_budget_preview")
     nonce=secrets.token_hex(16)
-    db.execute("INSERT INTO clore_bid_previews VALUES(?,?,?,?,?, ?,?,?,?,'prepared',NULL,NULL)",
+    db.execute("INSERT INTO clore_bid_previews VALUES(?,?,?,?,?,?,?,?,'prepared',NULL,NULL)",
                (nonce,terms["snapshot_nonce"],update_id,terms["server_id"],raw,digest,tick,expiry))
     return nonce
 
