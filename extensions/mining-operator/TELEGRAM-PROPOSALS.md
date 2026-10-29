@@ -201,3 +201,26 @@ Ambas conexiones son GET publico HTTPS; si ambas fallan el escenario
 se muestra no disponible. Nunca se inventan cifras ni se habilitan
 pujas o create_order. Despues de desplegar por commit exacto, activar
 el socket de consulta separado desde root y comprobar el estado.
+
+## Comparacion de ofertas PRL del listado Spot
+
+En cada pagina de /gpu, el boton "Comparar escenarios PRL" permite
+evaluar las ofertas guardadas de la misma busqueda, con un solo GET
+publico a PearlTrack o PearlSonar. El callback requiere el chat
+privado autorizado, message_id de la pagina, nonce valido y snapshot
+no vencido. No reordena ni altera el marketplace ni las propuestas
+financieras.
+
+El ranking usa margen ADVERO antes del margen base, por identificador
+del servidor. Solo se calculan GPUs con rendimiento historico
+calibrado; otras quedan como "sin referencia". Cada fila muestra
+coste al PISO Spot publicado, margen base, margen adverso y la
+etiqueta "descartar" cuando el margen calculado no es positivo.
+Una estimacion positiva NO verifica la rentabilidad ni equivale
+a una puja ganadora: faltan hashrate real, coste adjudicado y
+precio de venta ejecutable. Nunca auto-contratar por este ranking.
+
+Salida limitada a ocho filas y snapshot maximo de 100 anuncios, con
+indicacion de cuantas ofertas quedan fuera de la tabla. Si no hay
+fuente publica valida o el snapshot vence, falla cerrado sin cifras.
+Sin permisos de gasto, credenciales Clore, create_order o bids.
